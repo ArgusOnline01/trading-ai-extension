@@ -8,46 +8,91 @@
 </head>
 <body>
   <div class="popup-container">
+    <!-- Header -->
     <div class="header">
-      <h2>Visual Trade Copilot</h2>
-      <div class="subtitle">AI-Powered SMC Analysis</div>
+      <div class="header-icon">🤖</div>
+      <div class="header-content">
+        <h2>Visual Trade Copilot</h2>
+        <div class="subtitle">AI-Powered Trading Assistant</div>
+      </div>
     </div>
     
-    <div class="section">
-      <label for="model">AI Model:</label>
-      <select id="model" class="model-select">
-        <option value="balanced">⚖️ Balanced (GPT-4o)</option>
-        <option value="fast">⚡ Fast (GPT-4o-mini)</option>
-        <option value="advanced">🧠 Advanced (GPT-4o)</option>
-      </select>
-    </div>
-    
-    <div class="section">
-      <label for="question">Question (optional):</label>
-      <textarea 
-        id="question" 
-        class="question-input" 
-        placeholder="Ask about market structure, entry points, risk management..."
-        rows="3"
-      ></textarea>
-    </div>
-    
-    <div class="section">
-      <button id="analyze" class="analyze-btn">
-        <span class="btn-icon">📸</span>
-        <span class="btn-text">Analyze Chart</span>
+    <!-- Quick Actions -->
+    <div class="quick-actions">
+      <button id="newConversation" class="action-btn primary">
+        <span class="btn-icon">✨</span>
+        <div class="btn-content">
+          <span class="btn-text">New Conversation</span>
+          <span class="btn-desc">Start fresh analysis</span>
+        </div>
+      </button>
+      
+      <button id="toggleChat" class="action-btn secondary">
+        <span class="btn-icon">💬</span>
+        <div class="btn-content">
+          <span class="btn-text">Continue Chat</span>
+          <span class="btn-desc">Resume current session</span>
+        </div>
+      </button>
+      
+      <button id="viewSessions" class="action-btn secondary">
+        <span class="btn-icon">🗂️</span>
+        <div class="btn-content">
+          <span class="btn-text">Past Sessions</span>
+          <span class="btn-desc">View conversation history</span>
+        </div>
       </button>
     </div>
     
-    <div class="section">
-      <button id="toggleChat" class="toggle-chat-btn">
-        <span class="btn-icon">💬</span>
-        <span class="btn-text">Open Chat Panel</span>
+    <!-- Model Selection -->
+    <div class="model-selection">
+      <label class="model-label">AI Model:</label>
+          <div class="model-grid">
+            <button class="model-option" data-model="fast">
+              <span class="model-icon">⚡</span>
+              <span class="model-name">Fast</span>
+              <span class="model-desc">GPT-5 Chat</span>
+            </button>
+            <button class="model-option active" data-model="balanced">
+              <span class="model-icon">🧠</span>
+              <span class="model-name">Balanced</span>
+              <span class="model-desc">GPT-5 Search</span>
+            </button>
+            <button class="model-option" data-model="advanced">
+              <span class="model-icon">🔷</span>
+              <span class="model-name">Advanced</span>
+              <span class="model-desc">GPT-4o</span>
+            </button>
+          </div>
+      
+      <details class="model-advanced">
+        <summary class="model-advanced-toggle">More Models ▼</summary>
+        <div class="model-list">
+          <label class="model-list-label">GPT-4 Models:</label>
+          <button class="model-list-item" data-model="gpt4o">🔷 GPT-4o (Vision)</button>
+          <button class="model-list-item" data-model="gpt4o-mini">💎 GPT-4o Mini</button>
+          
+          <label class="model-list-label">All GPT-5 Variants:</label>
+          <button class="model-list-item" data-model="gpt-5-chat-latest">GPT-5 Chat Latest</button>
+          <button class="model-list-item" data-model="gpt-5-mini">GPT-5 Mini</button>
+          <button class="model-list-item" data-model="gpt-5-mini-2025-08-07">GPT-5 Mini (Aug 2025)</button>
+          <button class="model-list-item" data-model="gpt-5-search-api">GPT-5 Search API</button>
+          <button class="model-list-item" data-model="gpt-5-search-api-2025-10-14">GPT-5 Search (Oct 2025)</button>
+        </div>
+      </details>
+    </div>
+    
+    <!-- Quick Analyze -->
+    <div class="quick-analyze">
+      <button id="quickAnalyze" class="analyze-btn">
+        <span class="btn-icon">📸</span>
+        <span class="btn-text">Quick Chart Analysis</span>
       </button>
     </div>
     
     <div id="status" class="status"></div>
     
+    <!-- Footer -->
     <div class="footer">
       <div class="server-status">
         <span class="status-indicator" id="server-indicator">●</span>

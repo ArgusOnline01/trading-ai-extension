@@ -221,73 +221,96 @@ async def get_prompt():
 
 @app.post("/ask", response_model=AskResponse)
 async def ask_about_chart(
-    image: UploadFile = File(...),
+    image: UploadFile = File(None),  # Phase 3B.1: Optional for text-only mode
     question: str = Form(...),
     model: str = Form(None),
-    messages: str = Form(None)
+    messages: str = Form(None),
+    context: str = Form(None)
 ):
     """
-    Ask a natural language question about a trading chart (Phase 3A: With conversation memory)
+    Ask a natural language question about a trading chart (Phase 3B: With session context)
     
     Args:
         image: Trading chart image file
         question: Natural language question about the chart
         model: Optional model selection (aliases: "fast", "balanced", "advanced" or direct model names)
         messages: Optional JSON string of previous conversation messages for context
+        context: Optional JSON string of session context (price, bias, POIs, etc.)
         
     Returns:
         AskResponse with model name and conversational answer
     """
     try:
-        # Validate file type
-        if not image.content_type or not image.content_type.startswith('image/'):
-            raise HTTPException(status_code=400, detail="File must be an image")
+        # Phase 3B.1: Handle optional image (text-only mode)
+        image_base64 = None
+        if image is not None:
+            # Validate file type
+            if not image.content_type or not image.content_type.startswith('image/'):
+                raise HTTPException(status_code=400, detail="File must be an image")
+            
+            # Read and process the image (reuse existing logic)
+            image_data = await image.read()
+            
+            if PIL_AVAILABLE:
+                # Full image processing with PIL
+                image_obj = Image.open(io.BytesIO(image_data))
+                
+                # Convert to RGB if necessary
+                if image_obj.mode != 'RGB':
+                    image_obj = image_obj.convert('RGB')
+                
+                # Resize if too large
+                max_size = 2048
+                if image_obj.width > max_size or image_obj.height > max_size:
+                    image_obj.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+                
+                # Convert to base64
+                buffer = io.BytesIO()
+                image_obj.save(buffer, format='JPEG', quality=85)
+                image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            else:
+                # Fallback to raw data
+                image_base64 = base64.b64encode(image_data).decode('utf-8')
+            
+            print(f"[INFO] Image mode: Image processed ({len(image_base64)} chars base64)")
+        else:
+            print("[INFO] Text-only mode: No image provided")
         
         # Resolve the model to use
         selected_model = resolve_model(model)
+        print(f"[MODEL] Request model: '{model}' -> Resolved to: '{selected_model}'")
         
-        # Read and process the image (reuse existing logic)
-        image_data = await image.read()
-        
-        if PIL_AVAILABLE:
-            # Full image processing with PIL
-            image_obj = Image.open(io.BytesIO(image_data))
-            
-            # Convert to RGB if necessary
-            if image_obj.mode != 'RGB':
-                image_obj = image_obj.convert('RGB')
-            
-            # Resize if too large
-            max_size = 2048
-            if image_obj.width > max_size or image_obj.height > max_size:
-                image_obj.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
-            
-            # Convert to base64
-            buffer = io.BytesIO()
-            image_obj.save(buffer, format='JPEG', quality=85)
-            image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-        else:
-            # Fallback to raw data
-            image_base64 = base64.b64encode(image_data).decode('utf-8')
-        
-        # Parse conversation history if provided
+        # Parse conversation history if provided (Phase 3B: take last 50 messages)
         conversation_history = []
         if messages:
             try:
                 parsed_messages = json.loads(messages)
-                # Take last 5 messages for context (to avoid token limits)
-                conversation_history = parsed_messages[-5:]
+                # Take last 50 messages for full context (Phase 3B upgrade from 5)
+                conversation_history = parsed_messages[-50:]
+                print(f"[OK] Received {len(conversation_history)} messages for context")
+                print(f"[DEBUG] First message: {conversation_history[0] if conversation_history else 'None'}")
             except json.JSONDecodeError as e:
-                print(f"Warning: Failed to parse messages: {e}")
+                print(f"[WARNING] Failed to parse messages: {e}")
                 # Continue without history if parsing fails
+        else:
+            print("[INFO] No messages field in request - first message in conversation")
         
-        # Get OpenAI client and create response with selected model and conversation context
+        # Parse session context if provided (Phase 3B)
+        session_context = {}
+        if context:
+            try:
+                session_context = json.loads(context)
+            except json.JSONDecodeError as e:
+                print(f"Warning: Failed to parse context: {e}")
+        
+        # Get OpenAI client and create response with selected model, conversation context, and session state
         client = get_client()
         response = await client.create_response(
             question, 
             image_base64, 
             model=selected_model,
-            conversation_history=conversation_history
+            conversation_history=conversation_history,
+            session_context=session_context
         )
         
         return AskResponse(
@@ -298,6 +321,10 @@ async def ask_about_chart(
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print("[ERROR] Exception in /ask endpoint:")
+        print(error_details)
         raise HTTPException(status_code=500, detail=f"Ask failed: {str(e)}")
 
 @app.get("/budget")
@@ -318,6 +345,267 @@ async def get_models():
         return list_available_models()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list models: {str(e)}")
+
+# ========== Phase 3B: Session Management Endpoints ==========
+
+# In-memory session storage (Phase 3B: Server-side session tracking)
+# In Phase 3C, this will be migrated to a proper database
+sessions_storage = {}
+
+class SessionCreate(BaseModel):
+    symbol: str
+    title: str = None
+
+class SessionUpdate(BaseModel):
+    title: str = None
+    context: dict = None
+
+@app.get("/sessions")
+async def list_sessions():
+    """
+    List all sessions (Phase 3B: Server-side session management)
+    
+    Returns:
+        List of session metadata
+    """
+    return {
+        "sessions": list(sessions_storage.values()),
+        "count": len(sessions_storage)
+    }
+
+@app.post("/sessions")
+async def create_session(session: SessionCreate):
+    """
+    Create a new trading session (Phase 3B)
+    
+    Args:
+        session: SessionCreate with symbol and optional title
+        
+    Returns:
+        Created session object
+    """
+    import time
+    session_id = f"{session.symbol}-{int(time.time() * 1000)}"
+    
+    new_session = {
+        "sessionId": session_id,
+        "symbol": session.symbol.upper(),
+        "title": session.title or f"{session.symbol.upper()} Session",
+        "created_at": int(time.time() * 1000),
+        "last_updated": int(time.time() * 1000),
+        "context": {
+            "latest_price": None,
+            "bias": None,
+            "last_poi": None,
+            "timeframe": None,
+            "notes": []
+        }
+    }
+    
+    sessions_storage[session_id] = new_session
+    return new_session
+
+@app.get("/sessions/{session_id}")
+async def get_session(session_id: str):
+    """
+    Get a specific session by ID (Phase 3B)
+    
+    Args:
+        session_id: Session identifier
+        
+    Returns:
+        Session object or 404
+    """
+    if session_id not in sessions_storage:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    return sessions_storage[session_id]
+
+@app.put("/sessions/{session_id}")
+async def update_session(session_id: str, update: SessionUpdate):
+    """
+    Update session metadata or context (Phase 3B)
+    
+    Args:
+        session_id: Session identifier
+        update: SessionUpdate with optional title and/or context
+        
+    Returns:
+        Updated session object
+    """
+    if session_id not in sessions_storage:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    import time
+    session = sessions_storage[session_id]
+    
+    if update.title:
+        session["title"] = update.title
+    
+    if update.context:
+        # Merge context (don't overwrite, update fields)
+        session["context"].update(update.context)
+    
+    session["last_updated"] = int(time.time() * 1000)
+    
+    sessions_storage[session_id] = session
+    return session
+
+@app.delete("/sessions/{session_id}")
+async def delete_session(session_id: str):
+    """
+    Delete a session (Phase 3B)
+    
+    Args:
+        session_id: Session identifier
+        
+    Returns:
+        Success message
+    """
+    if session_id not in sessions_storage:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    del sessions_storage[session_id]
+    return {"message": "Session deleted", "sessionId": session_id}
+
+@app.get("/sessions/{session_id}/memory")
+async def get_session_memory(session_id: str):
+    """
+    Get session context/memory (Phase 3B)
+    
+    Args:
+        session_id: Session identifier
+        
+    Returns:
+        Session context object
+    """
+    if session_id not in sessions_storage:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    return sessions_storage[session_id]["context"]
+
+@app.put("/sessions/{session_id}/memory")
+async def update_session_memory(session_id: str, context: dict):
+    """
+    Update session context/memory (Phase 3B)
+    
+    Args:
+        session_id: Session identifier
+        context: New context data to merge
+        
+    Returns:
+        Updated context object
+    """
+    if session_id not in sessions_storage:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    import time
+    session = sessions_storage[session_id]
+    session["context"].update(context)
+    session["last_updated"] = int(time.time() * 1000)
+    
+    sessions_storage[session_id] = session
+    return session["context"]
+
+# ========== Phase 3C: Hybrid Reasoning System ==========
+
+from hybrid_pipeline import hybrid_reasoning, clear_session_cache
+
+class HybridResponse(BaseModel):
+    model: str
+    answer: str
+    hybrid_mode: bool
+    vision_model: str
+    reasoning_model: str
+    cache_hit: bool
+
+@app.post("/hybrid", response_model=HybridResponse)
+async def hybrid_endpoint(
+    image: UploadFile = File(...),
+    question: str = Form(...),
+    model: str = Form("gpt-5-mini"),
+    session_id: str = Form("default"),
+    messages: str = Form(None),
+    force_refresh: bool = Form(False)
+):
+    """
+    Hybrid Vision → Reasoning Endpoint (Phase 3C)
+    
+    Enables GPT-5 Mini/Search to "see" charts via GPT-4o summaries.
+    Caches vision summaries per session for cost efficiency.
+    
+    Args:
+        image: Trading chart image
+        question: User's question
+        model: Reasoning model (gpt-5-mini, gpt-5-search-api, etc.)
+        session_id: Session identifier for caching
+        messages: JSON string of conversation history
+        force_refresh: Force new vision analysis (ignore cache)
+        
+    Returns:
+        HybridResponse with answer, model info, and cache status
+    """
+    try:
+        # Parse conversation history
+        conversation_history = []
+        if messages:
+            try:
+                parsed_messages = json.loads(messages)
+                conversation_history = parsed_messages[-10:]  # Last 10 for reasoning context
+                print(f"[HYBRID] Using {len(conversation_history)} messages for context")
+            except json.JSONDecodeError as e:
+                print(f"[WARNING] Failed to parse messages: {e}")
+        
+        # Run hybrid pipeline
+        result = await hybrid_reasoning(
+            image=image,
+            question=question,
+            reasoning_model=model,
+            session_id=session_id,
+            conversation_history=conversation_history,
+            force_refresh=force_refresh
+        )
+        
+        # Log results
+        cache_status = "CACHED" if result["cache_hit"] else "NEW"
+        print(f"[HYBRID] {cache_status} | Vision: {result['vision_model']} -> Reasoning: {result['reasoning_model']}")
+        
+        return HybridResponse(
+            model=result["model"],
+            answer=result["answer"],
+            hybrid_mode=result["hybrid_mode"],
+            vision_model=result["vision_model"],
+            reasoning_model=result["reasoning_model"],
+            cache_hit=result["cache_hit"]
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print("[ERROR] Exception in /hybrid endpoint:")
+        print(error_details)
+        raise HTTPException(status_code=500, detail=f"Hybrid reasoning failed: {str(e)}")
+
+@app.delete("/hybrid/cache/{session_id}")
+async def clear_hybrid_cache(session_id: str):
+    """
+    Clear cached vision summaries for a session (Phase 3C)
+    
+    Call this when user uploads a new chart or changes symbol.
+    
+    Args:
+        session_id: Session identifier
+        
+    Returns:
+        Status message
+    """
+    try:
+        result = await clear_session_cache(session_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cache clear failed: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

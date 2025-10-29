@@ -47,17 +47,19 @@ class OpenAIClient:
     
     async def create_response(self, 
                             question: str, 
-                            image_base64: str, 
+                            image_base64: str = None,  # Phase 3B.1: Optional for text-only mode
                             model: str = DEFAULT_MODEL,
-                            conversation_history: list = None) -> Dict[str, Any]:
+                            conversation_history: list = None,
+                            session_context: dict = None) -> Dict[str, Any]:
         """
-        Create a conversational response about a trading chart (Phase 3A: With memory)
+        Create a conversational response about a trading chart (Phase 3B.1: Text-only support)
         
         Args:
             question: User's question about the chart
-            image_base64: Base64 encoded chart image
+            image_base64: Base64 encoded chart image (optional for text-only mode)
             model: OpenAI model to use
             conversation_history: Optional list of previous messages for context
+            session_context: Optional session state (price, bias, POIs, etc.)
             
         Returns:
             Dict with model name and answer
@@ -75,6 +77,24 @@ and actionable advice. Be concise but thorough in your analysis.
 When the user references previous messages (e.g., "the setup I showed earlier", "that chart", 
 "as you mentioned"), use the conversation history to provide coherent, contextual responses."""
             
+            # Phase 3B: Inject session context if available
+            if session_context:
+                context_str = "\n\n[SESSION CONTEXT]:\n"
+                if session_context.get("latest_price"):
+                    context_str += f"Latest Price: {session_context['latest_price']}\n"
+                if session_context.get("bias"):
+                    context_str += f"Current Bias: {session_context['bias']}\n"
+                if session_context.get("last_poi"):
+                    context_str += f"Last POI: {session_context['last_poi']}\n"
+                if session_context.get("timeframe"):
+                    context_str += f"Timeframe: {session_context['timeframe']}\n"
+                if session_context.get("notes"):
+                    notes = session_context["notes"]
+                    if notes:
+                        context_str += f"Notes: {', '.join(notes[:3])}\n"  # Show first 3 notes
+                
+                system_prompt += context_str
+            
             # Build messages array starting with system prompt
             messages = [
                 {
@@ -83,32 +103,56 @@ When the user references previous messages (e.g., "the setup I showed earlier", 
                 }
             ]
             
-            # Add conversation history if provided (for context)
+            # Phase 3B.1: Token truncation - limit conversation history if needed
             if conversation_history:
-                for msg in conversation_history:
+                # Estimate tokens (rough: 1 token ≈ 4 chars)
+                estimated_tokens = sum(len(str(msg.get('content', ''))) // 4 for msg in conversation_history)
+                
+                if estimated_tokens > 8000:
+                    print(f"[Token Optimization] History has ~{estimated_tokens} tokens, truncating to last 20 messages")
+                    conversation_history = conversation_history[-20:]
+                    estimated_tokens = sum(len(str(msg.get('content', ''))) // 4 for msg in conversation_history)
+                    print(f"[Token Optimization] Reduced to ~{estimated_tokens} tokens")
+                
+                print(f"[DEBUG] Adding {len(conversation_history)} messages to context")
+                for i, msg in enumerate(conversation_history):
                     # Only include text content from history (no images from past messages)
                     if msg.get("role") in ["user", "assistant"]:
+                        # Safe logging without emojis for Windows console
+                        content_preview = msg['content'][:50] if isinstance(msg['content'], str) else str(type(msg['content']))
+                        safe_preview = content_preview.encode('ascii', 'ignore').decode('ascii')
+                        print(f"[DEBUG] Message {i}: role={msg['role']}, content preview={safe_preview}")
                         messages.append({
                             "role": msg["role"],
                             "content": msg["content"]
                         })
+                    else:
+                        print(f"[DEBUG] Skipping message {i} with role: {msg.get('role')}")
             
-            # Add current question with image
-            messages.append({
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": question
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{image_base64}"
+            # Phase 3B.1: Add current question (with or without image)
+            if image_base64:
+                # Vision mode: include image
+                messages.append({
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": question
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_base64}"
+                            }
                         }
-                    }
-                ]
-            })
+                    ]
+                })
+            else:
+                # Text-only mode: no image
+                messages.append({
+                    "role": "user",
+                    "content": question
+                })
             
             # Use the older OpenAI API format for compatibility
             # GPT-5 uses max_completion_tokens instead of max_tokens
@@ -131,6 +175,9 @@ When the user references previous messages (e.g., "the setup I showed earlier", 
             # Extract response
             answer = response['choices'][0]['message']['content'].strip() if response['choices'][0]['message']['content'] else ""
             tokens_used = response.get('usage', {}).get('total_tokens', 0)
+            actual_model = response.get('model', model)  # Get actual model used by API
+            
+            print(f"[OPENAI] Actual model used: '{actual_model}' | Tokens: {tokens_used}")
             
             # Track cost
             add_cost(tokens_used)
@@ -199,9 +246,14 @@ def list_available_models() -> Dict[str, Any]:
 # --- Dynamic Model Selection Helper ---
 
 MODEL_ALIASES = {
-    "fast": "gpt-4o-mini",    # Fastest, cheapest  
-    "balanced": "gpt-4o",     # Default, stable
-    "advanced": "gpt-4o"      # Best available (GPT-5 vision support pending)
+    # Phase 3C: Optimized model selection (GPT-5 Search as default)
+    "fast": "gpt-5-chat-latest",          # GPT-5 Chat Latest with VISION
+    "balanced": "gpt-5-search-api-2025-10-14",  # GPT-5 Search (default, hybrid mode)
+    "advanced": "gpt-4o",                 # GPT-4o (reliable vision fallback)
+    # Alternative models
+    "gpt5-mini": "gpt-5-mini",            # GPT-5 Mini (has conversation history issues)
+    "gpt4o": "gpt-4o",                    # GPT-4o (vision capable)
+    "gpt4o-mini": "gpt-4o-mini"           # GPT-4o-mini (budget option)
 }
 
 def resolve_model(requested_model: Optional[str]) -> str:
@@ -239,7 +291,7 @@ def resolve_model(requested_model: Optional[str]) -> str:
 def sync_model_aliases() -> Dict[str, str]:
     """
     Automatically sync MODEL_ALIASES with available models.
-    Updates 'advanced' alias to use GPT-5 if detected, otherwise falls back to GPT-4o.
+    Phase 3B.2: GPT-5 models are now primary user-facing options.
     
     Returns:
         Updated MODEL_ALIASES dictionary
@@ -248,21 +300,26 @@ def sync_model_aliases() -> Dict[str, str]:
         model_info = list_available_models()
         
         if model_info['gpt_5_detected']:
-            # Prefer gpt-5-mini for vision support (base gpt-5 doesn't support vision yet)
             gpt5_variants = model_info['gpt_5_variants']
-            if 'gpt-5-mini' in gpt5_variants:
-                MODEL_ALIASES['advanced'] = 'gpt-5-mini'
-            elif 'gpt-5' in gpt5_variants:
-                MODEL_ALIASES['advanced'] = 'gpt-5'
-            elif gpt5_variants:
-                # Use the first available GPT-5 variant
-                MODEL_ALIASES['advanced'] = gpt5_variants[0]
+            working_gpt5_models = [
+                'gpt-5-chat-latest',
+                'gpt-5-mini',
+                'gpt-5-mini-2025-08-07',
+                'gpt-5-search-api',
+                'gpt-5-search-api-2025-10-14'
+            ]
             
-            print(f"GPT-5 detected! Updated 'advanced' alias to: {MODEL_ALIASES['advanced']}")
-        else:
-            # Fallback to GPT-4o if GPT-5 not available
-            MODEL_ALIASES['advanced'] = 'gpt-4o'
-            print("GPT-5 not available. 'advanced' alias set to: gpt-4o")
+            # Update primary aliases with best available GPT-5 models
+            if 'gpt-5-chat-latest' in gpt5_variants:
+                MODEL_ALIASES['fast'] = 'gpt-5-chat-latest'
+            if 'gpt-5-search-api-2025-10-14' in gpt5_variants:
+                MODEL_ALIASES['balanced'] = 'gpt-5-search-api-2025-10-14'
+            
+            available_working = [m for m in working_gpt5_models if m in gpt5_variants]
+            print(f"[Phase 3C] GPT-5 Models Active: {len(available_working)} variants available")
+            print(f"  Fast: {MODEL_ALIASES['fast']} (native vision)")
+            print(f"  Balanced: {MODEL_ALIASES['balanced']} (hybrid mode - RECOMMENDED)")
+            print(f"  Advanced: {MODEL_ALIASES['advanced']} (GPT-4o vision)")
         
         return MODEL_ALIASES.copy()
     except Exception as e:

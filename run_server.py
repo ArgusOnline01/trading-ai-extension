@@ -8,9 +8,13 @@ import sys
 import subprocess
 from pathlib import Path
 
-def setup_api_key(server_dir):
-    """Setup API key from .env file or prompt user"""
+def setup_api_key(server_dir, provided_key=None):
+    """Setup API key from .env file, argument, or prompt user"""
     env_file = server_dir / ".env"
+    
+    # First, try provided key from command line
+    if provided_key:
+        return provided_key
     
     # Try to load from .env file
     if env_file.exists():
@@ -64,8 +68,14 @@ def main():
     os.chdir(server_dir)
     print(f"Working directory: {os.getcwd()}")
     
+    # Check for API key as command-line argument
+    provided_key = None
+    if len(sys.argv) > 1:
+        provided_key = sys.argv[1]
+        print("Using API key from command line argument")
+    
     # Setup API key
-    api_key = setup_api_key(server_dir)
+    api_key = setup_api_key(server_dir, provided_key)
     os.environ["OPENAI_API_KEY"] = api_key
     print("API key configured")
     

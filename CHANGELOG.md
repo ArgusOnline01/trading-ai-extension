@@ -2,6 +2,136 @@
 
 All notable changes to Visual Trade Copilot will be documented in this file.
 
+## [3.3.2] - Session Manager Scrolling Fix - 2025-10-29
+
+### Fixed
+- **Session Manager Display**: Added scrolling to sessions list to show all sessions (was only showing 2 visible)
+- **Modal Overflow**: Fixed CSS `min-height: 0` for proper flex scrolling behavior
+- **Sessions List**: Added max-height and overflow-y to enable scrolling when many sessions exist
+
+### Added
+- Debug logging to show total session count in console
+
+---
+
+## [3.3.1] - Phase 3C: Model Optimization & UX Polish - 2025-10-29
+
+### Changed
+- **Default Model**: Changed "Balanced" to use GPT-5 Search (hybrid mode) instead of GPT-5 Mini
+- **Model Aliases Updated**: 
+  - Fast: GPT-5 Chat Latest (native vision, **no caching**)
+  - Balanced: GPT-5 Search API (hybrid mode, **with caching**) ← **NEW DEFAULT**
+  - Advanced: GPT-4o (native vision, **no caching**)
+- **Caching Strategy**: Only GPT-5 Search uses hybrid pipeline with caching; GPT-5 Chat and GPT-4o use direct vision
+- **Optimized Chat Size**: Set default width to 620px (balanced between content visibility and not covering chart prices)
+- **Compact Header Layout**: Reorganized header to use vertical flex layout with smaller controls
+- **Model Selector**: Reorganized to show recommended models first, marked GPT-5 Mini as "Limited"
+- **Smaller UI Elements**: Reduced padding and font sizes for more compact header
+
+### Fixed
+- **Emoji Crash**: AI responses containing emojis no longer crash server with Error 500
+- **Unicode Encoding**: ASCII-safe debug logging prevents Windows console crashes
+- Indentation errors in `openai_client.py`
+- Auto-routing logic updated to reflect new model assignments
+- Chat panel no longer covers price section on trading charts
+
+---
+
+## [3.3.0] - Phase 3C: Hybrid Vision → Reasoning Bridge - 2025-10-29
+
+### Added
+- **Hybrid Pipeline**: GPT-4o vision extraction → GPT-5 reasoning for cost-efficient analysis
+- **Smart Image Cache**: MD5 hash-based cache invalidation (auto-refreshes on new charts)
+- **Session-Based Caching**: Vision summaries cached per session for 60% cost reduction on follow-ups
+- **Auto-Routing**: Frontend automatically detects text-only models and enables hybrid mode
+- **Cost Optimization**: ~40% average savings for multi-question trading sessions
+- **Two New Endpoints**:
+  - `POST /hybrid` - Hybrid vision→reasoning endpoint
+  - `DELETE /hybrid/cache/{id}` - Clear session vision cache
+- **Debug Logging**: Extensive hybrid mode logging for troubleshooting
+- **Unicode Fix**: Removed special characters from server logs for Windows compatibility
+
+### Changed
+- Model aliases now resolve before being sent to OpenAI API
+- `/hybrid` endpoint auto-detects image changes via hash comparison
+- Cache automatically clears when new chart image detected
+- Debug overlay shows "🧠 Hybrid (4o→5)" mode in pink color
+- Notification messages updated for hybrid mode confirmation
+
+### Fixed
+- Import errors in `hybrid_pipeline.py` (relative to absolute imports)
+- Unicode encoding errors in server print statements
+- Model alias resolution in hybrid reasoning calls
+
+### Technical Details
+- **New Files**: `server/cache.py`, `server/hybrid_pipeline.py`
+- **Image Hashing**: MD5 hash computed before GPT-4o call to avoid duplicate vision API calls
+- **Cache Logic**: Only uses cache if image hash matches previous request
+- **Working Models**: GPT-5 Chat Latest (native vision), GPT-5 Search (hybrid), GPT-4o/Mini (native vision)
+
+### Performance
+- First request: GPT-4o vision (~300 tokens) + GPT-5 reasoning (~1,400 tokens)
+- Follow-ups (same chart): GPT-5 reasoning only (~1,400 tokens) = 60% cheaper
+- Average (3 follow-ups): ~40% cost reduction vs. direct vision calls
+
+---
+
+## [3.1.0] - Phase 3B: Multi-Session Memory - 2025-01-29
+
+### ✨ Added
+- **Multi-session management** - Unlimited trading sessions per symbol
+- **Session manager UI** - Modal interface for managing all sessions
+- **IndexedDB v2 schema** - Separate stores for sessions and messages
+- **Automatic context extraction** - Tracks price, bias, POIs from conversations
+- **Context state injection** - AI remembers session-specific trading context
+- **50-message context window** - Up from 5 messages (10x increase)
+- **Session export/import** - Download sessions as JSON
+- **Session statistics** - Message counts, creation time, last updated
+- **Toast notifications** - Visual feedback for all session operations
+- **Empty state UI** - Helpful guidance for new sessions
+- **7 new backend endpoints** - Full session CRUD API
+- **Hybrid reasoning placeholder** - `/analyze/hybrid` for Phase 3C
+
+### 🔧 Changed
+- Completely rewrote `content.js` (~800 lines) for session management
+- Upgraded IndexedDB from v1 to v2 with automatic migration
+- Enhanced `/ask` endpoint to accept session context parameter
+- Updated `openai_client.py` to inject context into AI prompts
+- Increased backend message context limit from 5 to 50
+- Updated background.js to retrieve and pass session context
+- Extension version bumped to 3.1.0
+
+### 🗂️ New Files
+- `content/idb.js` - Complete IndexedDB wrapper (600+ lines)
+- `PHASE_3B_SUMMARY.md` - Comprehensive documentation
+
+### 📚 Documentation
+- Added Phase 3B summary with full technical details
+- Updated API documentation with session endpoints
+- Added 10 test scenarios for session operations
+- Documented context extraction and injection patterns
+
+### ⚙️ API Changes
+**New Endpoints:**
+- `GET /sessions` - List all sessions
+- `POST /sessions` - Create new session
+- `GET /sessions/{id}` - Get session details
+- `PUT /sessions/{id}` - Update session
+- `DELETE /sessions/{id}` - Delete session
+- `GET /sessions/{id}/memory` - Get session context
+- `PUT /sessions/{id}/memory` - Update session context
+- `POST /analyze/hybrid` - Placeholder (501)
+
+**Enhanced Endpoints:**
+- `POST /ask` - Now accepts `context` parameter (session state)
+
+### 🔄 Migration
+- Automatic migration from Phase 3A on first load
+- Old chat_history → Default session in new structure
+- Zero data loss during upgrade
+
+---
+
 ## [3.0.0] - Phase 3A: Conversational Memory - 2025-01-28
 
 ### ✨ Added

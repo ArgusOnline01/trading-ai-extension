@@ -1,11 +1,11 @@
-/* Visual Trade Copilot - Overlay Styles (Phase 3A: Chat Panel) */
-/* Persistent chat interface with conversational memory */
+/* Visual Trade Copilot - Overlay Styles (Phase 3B: Multi-Session Memory) */
+/* Persistent chat interface with session management */
 
 .vtc-chat-panel {
   position: fixed;
   top: 0;
   right: 0;
-  width: 420px;
+  width: 620px;
   height: 100vh;
   max-height: 100vh;
   background: linear-gradient(135deg, #1c1c1c 0%, #2a2a2a 100%);
@@ -19,10 +19,90 @@
   box-shadow: -4px 0 24px rgba(0, 0, 0, 0.8);
   transform: translateX(100%);
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  resize: both;
   overflow: hidden;
   min-width: 320px;
   min-height: 400px;
+  max-width: 90vw;
+}
+
+/* Multi-directional resize handles */
+.vtc-resize-handle {
+  position: absolute;
+  z-index: 10;
+  background: transparent;
+}
+
+.vtc-resize-handle:hover {
+  background: rgba(255, 215, 0, 0.3);
+}
+
+/* Top edge */
+.vtc-resize-top {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+/* Bottom edge */
+.vtc-resize-bottom {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+/* Left edge */
+.vtc-resize-left {
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+/* Right edge */
+.vtc-resize-right {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+/* Corners */
+.vtc-resize-topleft {
+  top: 0;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+}
+
+.vtc-resize-topright {
+  top: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nesw-resize;
+}
+
+.vtc-resize-bottomleft {
+  bottom: 0;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nesw-resize;
+}
+
+.vtc-resize-bottomright {
+  bottom: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
 }
 
 .vtc-chat-panel.vtc-visible {
@@ -46,11 +126,11 @@
 /* ========== Header ========== */
 
 .vtc-header {
-  padding: 16px;
+  padding: 12px 16px;
   background: linear-gradient(135deg, #111 0%, #1a1a1a 100%);
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 8px;
   border-bottom: 1px solid rgba(255, 215, 0, 0.2);
   flex-shrink: 0;
   cursor: move;
@@ -60,7 +140,10 @@
 .vtc-title {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  width: 100%;
 }
 
 .vtc-icon {
@@ -77,7 +160,8 @@
 
 .vtc-controls {
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .vtc-control-btn {
@@ -185,23 +269,55 @@
 }
 
 .vtc-avatar {
-  width: 32px;
-  height: 32px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 24px;
   flex-shrink: 0;
   background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s ease;
 }
 
 .vtc-message.vtc-user .vtc-avatar {
-  background: rgba(255, 215, 0, 0.1);
+  background: linear-gradient(135deg, rgba(100, 149, 237, 0.25) 0%, rgba(100, 149, 237, 0.15) 100%);
+  border: 2px solid rgba(100, 149, 237, 0.6);
+  box-shadow: 0 2px 10px rgba(100, 149, 237, 0.4);
 }
 
 .vtc-message.vtc-assistant .vtc-avatar {
-  background: rgba(100, 149, 237, 0.1);
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.25) 0%, rgba(255, 215, 0, 0.15) 100%);
+  border: 2px solid rgba(255, 215, 0, 0.6);
+  box-shadow: 0 2px 10px rgba(255, 215, 0, 0.4);
+}
+
+.vtc-message-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s ease;
+}
+
+.vtc-message.user .vtc-message-avatar {
+  background: linear-gradient(135deg, rgba(100, 149, 237, 0.25) 0%, rgba(100, 149, 237, 0.15) 100%);
+  border: 2px solid rgba(100, 149, 237, 0.6);
+  box-shadow: 0 2px 10px rgba(100, 149, 237, 0.4);
+}
+
+.vtc-message.assistant .vtc-message-avatar {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.25) 0%, rgba(255, 215, 0, 0.15) 100%);
+  border: 2px solid rgba(255, 215, 0, 0.6);
+  box-shadow: 0 2px 10px rgba(255, 215, 0, 0.4);
 }
 
 .vtc-message-content {
@@ -209,7 +325,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-width: calc(100% - 42px);
+  max-width: calc(100% - 52px);
 }
 
 .vtc-bubble {
@@ -421,5 +537,449 @@
 @media print {
   .vtc-chat-panel {
     display: none;
+  }
+}
+
+/* ========== Phase 3B: Session Manager & Multi-Session UI ========== */
+
+/* Session Badge in Header */
+.vtc-session-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: rgba(255, 215, 0, 0.15);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #ffd700;
+  margin-left: 8px;
+  cursor: help;
+  transition: all 0.2s ease;
+}
+
+.vtc-session-badge:hover {
+  background: rgba(255, 215, 0, 0.25);
+  border-color: #ffd700;
+}
+
+/* Phase 3B.2: Model Selector */
+.vtc-model-selector {
+  background: rgba(0, 255, 153, 0.1);
+  color: #00ff99;
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  border: 1px solid rgba(0, 255, 153, 0.3);
+  cursor: pointer;
+  margin-left: 6px;
+  transition: all 0.2s ease;
+  max-width: 180px;
+}
+
+.vtc-model-selector:hover {
+  background: rgba(0, 255, 153, 0.2);
+  border-color: #00ff99;
+}
+
+.vtc-model-selector:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(0, 255, 153, 0.3);
+}
+
+.vtc-model-selector option {
+  background: #1c1c1c;
+  color: #e0e0e0;
+}
+
+/* Session Manager Modal */
+.vtc-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+  z-index: 2147483646; /* Below chat panel */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.vtc-modal.vtc-modal-visible {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.vtc-modal-content {
+  background: linear-gradient(135deg, #1c1c1c 0%, #2a2a2a 100%);
+  border: 2px solid #ffd700;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.9);
+  overflow: hidden;
+}
+
+.vtc-modal-header {
+  padding: 20px 24px;
+  background: linear-gradient(135deg, #111 0%, #1a1a1a 100%);
+  border-bottom: 1px solid rgba(255, 215, 0, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.vtc-modal-header h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #ffd700;
+}
+
+.vtc-close-modal {
+  background: transparent;
+  border: none;
+  color: #999;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.vtc-close-modal:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.vtc-modal-body {
+  padding: 20px 24px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0; /* Important for flex scrolling */
+}
+
+/* Primary Button */
+.vtc-btn-primary {
+  width: 100%;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+  border: none;
+  border-radius: 8px;
+  color: #000;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+  margin-bottom: 20px;
+}
+
+.vtc-btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(255, 215, 0, 0.4);
+}
+
+.vtc-btn-primary:active {
+  transform: translateY(0);
+}
+
+/* Sessions List */
+.vtc-sessions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: calc(80vh - 250px); /* Ensure scrolling works */
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.vtc-session-item {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.vtc-session-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 215, 0, 0.3);
+  transform: translateX(4px);
+}
+
+.vtc-session-item.active {
+  background: rgba(255, 215, 0, 0.15);
+  border-color: #ffd700;
+}
+
+.vtc-session-info {
+  flex: 1;
+}
+
+.vtc-session-symbol {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffd700;
+  margin-bottom: 4px;
+}
+
+.vtc-session-title {
+  font-size: 14px;
+  color: #e0e0e0;
+  margin-bottom: 6px;
+}
+
+.vtc-session-meta {
+  font-size: 11px;
+  color: #888;
+}
+
+.vtc-session-stats {
+  color: #ffd700;
+  font-weight: 600;
+}
+
+.vtc-session-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.vtc-session-actions button {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.vtc-session-actions button:hover {
+  background: rgba(255, 215, 0, 0.2);
+  border-color: #ffd700;
+  transform: scale(1.1);
+}
+
+.vtc-session-delete:hover {
+  background: rgba(255, 59, 48, 0.2) !important;
+  border-color: #ff3b30 !important;
+}
+
+/* Toast Notifications */
+.vtc-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  padding: 12px 20px;
+  background: #2a2a2a;
+  border: 1px solid #ffd700;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  z-index: 2147483648; /* Above everything */
+  transform: translateY(100px);
+  opacity: 0;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+.vtc-toast.vtc-toast-visible {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.vtc-toast.vtc-toast-error {
+  background: #ff3b30;
+  border-color: #ff1744;
+}
+
+.vtc-toast.vtc-toast-success {
+  background: #34c759;
+  border-color: #00e676;
+}
+
+.vtc-toast.vtc-toast-info {
+  background: #007aff;
+  border-color: #2196f3;
+}
+
+/* Empty State */
+.vtc-empty-state {
+  text-align: center;
+  padding: 60px 40px;
+  color: #888;
+}
+
+.vtc-empty-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.vtc-empty-state h4 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #e0e0e0;
+  margin: 0 0 12px 0;
+}
+
+.vtc-empty-state p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #999;
+  margin: 0;
+}
+
+/* Session Manager Responsive */
+@media (max-width: 768px) {
+  .vtc-modal-content {
+    width: 95%;
+    max-height: 90vh;
+  }
+  
+  .vtc-session-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  
+  .vtc-session-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+/* ========== Phase 3B.1: Token Efficiency UI ========== */
+
+/* Dual Send Controls */
+.vtc-send-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.vtc-btn-text,
+.vtc-btn-image {
+  border: none;
+  padding: 10px 16px;
+  margin: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-weight: 600;
+  font-size: 14px;
+  flex: 1;
+  white-space: nowrap;
+}
+
+.vtc-btn-text {
+  background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%);
+  color: #00ff99;
+  border: 1px solid #00ff99;
+}
+
+.vtc-btn-text:hover {
+  background: linear-gradient(135deg, #3d3d3d 0%, #2a2a2a 100%);
+  color: #ffd700;
+  border-color: #ffd700;
+  transform: translateY(-1px);
+}
+
+.vtc-btn-text:active {
+  transform: translateY(0);
+}
+
+.vtc-btn-image {
+  background: linear-gradient(135deg, #2d2d2d 0%, #1a1a1a 100%);
+  color: #ffd700;
+  border: 1px solid #ffd700;
+}
+
+.vtc-btn-image:hover {
+  background: linear-gradient(135deg, #3d3d3d 0%, #2a2a2a 100%);
+  color: #00ff99;
+  border-color: #00ff99;
+  transform: translateY(-1px);
+}
+
+.vtc-btn-image:active {
+  transform: translateY(0);
+}
+
+.vtc-btn-text:disabled,
+.vtc-btn-image:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Debug Overlay (Token/Cost Display) - Sticks to left of chat panel */
+#vtc-debug-overlay {
+  position: fixed;
+  bottom: 80px;
+  right: auto; /* Changed from fixed position */
+  background: rgba(30, 30, 30, 0.92);
+  color: #00ff99;
+  font-size: 12px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  user-select: none;
+  z-index: 2147483646;
+  border: 1px solid #00ff99;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  line-height: 1.5;
+  transition: opacity 0.5s ease, transform 0.2s ease, box-shadow 0.2s ease, left 0.3s ease;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+#vtc-debug-overlay:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.8);
+}
+
+/* Responsive adjustments for debug overlay */
+@media (max-width: 1200px) {
+  #vtc-debug-overlay {
+    right: 12px;
+    bottom: 80px;
+  }
+}
+
+@media (max-width: 768px) {
+  .vtc-send-controls {
+    flex-direction: column;
+  }
+  
+  .vtc-btn-text,
+  .vtc-btn-image {
+    width: 100%;
   }
 }

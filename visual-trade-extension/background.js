@@ -28,21 +28,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try {
         const tabId = sender.tab.id;
         const question = message.question;
+        const includeImage = message.includeImage !== false; // Default to true for backward compatibility
         
-        // Get model preference from storage or use default
-        const model = "balanced";
+        // Phase 3B.2: Get model from message or use default
+        const model = message.model || "balanced";
         
-        // Capture the visible tab
-        const imageDataUrl = await chrome.tabs.captureVisibleTab(sender.tab.windowId, {
-          format: "png"
-        });
+        // Phase 3C: Auto-route to /hybrid for text-only models with images
+        // Note: "balanced" (GPT-5 Search) uses hybrid with caching
+        //       "fast" (GPT-5 Chat) has native vision - no caching needed
+        //       "advanced" (GPT-4o) has native vision
+        const textOnlyModels = ["balanced", "gpt5-mini", "gpt-5-mini", "gpt-5-mini-2025-08-07", "gpt-5-search-api", "gpt-5-search-api-2025-10-14"];
+        const useHybrid = includeImage && textOnlyModels.includes(model);
         
-        // Convert to blob
-        const response = await fetch(imageDataUrl);
-        const blob = await response.blob();
+        // Phase 3B.1: Only capture image if needed
+        let blob = null;
+        if (includeImage) {
+          // Capture the visible tab
+          const imageDataUrl = await chrome.tabs.captureVisibleTab(sender.tab.windowId, {
+            format: "png"
+          });
+          
+          // Convert to blob
+          const response = await fetch(imageDataUrl);
+          blob = await response.blob();
+        }
         
-        // Get chat history
+        // Get chat history and session context (Phase 3B)
         let chatHistory = [];
+        let sessionContext = {};
         try {
           const historyResponse = await chrome.tabs.sendMessage(tabId, {
             action: "getChatHistory"
@@ -50,27 +63,49 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (historyResponse && historyResponse.history) {
             chatHistory = historyResponse.history;
           }
+          if (historyResponse && historyResponse.context) {
+            sessionContext = historyResponse.context;
+          }
         } catch (error) {
           console.log("No history available");
         }
         
         // Prepare form data
         const formData = new FormData();
-        formData.append("image", blob, "chart.png");
+        // Phase 3B.1: Only append image if captured
+        if (blob) {
+          formData.append("image", blob, "chart.png");
+        }
         formData.append("question", question);
         formData.append("model", model);
         
-        // Add recent messages for context
+        // Add recent messages for context (Phase 3B: up to 50 messages)
         if (chatHistory.length > 0) {
-          const recentMessages = chatHistory.slice(-5).map(msg => ({
+          const recentMessages = chatHistory.slice(-50).map(msg => ({
             role: msg.role,
             content: msg.content
           }));
+          console.log("📚 Sending", recentMessages.length, "messages to backend for context");
           formData.append("messages", JSON.stringify(recentMessages));
+        } else {
+          console.log("⚠️ No chat history found - first message in session");
         }
         
+        // Add session context (Phase 3B)
+        if (Object.keys(sessionContext).length > 0) {
+          formData.append("context", JSON.stringify(sessionContext));
+        }
+        
+        // Phase 3C: Add session ID for caching
+        const sessionId = message.sessionId || "default";
+        formData.append("session_id", sessionId);
+        
+        // Phase 3C: Determine endpoint (hybrid for text-only models with images)
+        const endpoint = useHybrid ? "/hybrid" : "/ask";
+        console.log(`[ROUTE] Using ${endpoint} endpoint for model: ${model}${useHybrid ? " (HYBRID MODE)" : ""}`);
+        
         // Send to backend
-        const apiResponse = await fetch("http://127.0.0.1:8765/ask", {
+        const apiResponse = await fetch(`http://127.0.0.1:8765${endpoint}`, {
           method: "POST",
           body: formData
         });
@@ -81,12 +116,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         
         const data = await apiResponse.json();
         
+        // Phase 3C: Include hybrid mode info in response
+        if (useHybrid) {
+          data.hybrid_mode = true;
+          data.vision_model = data.vision_model || "gpt-4o";
+          data.reasoning_model = data.reasoning_model || model;
+        }
+        
         // Send result back to content script
         await chrome.tabs.sendMessage(tabId, {
           action: "showOverlay",
           payload: {
             question: question,
-            response: data
+            response: data,
+            hybrid_mode: useHybrid
           }
         });
         

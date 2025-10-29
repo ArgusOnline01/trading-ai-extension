@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Visual Trade Copilot</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <div class="header">
+      <h2>Visual Trade Copilot</h2>
+      <div class="subtitle">AI-Powered SMC Analysis</div>
+    </div>
+    
+    <div class="section">
+      <label for="model">AI Model:</label>
+      <select id="model" class="model-select">
+        <option value="balanced">⚖️ Balanced (GPT-4o)</option>
+        <option value="fast">⚡ Fast (GPT-4o-mini)</option>
+        <option value="advanced">🧠 Advanced (GPT-4o)</option>
+      </select>
+    </div>
+    
+    <div class="section">
+      <label for="question">Question (optional):</label>
+      <textarea 
+        id="question" 
+        class="question-input" 
+        placeholder="Ask about market structure, entry points, risk management..."
+        rows="3"
+      ></textarea>
+    </div>
+    
+    <div class="section">
+      <button id="analyze" class="analyze-btn">
+        <span class="btn-icon">📸</span>
+        <span class="btn-text">Analyze Chart</span>
+      </button>
+    </div>
+    
+    <div class="section">
+      <button id="toggleChat" class="toggle-chat-btn">
+        <span class="btn-icon">💬</span>
+        <span class="btn-text">Open Chat Panel</span>
+      </button>
+    </div>
+    
+    <div id="status" class="status"></div>
+    
+    <div class="footer">
+      <div class="server-status">
+        <span class="status-indicator" id="server-indicator">●</span>
+        <span id="server-text">Checking server...</span>
+      </div>
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
+

@@ -125,13 +125,14 @@ def validate_analysis_result(analysis: Dict[str, Any]) -> Dict[str, Any]:
     
     return analysis
 
-async def analyze_chart_with_gpt4v(image_base64: str, api_key: str) -> Dict[str, Any]:
+async def analyze_chart_with_gpt4v(image_base64: str, api_key: str, model: str = "gpt-4o") -> Dict[str, Any]:
     """
     Send the chart image to GPT-4 Vision API for analysis.
     
     Args:
         image_base64: Base64 encoded image data
         api_key: OpenAI API key
+        model: OpenAI model to use (default: gpt-4o)
         
     Returns:
         Validated analysis result
@@ -140,10 +141,11 @@ async def analyze_chart_with_gpt4v(image_base64: str, api_key: str) -> Dict[str,
     openai.api_key = api_key
     
     try:
-        # Use the older OpenAI API format
-        response = await openai.ChatCompletion.acreate(
-            model="gpt-4-vision-preview",  # Use the vision model available in older versions
-            messages=[
+        # Use the current OpenAI API format
+        # GPT-5 uses max_completion_tokens instead of max_tokens
+        api_params = {
+            "model": model,
+            "messages": [
                 {
                     "role": "user",
                     "content": [
@@ -159,10 +161,19 @@ async def analyze_chart_with_gpt4v(image_base64: str, api_key: str) -> Dict[str,
                         }
                     ]
                 }
-            ],
-            max_tokens=500,
-            temperature=0.1  # Low temperature for consistent analysis
-        )
+            ]
+        }
+        
+        # GPT-5 models use max_completion_tokens, older models use max_tokens
+        # GPT-5 also doesn't support custom temperature (only default of 1)
+        if 'gpt-5' in model.lower() or 'o1' in model.lower() or 'o3' in model.lower():
+            api_params["max_completion_tokens"] = 500
+            # GPT-5 only supports temperature=1 (default), so we don't set it
+        else:
+            api_params["max_tokens"] = 500
+            api_params["temperature"] = 0.1  # Low temperature for consistent analysis
+        
+        response = await openai.ChatCompletion.acreate(**api_params)
         
         # Extract and parse the JSON response
         content = response['choices'][0]['message']['content'].strip()

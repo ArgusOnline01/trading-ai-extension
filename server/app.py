@@ -1,11 +1,13 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import base64
 import io
 import json
 import os
 from dotenv import load_dotenv
 from decision import analyze_chart_with_gpt4v, get_base_prompt
+from openai_client import get_client, get_budget_status, resolve_model, list_available_models, sync_model_aliases
 
 # Try to import PIL, but make it optional for now
 try:
@@ -41,18 +43,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Sync model aliases at startup to auto-detect GPT-5
+@app.on_event("startup")
+async def startup_event():
+    """Run model alias sync on server startup"""
+    try:
+        print("Syncing model aliases with OpenAI API...")
+        sync_model_aliases()
+    except Exception as e:
+        print(f"Warning: Could not sync model aliases: {e}")
+        print("Continuing with default aliases...")
+
+# Pydantic models
+class AskResponse(BaseModel):
+    model: str
+    answer: str
+
 @app.get("/")
 async def root():
     """Health check endpoint"""
     return {"message": "Visual Trade Copilot API is running", "status": "healthy"}
 
 @app.post("/analyze")
-async def analyze_chart(file: UploadFile = File(...)):
+async def analyze_chart(
+    file: UploadFile = File(...),
+    model: str = Form(None)
+):
     """
     Analyze a trading chart image using GPT-4 Vision API
     
     Args:
         file: Image file (PNG, JPEG, etc.) containing the trading chart
+        model: Optional model selection (aliases: "fast", "balanced", "advanced" or direct model names)
         
     Returns:
         JSON response with analysis results including bias, signals, and verdict
@@ -151,8 +173,11 @@ async def analyze_chart(file: UploadFile = File(...)):
                 detail="OpenAI API key not configured. Please set OPENAI_API_KEY in your .env file"
             )
         
-        # Analyze the chart using GPT-4 Vision
-        analysis_result = await analyze_chart_with_gpt4v(image_base64, api_key)
+        # Resolve the model to use
+        selected_model = resolve_model(model)
+        
+        # Analyze the chart using GPT-4 Vision with selected model
+        analysis_result = await analyze_chart_with_gpt4v(image_base64, api_key, model=selected_model)
         
         # Prepare response
         response = {
@@ -193,6 +218,106 @@ async def analyze_chart(file: UploadFile = File(...)):
 async def get_prompt():
     """Get the current analysis prompt for debugging"""
     return {"prompt": get_base_prompt()}
+
+@app.post("/ask", response_model=AskResponse)
+async def ask_about_chart(
+    image: UploadFile = File(...),
+    question: str = Form(...),
+    model: str = Form(None),
+    messages: str = Form(None)
+):
+    """
+    Ask a natural language question about a trading chart (Phase 3A: With conversation memory)
+    
+    Args:
+        image: Trading chart image file
+        question: Natural language question about the chart
+        model: Optional model selection (aliases: "fast", "balanced", "advanced" or direct model names)
+        messages: Optional JSON string of previous conversation messages for context
+        
+    Returns:
+        AskResponse with model name and conversational answer
+    """
+    try:
+        # Validate file type
+        if not image.content_type or not image.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail="File must be an image")
+        
+        # Resolve the model to use
+        selected_model = resolve_model(model)
+        
+        # Read and process the image (reuse existing logic)
+        image_data = await image.read()
+        
+        if PIL_AVAILABLE:
+            # Full image processing with PIL
+            image_obj = Image.open(io.BytesIO(image_data))
+            
+            # Convert to RGB if necessary
+            if image_obj.mode != 'RGB':
+                image_obj = image_obj.convert('RGB')
+            
+            # Resize if too large
+            max_size = 2048
+            if image_obj.width > max_size or image_obj.height > max_size:
+                image_obj.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+            
+            # Convert to base64
+            buffer = io.BytesIO()
+            image_obj.save(buffer, format='JPEG', quality=85)
+            image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        else:
+            # Fallback to raw data
+            image_base64 = base64.b64encode(image_data).decode('utf-8')
+        
+        # Parse conversation history if provided
+        conversation_history = []
+        if messages:
+            try:
+                parsed_messages = json.loads(messages)
+                # Take last 5 messages for context (to avoid token limits)
+                conversation_history = parsed_messages[-5:]
+            except json.JSONDecodeError as e:
+                print(f"Warning: Failed to parse messages: {e}")
+                # Continue without history if parsing fails
+        
+        # Get OpenAI client and create response with selected model and conversation context
+        client = get_client()
+        response = await client.create_response(
+            question, 
+            image_base64, 
+            model=selected_model,
+            conversation_history=conversation_history
+        )
+        
+        return AskResponse(
+            model=response["model"],
+            answer=response["answer"]
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ask failed: {str(e)}")
+
+@app.get("/budget")
+async def get_budget():
+    """Get current budget status"""
+    return get_budget_status()
+
+@app.get("/models")
+async def get_models():
+    """
+    List all OpenAI models available to the current API key.
+    Detects GPT-5 variants and provides diagnostic information.
+    
+    Returns:
+        JSON with model list, counts, GPT-5 detection, and current aliases
+    """
+    try:
+        return list_available_models()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list models: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

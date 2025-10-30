@@ -1,0 +1,13 @@
+{
+  "trade_id": 1440791798,
+  "symbol": "MNQZ5",
+  "direction": "short",
+  "pnl": -51.0,
+  "label": "loss",
+  "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\MNQZ5_5m_1440791798.png",
+  "poi_range": null,
+  "bos_range": null,
+  "outcome": "loss",
+  "explanation": "",
+  "created_at": "2025-10-30T17:56:19.848774"
+}

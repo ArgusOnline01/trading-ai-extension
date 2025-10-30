@@ -1,0 +1,13 @@
+{
+  "trade_id": 1440254576,
+  "symbol": "MNQZ5",
+  "direction": "short",
+  "pnl": -31.5,
+  "label": "loss",
+  "chart_path": null,
+  "poi_range": null,
+  "bos_range": null,
+  "outcome": "loss",
+  "explanation": "",
+  "created_at": "2025-10-30T05:55:01.386718"
+}

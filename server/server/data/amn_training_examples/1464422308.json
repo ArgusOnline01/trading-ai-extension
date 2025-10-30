@@ -1,0 +1,13 @@
+{
+  "trade_id": 1464422308,
+  "symbol": "6EZ5",
+  "direction": "short",
+  "pnl": 762.5,
+  "label": "win",
+  "chart_path": null,
+  "poi_range": null,
+  "bos_range": null,
+  "outcome": "win",
+  "explanation": "",
+  "created_at": "2025-10-30T05:55:01.308310"
+}

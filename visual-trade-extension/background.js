@@ -40,17 +40,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const textOnlyModels = ["balanced", "gpt5-mini", "gpt-5-mini", "gpt-5-mini-2025-08-07", "gpt-5-search-api", "gpt-5-search-api-2025-10-14"];
         const useHybrid = includeImage && textOnlyModels.includes(model);
         
-        // Phase 3B.1: Only capture image if needed
+        // Phase 3B.1 & 4A.1: Capture or use uploaded image
         let blob = null;
         if (includeImage) {
-          // Capture the visible tab
-          const imageDataUrl = await chrome.tabs.captureVisibleTab(sender.tab.windowId, {
-            format: "png"
-          });
-          
-          // Convert to blob
-          const response = await fetch(imageDataUrl);
-          blob = await response.blob();
+          // Phase 4A.1: Use uploaded image if provided, otherwise capture
+          if (message.uploadedImage) {
+            // Convert base64 to blob
+            const base64Data = message.uploadedImage;
+            const byteCharacters = atob(base64Data);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+              byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            blob = new Blob([byteArray], { type: 'image/png' });
+            console.log("📤 Using uploaded image");
+          } else {
+            // Capture the visible tab
+            const imageDataUrl = await chrome.tabs.captureVisibleTab(sender.tab.windowId, {
+              format: "png"
+            });
+            
+            // Convert to blob
+            const response = await fetch(imageDataUrl);
+            blob = await response.blob();
+            console.log("📸 Captured visible tab");
+          }
         }
         
         // Get chat history and session context (Phase 3B)
@@ -123,17 +138,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           data.reasoning_model = data.reasoning_model || model;
         }
         
-        // Send result back to content script
-        await chrome.tabs.sendMessage(tabId, {
-          action: "showOverlay",
-          payload: {
-            question: question,
-            response: data,
-            hybrid_mode: useHybrid
-          }
-        });
-        
-        sendResponse({ success: true });
+        // Phase 4A.2: For Log Trade, return data directly
+        if (message.forLogTrade) {
+          sendResponse({ 
+            success: true, 
+            answer: data.answer || data.response || "",
+            model: data.model,
+            tokens: data.tokens
+          });
+        } else {
+          // Send result back to content script via showOverlay
+          await chrome.tabs.sendMessage(tabId, {
+            action: "showOverlay",
+            payload: {
+              question: question,
+              response: data,
+              hybrid_mode: useHybrid
+            }
+          });
+          
+          sendResponse({ success: true });
+        }
       } catch (error) {
         console.error("Capture and analyze error:", error);
         sendResponse({ success: false, error: error.message });

@@ -1,412 +1,24 @@
-/**
- * IndexedDB Helper for Visual Trade Copilot - Phase 3B
- * Handles multi-session memory with sessions and messages stores
- * 
- * Note: This file is loaded as a regular script (not ES6 module) for Chrome extension compatibility.
- * All functions are attached to the global IDB namespace.
- */
-
-console.log("🔧 idb.js file is being executed...");
-
-// Create global IDB namespace
-window.IDB = window.IDB || {};
-console.log("📦 window.IDB namespace created:", window.IDB);
-
-const DB_NAME = "vtc_memory";
-const DB_VERSION = 2; // Upgraded from v1 (Phase 3A) to v2 (Phase 3B)
-
-console.log("🗄️ DB config:", DB_NAME, "version", DB_VERSION);
-
-/**
- * Open IndexedDB connection with sessions and messages stores
- * @returns {Promise<IDBDatabase>}
- */
-window.IDB.openDB = async function openDB() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-
-    request.onupgradeneeded = (event) => {
-      const db = event.target.result;
-
-      // Create sessions store (if not exists)
-      if (!db.objectStoreNames.contains("sessions")) {
-        const sessionsStore = db.createObjectStore("sessions", { keyPath: "sessionId" });
-        sessionsStore.createIndex("symbol", "symbol", { unique: false });
-        sessionsStore.createIndex("last_updated", "last_updated", { unique: false });
-      }
-
-      // Create messages store (if not exists)
-      if (!db.objectStoreNames.contains("messages")) {
-        const messagesStore = db.createObjectStore("messages", { keyPath: "id", autoIncrement: true });
-        messagesStore.createIndex("sessionId", "sessionId", { unique: false });
-        messagesStore.createIndex("timestamp", "timestamp", { unique: false });
-      }
-
-      // Migrate old chat_history to new structure (Phase 3A → 3B migration)
-      if (event.oldVersion === 1 && db.objectStoreNames.contains("chat_history")) {
-        const transaction = event.target.transaction;
-        const oldStore = transaction.objectStore("chat_history");
-        const newMessagesStore = transaction.objectStore("messages");
-        
-        // Create default session for old messages
-        const defaultSessionId = `default-${Date.now()}`;
-        const sessionsStore = transaction.objectStore("sessions");
-        sessionsStore.add({
-          sessionId: defaultSessionId,
-          title: "Migrated Session",
-          symbol: "CHART",
-          created_at: Date.now(),
-          last_updated: Date.now(),
-          context: {}
-        });
-
-        // Migrate messages
-        oldStore.openCursor().onsuccess = (e) => {
-          const cursor = e.target.result;
-          if (cursor) {
-            const oldMsg = cursor.value;
-            newMessagesStore.add({
-              sessionId: defaultSessionId,
-              role: oldMsg.role,
-              content: oldMsg.content,
-              timestamp: oldMsg.timestamp || Date.now()
-            });
-            cursor.continue();
-          }
-        };
-      }
-    };
-  });
-}
-
-/**
- * Create a new session
- * @param {string} symbol - Trading symbol (e.g., "6EZ25", "ES", "BTC")
- * @param {string} [title] - Optional custom title
- * @returns {Promise<Object>} Created session object
- */
-window.IDB.createSession = async function createSession(symbol, title = null) {
-  const db = await window.IDB.openDB();
-  const sessionId = `${symbol}-${Date.now()}`;
-  const session = {
-    sessionId,
-    title: title || `${symbol} Session`,
-    symbol: symbol.toUpperCase(),
-    created_at: Date.now(),
-    last_updated: Date.now(),
-    context: {
-      latest_price: null,
-      bias: null,
-      last_poi: null,
-      timeframe: null,
-      notes: []
-    }
-  };
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(["sessions"], "readwrite");
-    const store = transaction.objectStore("sessions");
-    const request = store.add(session);
-
-    request.onsuccess = () => resolve(session);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-/**
- * Get all sessions, sorted by last_updated (newest first)
- * @returns {Promise<Array>}
- */
-window.IDB.getAllSessions = async function getAllSessions() {
-  const db = await window.IDB.openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(["sessions"], "readonly");
-    const store = transaction.objectStore("sessions");
-    const request = store.getAll();
-
-    request.onsuccess = () => {
-      const sessions = request.result;
-      // Sort by last_updated descending
-      sessions.sort((a, b) => b.last_updated - a.last_updated);
-      resolve(sessions);
-    };
-    request.onerror = () => reject(request.error);
-  });
-}
-
-/**
- * Get a specific session by ID
- * @param {string} sessionId
- * @returns {Promise<Object|null>}
- */
-window.IDB.getSession = async function getSession(sessionId) {
-  const db = await window.IDB.openDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(["sessions"], "readonly");
-    const store = transaction.objectStore("sessions");
-    const request = store.get(sessionId);
-
-    request.onsuccess = () => resolve(request.result || null);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-/**
- * Update session metadata (title, context, etc.)
- * @param {string} sessionId
- * @param {Object} updates - Fields to update
- * @returns {Promise<Object>}
- */
-window.IDB.updateSession = async function updateSession(sessionId, updates) {
-  const db = await window.IDB.openDB();
-  const session = await window.IDB.getSession(sessionId);
-  
-  if (!session) {
-    throw new Error(`Session ${sessionId} not found`);
-  }
-
-  const updatedSession = {
-    ...session,
-    ...updates,
-    last_updated: Date.now()
-  };
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(["sessions"], "readwrite");
-    const store = transaction.objectStore("sessions");
-    const request = store.put(updatedSession);
-
-    request.onsuccess = () => resolve(updatedSession);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-/**
- * Delete a session and all its messages
- * @param {string} sessionId
- * @returns {Promise<void>}
- */
-window.IDB.deleteSession = async function deleteSession(sessionId) {
-  const db = await window.IDB.openDB();
-  
-  return new Promise(async (resolve, reject) => {
-    const transaction = db.transaction(["sessions", "messages"], "readwrite");
-    
-    // Delete session
-    const sessionsStore = transaction.objectStore("sessions");
-    sessionsStore.delete(sessionId);
-    
-    // Delete all messages for this session
-    const messagesStore = transaction.objectStore("messages");
-    const index = messagesStore.index("sessionId");
-    const request = index.openCursor(IDBKeyRange.only(sessionId));
-    
-    request.onsuccess = (e) => {
-      const cursor = e.target.result;
-      if (cursor) {
-        messagesStore.delete(cursor.primaryKey);
-        cursor.continue();
-      }
-    };
-
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-  });
-}
-
-/**
- * Save a message to a session
- * @param {string} sessionId
- * @param {string} role - "user" or "assistant"
- * @param {string} content - Message content
- * @returns {Promise<Object>} Saved message
- */
-window.IDB.saveMessage = async function saveMessage(sessionId, role, content) {
-  const db = await window.IDB.openDB();
-  const message = {
-    sessionId,
-    role,
-    content,
-    timestamp: Date.now()
-  };
-
-  return new Promise(async (resolve, reject) => {
-    const transaction = db.transaction(["messages", "sessions"], "readwrite");
-    
-    // Save message
-    const messagesStore = transaction.objectStore("messages");
-    const messageRequest = messagesStore.add(message);
-    
-    messageRequest.onsuccess = () => {
-      message.id = messageRequest.result;
-    };
-
-    // Update session's last_updated timestamp
-    const sessionsStore = transaction.objectStore("sessions");
-    const sessionRequest = sessionsStore.get(sessionId);
-    
-    sessionRequest.onsuccess = () => {
-      const session = sessionRequest.result;
-      if (session) {
-        session.last_updated = Date.now();
-        sessionsStore.put(session);
-      }
-    };
-
-    transaction.oncomplete = () => resolve(message);
-    transaction.onerror = () => reject(transaction.error);
-  });
-}
-
-/**
- * Load messages for a session
- * @param {string} sessionId
- * @param {number} [limit] - Max number of messages to load (default: all)
- * @returns {Promise<Array>}
- */
-window.IDB.loadMessages = async function loadMessages(sessionId, limit = null) {
-  const db = await window.IDB.openDB();
-  
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(["messages"], "readonly");
-    const store = transaction.objectStore("messages");
-    const index = store.index("sessionId");
-    const request = index.getAll(IDBKeyRange.only(sessionId));
-
-    request.onsuccess = () => {
-      let messages = request.result;
-      // Sort by timestamp ascending (oldest first)
-      messages.sort((a, b) => a.timestamp - b.timestamp);
-      
-      // Apply limit if specified (keep most recent)
-      if (limit && messages.length > limit) {
-        messages = messages.slice(-limit);
-      }
-      
-      resolve(messages);
-    };
-    request.onerror = () => reject(request.error);
-  });
-}
-
-/**
- * Clear all messages in a session (but keep the session)
- * @param {string} sessionId
- * @returns {Promise<void>}
- */
-window.IDB.clearSessionMessages = async function clearSessionMessages(sessionId) {
-  const db = await window.IDB.openDB();
-  
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(["messages"], "readwrite");
-    const store = transaction.objectStore("messages");
-    const index = store.index("sessionId");
-    const request = index.openCursor(IDBKeyRange.only(sessionId));
-    
-    request.onsuccess = (e) => {
-      const cursor = e.target.result;
-      if (cursor) {
-        store.delete(cursor.primaryKey);
-        cursor.continue();
-      }
-    };
-
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-  });
-}
-
-/**
- * Export session data (session + messages) as JSON
- * @param {string} sessionId
- * @returns {Promise<Object>}
- */
-window.IDB.exportSession = async function exportSession(sessionId) {
-  const session = await window.IDB.getSession(sessionId);
-  const messages = await window.IDB.loadMessages(sessionId);
-  
-  if (!session) {
-    throw new Error(`Session ${sessionId} not found`);
-  }
-
-  return {
-    session,
-    messages,
-    exported_at: Date.now(),
-    version: "3B"
-  };
-}
-
-/**
- * Get the most recent active session (or create default if none exist)
- * @returns {Promise<Object>}
- */
-window.IDB.getActiveSession = async function getActiveSession() {
-  const sessions = await window.IDB.getAllSessions();
-  
-  if (sessions.length === 0) {
-    // Create default session
-    return await window.IDB.createSession("CHART", "Default Session");
-  }
-  
-  return sessions[0]; // Most recently updated
-}
-
-/**
- * Delete all sessions and messages (nuclear option)
- * @returns {Promise<void>}
- */
-window.IDB.deleteAllData = async function deleteAllData() {
-  const db = await window.IDB.openDB();
-  
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(["sessions", "messages"], "readwrite");
-    
-    transaction.objectStore("sessions").clear();
-    transaction.objectStore("messages").clear();
-    
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-  });
-}
-
-/**
- * Get session statistics
- * @param {string} sessionId
- * @returns {Promise<Object>}
- */
-window.IDB.getSessionStats = async function getSessionStats(sessionId) {
-  const messages = await window.IDB.loadMessages(sessionId);
-  const session = await window.IDB.getSession(sessionId);
-  
-  return {
-    total_messages: messages.length,
-    user_messages: messages.filter(m => m.role === "user").length,
-    assistant_messages: messages.filter(m => m.role === "assistant").length,
-    created_at: session?.created_at,
-    last_updated: session?.last_updated,
-    duration_hours: session ? (Date.now() - session.created_at) / (1000 * 60 * 60) : 0
-  };
-}
-
-console.log("✅ IndexedDB helpers loaded (Phase 3B)");
-
 // Visual Trade Copilot - Content Script (Phase 3B: Multi-Session Memory)
 // Persistent chat panel with multi-session support and context tracking
 
 // Wait for IDB to be loaded
 let idbReadyPromise = new Promise((resolve) => {
-  if (window.IDB) {
-    console.log("✅ IDB already loaded");
+  // Phase 4A: Check for both session AND performance functions
+  const checkFullyLoaded = () => {
+    return window.IDB && 
+           window.IDB.openDB && 
+           window.IDB.savePerformanceLog && 
+           window.IDB.getPerformanceLogs;
+  };
+  
+  if (checkFullyLoaded()) {
+    console.log("✅ IDB already loaded (including Phase 4A performance functions)");
     resolve();
   } else {
-    console.log("⏳ Waiting for IDB to load...");
+    console.log("⏳ Waiting for IDB to load (including Phase 4A)...");
     const checkIDB = setInterval(() => {
-      if (window.IDB) {
-        console.log("✅ IDB loaded after wait");
+      if (checkFullyLoaded()) {
+        console.log("✅ IDB fully loaded (Phase 3B + 4A)");
         clearInterval(checkIDB);
         resolve();
       }
@@ -415,8 +27,8 @@ let idbReadyPromise = new Promise((resolve) => {
     // Timeout after 5 seconds
     setTimeout(() => {
       clearInterval(checkIDB);
-      if (!window.IDB) {
-        console.error("❌ IDB failed to load after 5 seconds");
+      if (!checkFullyLoaded()) {
+        console.error("❌ IDB failed to fully load after 5 seconds. Available:", Object.keys(window.IDB || {}));
       }
       resolve();
     }, 5000);
@@ -427,7 +39,7 @@ let chatHistory = [];
 let chatContainer = null;
 let currentSession = null;
 let sessionManagerModal = null;
-let selectedModel = "balanced"; // Phase 3B.2: Default GPT-5 model
+let selectedModel = "fast"; // Phase 4A.1: Default GPT-5 Chat (native vision)
 
 // ========== Session Management ==========
 
@@ -856,12 +468,12 @@ function ensureChatUI() {
           <span class="vtc-icon" title="Drag to move">🤖</span>
           <h3>Visual Trade Copilot</h3>
           <span id="vtc-session-status" class="vtc-session-badge">🧠 Loading...</span>
-               <select id="vtc-model-selector" class="vtc-model-selector" title="Select AI Model">
-                 <optgroup label="Recommended Models">
-                   <option value="fast">⚡ Fast (GPT-5 Chat) 👁️</option>
-                   <option value="balanced" selected>⚖️ Balanced (GPT-5 Search) 🧠</option>
-                   <option value="advanced">🔷 Advanced (GPT-4o) 👁️</option>
-                 </optgroup>
+              <select id="vtc-model-selector" class="vtc-model-selector" title="Select AI Model">
+                <optgroup label="Recommended Models">
+                  <option value="fast" selected>⚡ Fast (GPT-5 Chat) 👁️</option>
+                  <option value="balanced">⚖️ Balanced (GPT-5 Search) 🧠</option>
+                  <option value="advanced">🔷 Advanced (GPT-4o) 👁️</option>
+                </optgroup>
                  <optgroup label="Alternative Models">
                    <option value="gpt4o-mini">💎 GPT-4o Mini (Budget)</option>
                    <option value="gpt5-mini">⚠️ GPT-5 Mini (Limited)</option>
@@ -890,13 +502,112 @@ function ensureChatUI() {
         <div class="vtc-send-controls">
           <button id="vtc-send-text" class="vtc-btn-text" title="Send text-only (fast, cheaper)">📝 Text</button>
           <button id="vtc-send-image" class="vtc-btn-image" title="Analyze chart with image (slower, more expensive)">📸 Chart</button>
+          <button id="vtc-upload-image" class="vtc-btn-upload" title="Upload saved screenshot">📤 Upload</button>
+          <button id="vtc-log-trade" class="vtc-btn-log" title="Smart trade logging with AI extraction">📊 Log Trade</button>
         </div>
+        <input type="file" id="vtc-file-input" accept="image/*" style="display: none;" />
       </div>
       <div id="vtc-footer" class="vtc-footer">
         <span id="vtc-message-count">0 messages</span>
         <span id="vtc-status">Ready</span>
       </div>
     `;
+    
+    // Phase 4A.1: Trade logging confirmation modal
+    const tradeLogModal = document.createElement('div');
+    tradeLogModal.id = 'vtc-trade-log-modal';
+    tradeLogModal.className = 'vtc-modal';
+    tradeLogModal.style.display = 'none';
+    tradeLogModal.innerHTML = `
+      <div class="vtc-modal-content vtc-trade-log-content">
+        <div class="vtc-modal-header">
+          <h3>📊 Log Trade</h3>
+          <button class="vtc-close-modal" id="vtc-close-trade-log">✕</button>
+        </div>
+        <div class="vtc-modal-body">
+          <p class="vtc-log-hint">Review and edit the extracted values:</p>
+          <form id="vtc-trade-log-form" class="vtc-trade-form">
+            <div class="vtc-form-row">
+              <label>Symbol:</label>
+              <input type="text" id="log-symbol" placeholder="e.g., EURUSD, GC" required />
+            </div>
+            <div class="vtc-form-row">
+              <label>Entry Price:</label>
+              <input type="number" id="log-entry" step="0.00001" placeholder="e.g., 1.0850" required />
+            </div>
+            <div class="vtc-form-row">
+              <label>Stop Loss:</label>
+              <input type="number" id="log-stop" step="0.00001" placeholder="e.g., 1.0800" required />
+            </div>
+            <div class="vtc-form-row">
+              <label>Take Profit:</label>
+              <input type="number" id="log-tp" step="0.00001" placeholder="e.g., 1.0950" required />
+            </div>
+            <div class="vtc-form-row">
+              <label>Bias:</label>
+              <select id="log-bias" required>
+                <option value="bullish">Bullish (Long)</option>
+                <option value="bearish">Bearish (Short)</option>
+              </select>
+            </div>
+            <div class="vtc-form-row">
+              <label>Setup Type:</label>
+              <input type="text" id="log-setup" placeholder="e.g., FVG, Liquidity Grab, BOS" />
+            </div>
+            <div class="vtc-form-row">
+              <label>Timeframe:</label>
+              <select id="log-timeframe">
+                <option value="1m">1 Minute</option>
+                <option value="5m" selected>5 Minutes</option>
+                <option value="15m">15 Minutes</option>
+                <option value="1h">1 Hour</option>
+                <option value="4h">4 Hours</option>
+                <option value="1d">1 Day</option>
+              </select>
+            </div>
+            <div class="vtc-form-row vtc-form-full">
+              <label>AI Analysis:</label>
+              <textarea id="log-ai-verdict" rows="3" readonly style="background: #1a1a1a; color: #00ff99;"></textarea>
+            </div>
+            <div class="vtc-form-stats">
+              <div class="vtc-stat-item">
+                <span class="vtc-stat-label">Risk:</span>
+                <span class="vtc-stat-value" id="log-risk">-</span>
+              </div>
+              <div class="vtc-stat-item">
+                <span class="vtc-stat-label">Reward:</span>
+                <span class="vtc-stat-value" id="log-reward">-</span>
+              </div>
+              <div class="vtc-stat-item">
+                <span class="vtc-stat-label">Expected R:R:</span>
+                <span class="vtc-stat-value" id="log-rr">-</span>
+              </div>
+            </div>
+            <div class="vtc-form-divider" style="border-top: 1px solid #333; margin: 16px 0; padding-top: 16px;">
+              <p style="color: #ffd700; font-size: 14px; margin-bottom: 12px;">📈 Trade Outcome (Optional - can update later)</p>
+            </div>
+            <div class="vtc-form-row">
+              <label>Outcome:</label>
+              <select id="log-outcome">
+                <option value="pending">⏳ Pending (Still Open)</option>
+                <option value="win">✓ Win</option>
+                <option value="loss">✗ Loss</option>
+                <option value="breakeven">≈ Breakeven</option>
+              </select>
+            </div>
+            <div class="vtc-form-row" id="log-actual-r-row" style="display: none;">
+              <label>Actual R-Multiple:</label>
+              <input type="number" id="log-actual-r" step="0.1" placeholder="e.g., 2.5 (if win) or -1.0 (if loss)" />
+            </div>
+            <div class="vtc-form-actions">
+              <button type="button" class="vtc-btn-secondary" id="vtc-cancel-log">Cancel</button>
+              <button type="submit" class="vtc-btn-primary">✓ Save Trade</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(tradeLogModal);
     
     document.body.appendChild(chatContainer);
     
@@ -938,6 +649,19 @@ function ensureChatUI() {
         return;
       }
       
+      // NEW: Copilot intent intercept
+      const localCopilotReply = await handleCopilotIntent(question);
+      if (localCopilotReply) {
+        // Mimic assistant reply - save and render
+        await window.IDB.saveMessage(currentSession.sessionId, "user", question);
+        await window.IDB.saveMessage(currentSession.sessionId, "assistant", localCopilotReply);
+        chatHistory = await window.IDB.loadMessages(currentSession.sessionId);
+        renderMessages();
+        input.value = "";
+        showNotification("Answered instantly from Copilot Bridge!", "success");
+        return;
+      }
+      
       // Disable both buttons and show loading
       sendTextBtn.disabled = true;
       sendImageBtn.disabled = true;
@@ -966,13 +690,22 @@ function ensureChatUI() {
           sessionId: currentSession.sessionId,
           includeImage: includeImage,  // Phase 3B.1: text-only mode flag
           model: selectedModel,  // Phase 3B.2: Send selected model
-          context: contextToSend
+          context: contextToSend,
+          uploadedImage: uploadedImageData  // Phase 4A.1: Pre-uploaded image data
         });
         
         if (response && response.success) {
           // Message will be added via showOverlay action
           input.value = "";
           showNotification("Analysis complete!", "success");
+          
+          // Phase 4A.1: Clear uploaded image and reset button
+          if (uploadedImageData) {
+            uploadedImageData = null;
+            uploadBtn.textContent = "📤 Upload";
+            uploadBtn.style.background = "";
+            fileInput.value = "";
+          }
           
           // Phase 3C: Detect hybrid mode
           // Note: "balanced" is now GPT-5 Search (hybrid), "advanced" is GPT-4o (native vision)
@@ -999,6 +732,296 @@ function ensureChatUI() {
     
     // Image send button (Phase 3B.1)
     sendImageBtn.onclick = () => sendMessage(true);
+    
+    // Phase 4A.1: Upload image button
+    const uploadBtn = document.getElementById("vtc-upload-image");
+    const fileInput = document.getElementById("vtc-file-input");
+    let uploadedImageData = null;
+    
+    uploadBtn.onclick = () => {
+      fileInput.click();
+    };
+    
+    fileInput.onchange = (e) => {
+      const file = e.target.files[0];
+      if (file && file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          uploadedImageData = event.target.result.split(',')[1]; // Base64 without prefix
+          showNotification(`📤 Image loaded: ${file.name}`, "success");
+          uploadBtn.textContent = "✅ Ready";
+          uploadBtn.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+    
+    // Phase 4A.1: Log Trade button - smart extraction with confirmation
+    const logTradeBtn = document.getElementById("vtc-log-trade");
+    
+    logTradeBtn.onclick = async () => {
+      console.log("📊 [Log Trade] Button clicked");
+      
+      // Check if image is uploaded
+      if (!uploadedImageData) {
+        console.warn("📊 [Log Trade] No image uploaded");
+        showNotification("📤 Please upload a chart image first", "error");
+        return;
+      }
+      
+      console.log("📊 [Log Trade] Image found, starting extraction...");
+      logTradeBtn.disabled = true;
+      logTradeBtn.textContent = "⏳ Extracting...";
+      
+      try {
+        // Send structured extraction prompt to GPT
+        const extractionPrompt = `IMPORTANT: Respond with ONLY a JSON object, nothing else. No markdown, no explanation.
+
+Extract these values from the chart:
+{
+  "symbol": "ticker symbol (e.g., CL, GC, EURUSD, NQ)",
+  "entry_price": 12345.67,
+  "stop_loss": 12300.00,
+  "take_profit": 12450.00,
+  "bias": "bullish",
+  "setup_type": "Supply/Demand",
+  "timeframe": "5m",
+  "analysis": "Brief analysis"
+}
+
+Extract visible price levels. Response must be ONLY the JSON object above with your values.`;
+        
+        const response = await chrome.runtime.sendMessage({
+          action: "captureAndAnalyze",
+          question: extractionPrompt,
+          sessionId: currentSession.sessionId,
+          includeImage: true,
+          model: "fast", // Use GPT-5 Chat for fast extraction
+          uploadedImage: uploadedImageData,
+          forLogTrade: true // Phase 4A.2: Get direct response, not via showOverlay
+        });
+        
+        if (response && response.success) {
+          console.log("📊 [Log Trade] ✅ Got AI response");
+          
+          // Parse JSON from AI response
+          const aiAnswer = response.answer || "";
+          console.log("📊 [Log Trade] Full AI Answer Length:", aiAnswer.length);
+          console.log("📊 [Log Trade] AI Answer Preview:", aiAnswer.substring(0, 500));
+          console.log("📊 [Log Trade] Response object keys:", Object.keys(response));
+          
+          let extractedData = null;
+          
+          // Try to parse the entire response as JSON first
+          try {
+            extractedData = JSON.parse(aiAnswer);
+            console.log("📊 [Log Trade] ✅ Parsed entire response as JSON:", extractedData);
+          } catch (e) {
+            console.log("📊 [Log Trade] Not pure JSON, trying pattern matching...");
+            
+            // Try multiple JSON extraction methods
+            // Method 1: Find JSON object with proper keys (greedy match)
+            let jsonMatch = aiAnswer.match(/\{[\s\S]*"symbol"[\s\S]*"entry_price"[\s\S]*\}/);
+            
+            if (!jsonMatch) {
+              // Method 2: Find any JSON object
+              jsonMatch = aiAnswer.match(/\{[^{}]*"entry_price"[^{}]*\}/);
+            }
+            
+            if (!jsonMatch) {
+              // Method 3: Get everything between first { and last }
+              const firstBrace = aiAnswer.indexOf('{');
+              const lastBrace = aiAnswer.lastIndexOf('}');
+              if (firstBrace !== -1 && lastBrace !== -1) {
+                jsonMatch = [aiAnswer.substring(firstBrace, lastBrace + 1)];
+              }
+            }
+            
+            if (jsonMatch) {
+              try {
+                // Clean the JSON string (remove markdown code blocks if any)
+                let jsonStr = jsonMatch[0].replace(/```json|```/g, '').trim();
+                console.log("📊 [Log Trade] Trying to parse:", jsonStr.substring(0, 200));
+                extractedData = JSON.parse(jsonStr);
+                console.log("📊 [Log Trade] ✅ Extracted JSON:", extractedData);
+              } catch (parseError) {
+                console.warn("📊 [Log Trade] ⚠️ Failed to parse JSON:", parseError);
+                console.warn("📊 [Log Trade] JSON string was:", jsonMatch[0]);
+              }
+            } else {
+              console.warn("📊 [Log Trade] ⚠️ No JSON found in response");
+              console.warn("📊 [Log Trade] Full response:", aiAnswer);
+            }
+          }
+          
+          // Open modal with extracted or default values
+          console.log("📊 [Log Trade] Opening modal...");
+          openTradeLogModal(extractedData, aiAnswer);
+        } else {
+          throw new Error(response?.error || "Extraction failed");
+        }
+      } catch (error) {
+        console.error("Log trade error:", error);
+        showNotification("⚠️ Extraction failed: " + error.message, "error");
+      } finally {
+        logTradeBtn.disabled = false;
+        logTradeBtn.textContent = "📊 Log Trade";
+      }
+    };
+    
+    // Phase 4A.1: Open trade log modal with extracted data
+    function openTradeLogModal(extractedData, aiAnalysis) {
+      console.log("📊 [Modal] Opening modal with data:", extractedData);
+      
+      const modal = document.getElementById("vtc-trade-log-modal");
+      const form = document.getElementById("vtc-trade-log-form");
+      
+      if (!modal) {
+        console.error("📊 [Modal] ❌ Modal element not found!");
+        showNotification("⚠️ Modal not found - please reload extension", "error");
+        return;
+      }
+      
+      console.log("📊 [Modal] Pre-filling form...");
+      
+      // Pre-fill form with extracted or session data
+      document.getElementById("log-symbol").value = extractedData?.symbol || currentSession?.symbol || "";
+      document.getElementById("log-entry").value = extractedData?.entry_price || "";
+      document.getElementById("log-stop").value = extractedData?.stop_loss || "";
+      document.getElementById("log-tp").value = extractedData?.take_profit || "";
+      document.getElementById("log-bias").value = extractedData?.bias || "bullish";
+      document.getElementById("log-setup").value = extractedData?.setup_type || "";
+      document.getElementById("log-timeframe").value = extractedData?.timeframe || currentSession?.context?.timeframe || "5m";
+      document.getElementById("log-ai-verdict").value = extractedData?.analysis || aiAnalysis.substring(0, 200) || "";
+      
+      // Calculate R:R in real-time
+      const updateRR = () => {
+        const entry = parseFloat(document.getElementById("log-entry").value);
+        const stop = parseFloat(document.getElementById("log-stop").value);
+        const tp = parseFloat(document.getElementById("log-tp").value);
+        
+        if (entry && stop && tp) {
+          const risk = Math.abs(entry - stop);
+          const reward = Math.abs(tp - entry);
+          const rr = risk > 0 ? (reward / risk).toFixed(2) : 0;
+          
+          document.getElementById("log-risk").textContent = risk.toFixed(5);
+          document.getElementById("log-reward").textContent = reward.toFixed(5);
+          document.getElementById("log-rr").textContent = rr + ":1";
+          document.getElementById("log-rr").style.color = rr >= 2 ? "#00ff99" : rr >= 1 ? "#ffd700" : "#ff4444";
+        }
+      };
+      
+      // Update R:R on input change
+      ["log-entry", "log-stop", "log-tp"].forEach(id => {
+        document.getElementById(id).oninput = updateRR;
+      });
+      
+      // Show/hide actual R field based on outcome
+      document.getElementById("log-outcome").onchange = (e) => {
+        const actualRRow = document.getElementById("log-actual-r-row");
+        if (e.target.value !== "pending") {
+          actualRRow.style.display = "flex";
+        } else {
+          actualRRow.style.display = "none";
+        }
+      };
+      
+      updateRR(); // Initial calculation
+      
+      console.log("📊 [Modal] ✅ Showing modal!");
+      modal.style.display = "flex";
+      modal.style.opacity = "1";
+      modal.style.pointerEvents = "all";
+    }
+    
+    // Close modal handlers
+    document.getElementById("vtc-close-trade-log").onclick = () => {
+      document.getElementById("vtc-trade-log-modal").style.display = "none";
+    };
+    
+    document.getElementById("vtc-cancel-log").onclick = () => {
+      document.getElementById("vtc-trade-log-modal").style.display = "none";
+    };
+    
+    // Form submission
+    document.getElementById("vtc-trade-log-form").onsubmit = async (e) => {
+      e.preventDefault();
+      
+      const entry = parseFloat(document.getElementById("log-entry").value);
+      const stop = parseFloat(document.getElementById("log-stop").value);
+      const tp = parseFloat(document.getElementById("log-tp").value);
+      const risk = Math.abs(entry - stop);
+      const reward = Math.abs(tp - entry);
+      const expectedR = risk > 0 ? parseFloat((reward / risk).toFixed(2)) : null;
+      
+      // Get outcome fields
+      const outcome = document.getElementById("log-outcome").value;
+      let actualR = null;
+      
+      if (outcome !== "pending") {
+        const actualRInput = document.getElementById("log-actual-r").value;
+        if (actualRInput) {
+          actualR = parseFloat(actualRInput);
+        } else {
+          // Auto-calculate based on outcome
+          if (outcome === "win") actualR = expectedR;
+          else if (outcome === "loss") actualR = -1.0;
+          else if (outcome === "breakeven") actualR = 0;
+        }
+      }
+      
+      const tradeData = {
+        session_id: `trade-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Unique ID for each trade
+        timestamp: new Date().toISOString(),
+        symbol: document.getElementById("log-symbol").value,
+        timeframe: document.getElementById("log-timeframe").value,
+        bias: document.getElementById("log-bias").value,
+        setup_type: document.getElementById("log-setup").value,
+        ai_verdict: document.getElementById("log-ai-verdict").value,
+        user_action: "entered",
+        outcome: outcome === "pending" ? null : outcome,
+        r_multiple: actualR,
+        comments: outcome === "pending" ? "Logged via Smart Log Trade - Trade Open" : `Logged via Smart Log Trade - ${outcome}`,
+        entry_price: entry,
+        stop_loss: stop,
+        take_profit: tp,
+        expected_r: expectedR
+      };
+      
+      try {
+        // Save to IndexedDB
+        await idbReadyPromise;
+        if (window.IDB && window.IDB.savePerformanceLog) {
+          await window.IDB.savePerformanceLog(tradeData);
+          console.log("📊 [Smart Log] ✅ Saved to IndexedDB");
+        }
+        
+        // Sync to backend
+        const response = await fetch("http://127.0.0.1:8765/performance/log", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(tradeData)
+        });
+        
+        if (response.ok) {
+          console.log("📊 [Smart Log] ✅ Synced to backend");
+          showNotification(`📊 Trade logged! R:R: ${expectedR}:1`, "success");
+          document.getElementById("vtc-trade-log-modal").style.display = "none";
+          
+          // Clear uploaded image
+          uploadedImageData = null;
+          uploadBtn.textContent = "📤 Upload";
+          uploadBtn.style.background = "";
+          fileInput.value = "";
+        } else {
+          throw new Error("Backend sync failed");
+        }
+      } catch (error) {
+        console.error("📊 [Smart Log] ❌ Error:", error);
+        showNotification("⚠️ Failed to log trade: " + error.message, "error");
+      }
+    };
     
     // Enter key to send text-only (Ctrl+Enter for image)
     input.onkeydown = (e) => {
@@ -1313,6 +1336,266 @@ function showNotification(message, type = "info") {
   }, 3000);
 }
 
+// ========== Phase 4A: Performance Tracking ==========
+
+/**
+ * Phase 4A.1: Extract trade details from AI response
+ * Parses structured data like entry, stop loss, take profit from AI analysis
+ * @param {string} aiResponse - The AI's response text
+ * @returns {Object} Extracted trade details
+ */
+function extractTradeDetailsFromAI(aiResponse) {
+  const details = {
+    entry_price: null,
+    stop_loss: null,
+    take_profit: null,
+    expected_r: null
+  };
+  
+  // Enhanced extraction patterns to catch more variations
+  // Remove markdown formatting first (**, __, etc.)
+  const cleanResponse = aiResponse.replace(/[*_~`]/g, '');
+  
+  // Matches: "entry: 1.1625", "entered at 1.1625", "shorted around 1.1625", "bought at 1.1625"
+  const entryPatterns = [
+    /(?:entry|entered|shorted|bought|longed|went (?:long|short))(?:\s+at|\s+around|\s+near|\s+off|:|\s+@)?\s+(?:that\s+)?(?:red\s+)?(?:supply\s+)?(?:zone\s+)?(?:near\s+)?(\d+(?:[,\s]\d+)?(?:\.\d+)?)/i,
+    /(?:entry|filled)(?:\s+price)?[:\s]+(\d+(?:[,\s]\d+)?(?:\.\d+)?)/i,
+    /(?:current|sitting at|price)[:\s]+(\d+(?:\.\d+)?)/i,
+    /(?:zone|area|level)(?:\s+at|\s+around|\s+near)?[:\s]+(\d+(?:[,\s-]\d+)?(?:\.\d+)?)/i
+  ];
+  
+  // Matches: "stop: 1.1580", "SL at 1.1580", "stop loss: 1.1580", "break-even at 1.1580"
+  const slPatterns = [
+    /(?:stop|sl|stop loss|stoploss)(?:\s+at|\s+around|:|\s+@)?\s+(\d+\.?\d*)/i,
+    /break(?:-|\s)?even(?:\s+at|:|\s+@)?\s+(\d+\.?\d*)/i,
+    /trail(?:ing)?\s+stop[:\s]+(\d+\.?\d*)/i
+  ];
+  
+  // Matches: "target: 1.1565", "TP at 1.1565", "take profit around 1.1565", "profit around 1.1565"
+  const tpPatterns = [
+    /(?:target|tp|take profit|takeprofit)(?:\s+at|\s+around|:|\s+@)?\s+(\d+\.?\d*)/i,
+    /(?:profit|pnl)(?:\s+at|\s+around|:|\s+@)?\s+(\d+\.?\d*)/i,
+    /(?:next|first|second)\s+(?:target|liquidity|poi)(?:\s+at|:|\s+@)?\s+(\d+\.?\d*)/i
+  ];
+  
+  // Helper to parse price (handles ranges like "3562-3565" -> 3563.5)
+  const parsePrice = (str) => {
+    str = str.replace(/[,\s]/g, ''); // Remove commas/spaces
+    if (str.includes('-')) {
+      // Handle range: take midpoint
+      const [low, high] = str.split('-').map(parseFloat);
+      return (low + high) / 2;
+    }
+    return parseFloat(str);
+  };
+  
+  // Try all entry patterns
+  for (const pattern of entryPatterns) {
+    const match = cleanResponse.match(pattern);
+    if (match) {
+      details.entry_price = parsePrice(match[1]);
+      break;
+    }
+  }
+  
+  // Try all stop loss patterns
+  for (const pattern of slPatterns) {
+    const match = cleanResponse.match(pattern);
+    if (match) {
+      details.stop_loss = parsePrice(match[1]);
+      break;
+    }
+  }
+  
+  // Try all take profit patterns
+  for (const pattern of tpPatterns) {
+    const match = cleanResponse.match(pattern);
+    if (match) {
+      details.take_profit = parsePrice(match[1]);
+      break;
+    }
+  }
+  
+  // Calculate R:R if we have all levels
+  if (details.entry_price && details.stop_loss && details.take_profit) {
+    const risk = Math.abs(details.entry_price - details.stop_loss);
+    const reward = Math.abs(details.take_profit - details.entry_price);
+    details.expected_r = risk > 0 ? parseFloat((reward / risk).toFixed(2)) : null;
+  }
+  
+  return details;
+}
+
+/**
+ * Auto-detect trade events from user messages
+ * Looks for keywords indicating trade entry/exit
+ * @param {string} userMessage - The user's message
+ * @param {string} aiResponse - The AI's response
+ * @param {Object} sessionContext - Current session context
+ * @returns {Promise<boolean>} True if trade was logged
+ */
+async function detectAndLogTrade(userMessage, aiResponse, sessionContext) {
+  const lower = userMessage.toLowerCase();
+  
+  // Trade entry keywords (expanded for Phase 4A.1)
+  const entryKeywords = [
+    "entered", "took trade", "took this trade", "took the trade",
+    "went long", "went short", "bought", "sold", 
+    "entry at", "filled at", "got filled", "execution",
+    "opened", "shorted", "longed", "entered long", "entered short",
+    "i entered", "entered here"
+  ];
+  const isEntry = entryKeywords.some(keyword => lower.includes(keyword));
+  
+  if (isEntry) {
+    // Phase 4A.1: Extract trade details from AI's vision analysis
+    const extractedDetails = extractTradeDetailsFromAI(aiResponse);
+    
+    // Log extraction results
+    console.log("📊 [Price Extraction] Results:", {
+      entry: extractedDetails.entry_price || "❌ Not found",
+      stop_loss: extractedDetails.stop_loss || "❌ Not found",
+      take_profit: extractedDetails.take_profit || "❌ Not found",
+      expected_r: extractedDetails.expected_r || "❌ Not calculated"
+    });
+    
+    const tradeData = {
+      session_id: `trade-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Unique ID for each trade
+      timestamp: new Date().toISOString(),
+      symbol: sessionContext.symbol || currentSession?.symbol || "Unknown",
+      timeframe: sessionContext.timeframe || currentSession?.context?.timeframe || "5m",
+      bias: sessionContext.bias || currentSession?.context?.bias || "neutral",
+      setup_type: sessionContext.setup || currentSession?.context?.setup || "manual",
+      ai_verdict: aiResponse.substring(0, 200), // First 200 chars of AI response
+      user_action: "entered",
+      outcome: null, // To be updated later
+      r_multiple: null,
+      comments: userMessage,
+      // Phase 4A.1: Add extracted price levels
+      entry_price: extractedDetails.entry_price,
+      stop_loss: extractedDetails.stop_loss,
+      take_profit: extractedDetails.take_profit,
+      expected_r: extractedDetails.expected_r
+    };
+    
+    try {
+      console.log("📊 [Trade Detection] ENTRY DETECTED! Starting log process...", tradeData);
+      
+      // Wait for IDB to be ready
+      await idbReadyPromise;
+      
+      // Phase 4A.1: Fallback - define savePerformanceLog if it doesn't exist
+      if (!window.IDB.savePerformanceLog) {
+        console.warn("⚠️ savePerformanceLog not found, defining fallback...");
+        window.IDB.savePerformanceLog = async function(data) {
+          const db = await window.IDB.openDB();
+          
+          // Check if performance_logs store exists
+          if (!db.objectStoreNames.contains("performance_logs")) {
+            throw new Error("Database needs upgrade. Please run: indexedDB.deleteDatabase('vtc_memory') in console, then reload.");
+          }
+          
+          return new Promise((resolve, reject) => {
+            const tx = db.transaction(["performance_logs"], "readwrite");
+            const store = tx.objectStore("performance_logs");
+            const record = { ...data, timestamp: data.timestamp || new Date().toISOString(), created_at: Date.now() };
+            const request = store.add(record);
+            request.onsuccess = () => { console.log("📊 Saved trade #" + request.result); resolve(request.result); };
+            request.onerror = () => reject(request.error);
+          });
+        };
+      }
+      
+      console.log("📊 [Trade Detection] IDB ready, saving to IndexedDB...");
+      
+      // Save to IndexedDB
+      await window.IDB.savePerformanceLog(tradeData);
+      console.log("📊 [Trade Detection] ✅ Saved to IndexedDB");
+      
+      // Sync to backend
+      const response = await fetch("http://127.0.0.1:8765/performance/log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(tradeData)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Backend error: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      console.log("📊 [Trade Detection] ✅ Synced to backend:", result);
+      
+      // Phase 4A.1: Enhanced notification with R:R if available
+      const notification = extractedDetails.expected_r 
+        ? `📊 Trade logged! Expected R:R: ${extractedDetails.expected_r}:1`
+        : "📊 Trade logged!";
+      
+      console.log("📊 [Trade Detection] ✅ Trade entry logged successfully:", tradeData);
+      showNotification(notification, "success");
+      return true;
+    } catch (error) {
+      console.error("📊 [Trade Detection] ❌ Error logging trade:", error);
+      showNotification("⚠️ Trade logging failed: " + error.message, "error");
+      return false;
+    }
+  }
+  
+  // Trade exit keywords
+  const exitKeywords = ["closed", "exited", "took profit", "hit stop", "stopped out", "tp hit", "sl hit"];
+  const isExit = exitKeywords.some(keyword => lower.includes(keyword));
+  
+  if (isExit) {
+    // Try to extract outcome and R multiple from message
+    let outcome = "win"; // default
+    let rMultiple = null;
+    
+    if (lower.includes("stop") || lower.includes("loss") || lower.includes("sl hit")) {
+      outcome = "loss";
+      rMultiple = -1.0; // default loss
+    } else if (lower.includes("breakeven") || lower.includes("be")) {
+      outcome = "breakeven";
+      rMultiple = 0.0;
+    } else {
+      // Try to extract R multiple from message (e.g., "2r", "1.5r", "3:1")
+      const rMatch = lower.match(/(\d+(?:\.\d+)?)\s*r\b|(\d+(?:\.\d+)?)\s*:\s*1/);
+      if (rMatch) {
+        rMultiple = parseFloat(rMatch[1] || rMatch[2]);
+      } else {
+        rMultiple = 1.0; // default win
+      }
+    }
+    
+    try {
+      const updates = { outcome, r_multiple: rMultiple, comments: userMessage };
+      
+      // Update in IndexedDB
+      await window.IDB.updatePerformanceLog(currentSession?.sessionId, updates);
+      
+      // Update in backend
+      const formData = new FormData();
+      formData.append("session_id", currentSession?.sessionId);
+      formData.append("outcome", outcome);
+      formData.append("r_multiple", rMultiple);
+      formData.append("comments", userMessage);
+      
+      await fetch("http://127.0.0.1:8765/performance/update", {
+        method: "POST",
+        body: formData
+      });
+      
+      console.log(`📊 [Trade Detection] Updated trade exit: ${outcome} at ${rMultiple}R`);
+      showNotification(`📊 Trade closed: ${outcome} (${rMultiple}R)`, "success");
+      return true;
+    } catch (error) {
+      console.error("📊 [Trade Detection] Error updating trade:", error);
+      return false;
+    }
+  }
+  
+  return false;
+}
+
 // ========== Phase 3B.1: Token Efficiency ==========
 
 /**
@@ -1424,6 +1707,46 @@ function updateDebugOverlay({ includeImage = false, tokens = null, hybridMode = 
   }, 6000);
 }
 
+// ==== Copilot Bridge Intent Handler ====
+async function handleCopilotIntent(userInput) {
+  const lower = userInput.toLowerCase();
+  // Broader intent detection for common phrasing
+  const asksForStats =
+    lower.includes('show my stats') ||
+    lower.includes('my performance') ||
+    lower.includes('how am i doing') ||
+    /\b(show|see|check|review)\b[\s\S]*\b(stats|performance|win\s?rate|summary)\b/i.test(userInput);
+
+  if (asksForStats) {
+    const res = await fetch('http://127.0.0.1:8765/copilot/performance').then(r=>r.json());
+    const d = res.data;
+    return `📊 **Performance Summary**  \n• Total Trades: ${d.total}\n• Wins: ${d.wins} | Losses: ${d.losses} | BE: ${d.breakeven}\n• Win Rate: ${d.win_rate}%\n• Avg R:R: ${d.avg_rr}R\n• Best Setup: ${d.best_setup}`;
+  }
+  const asksForRecent =
+    lower.includes('review my last') ||
+    lower.includes('show last trades') ||
+    lower.includes('recent trades') ||
+    lower.includes('recently added') ||
+    lower.includes('new trades') ||
+    /\b(review|show|see|list|check)\b[\s\S]*\b(last|recent|new|recently added)\b[\s\S]*\b(trades|entries|examples|metadata)\b/i.test(userInput);
+
+  if (asksForRecent) {
+    const limit = 5;
+    const res = await fetch(`http://127.0.0.1:8765/copilot/teach/examples?limit=${limit}`).then(r=>r.json());
+    const list = res.examples.map((e,i)=>`#${i+1} ${e.symbol} (${e.outcome||'unlabeled'}) – ${e.chart_path}`).join("\n");
+    return `🧾 Here are your last ${limit} teaching examples:\n${list}`;
+  }
+  const tradeIdMatch = userInput.match(/trade\s*(\d+)/i) || userInput.match(/#?(\d{6,})/);
+  if (lower.includes('what was trade') || tradeIdMatch) {
+    const id = tradeIdMatch ? tradeIdMatch[1] || tradeIdMatch[0] : lower.match(/\d+/)[0];
+    const res = await fetch(`http://127.0.0.1:8765/copilot/teach/example/${id}`).then(r=>r.json());
+    if (!res.success) return res.message;
+    const e = res.example;
+    return `📈 Trade ${id}: ${e.symbol} (${e.direction}) → ${e.outcome||'unlabeled'}  \nPOI: ${e.poi_range||'N/A'}  BOS: ${e.bos_range||'N/A'}  \nExplanation: ${e.explanation||'Not set yet.'}`;
+  }
+  return null;
+}
+
 // ========== Message Listener ==========
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -1476,6 +1799,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         
         // Save assistant response
         await window.IDB.saveMessage(currentSession.sessionId, "assistant", response.answer);
+        
+        // Phase 4A: Auto-detect trade logging (DISABLED - use "📊 Log Trade" button instead)
+        // await detectAndLogTrade(question, response.answer, currentSession.context || {});
         
         // Reload messages and render
         chatHistory = await window.IDB.loadMessages(currentSession.sessionId);

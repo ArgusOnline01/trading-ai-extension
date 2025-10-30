@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📈 Visual Trade Copilot Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      background: linear-gradient(180deg, #1a1a2e 0%, #111 100%);
+      color: #ffd700;
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 20px;
+      min-height: 100vh;
+    }
+    
+    header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 10px;
+      text-shadow: 0 2px 10px rgba(255, 215, 0, 0.3);
+    }
+    
+    .subtitle {
+      color: #999;
+      font-size: 1rem;
+    }
+    
+    .controls {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    .btn {
+      background: #ffd700;
+      color: #111;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: 0 4px 12px rgba(255, 215, 0, 0.3);
+    }
+    
+    .btn:hover {
+      filter: brightness(1.1);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(255, 215, 0, 0.4);
+    }
+    
+    .btn:active {
+      transform: translateY(0);
+    }
+    
+    .charts-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+      gap: 30px;
+    }
+    
+    .chart-card {
+      background: #2a2a2a;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 215, 0, 0.1);
+    }
+    
+    .chart-card h2 {
+      font-size: 1.3rem;
+      margin-bottom: 15px;
+      color: #ffd700;
+      text-align: center;
+    }
+    
+    canvas {
+      max-height: 300px;
+    }
+    
+    .full-width {
+      grid-column: 1 / -1;
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 50px;
+      font-size: 1.5rem;
+      color: #ffd700;
+    }
+    
+    .error {
+      text-align: center;
+      padding: 50px;
+      color: #ff4444;
+      font-size: 1.2rem;
+    }
+    
+    @media (max-width: 768px) {
+      .charts-container {
+        grid-template-columns: 1fr;
+      }
+      
+      h1 {
+        font-size: 1.8rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📊 Performance Dashboard</h1>
+    <p class="subtitle">Visual Trade Copilot Analytics</p>
+  </header>
+  
+  <div class="controls">
+    <button id="refresh" class="btn">🔄 Refresh Data</button>
+  </div>
+  
+  <div id="loading" class="loading">Loading dashboard...</div>
+  
+  <div id="charts" class="charts-container" style="display: none;">
+    <div class="chart-card full-width">
+      <h2>📈 Rolling Win Rate Over Time</h2>
+      <canvas id="lineChart"></canvas>
+    </div>
+    
+    <div class="chart-card">
+      <h2>📊 Average R-Multiple by Setup</h2>
+      <canvas id="barChart"></canvas>
+    </div>
+    
+    <div class="chart-card">
+      <h2>🎯 Outcome Distribution</h2>
+      <canvas id="pieChart"></canvas>
+    </div>
+  </div>
+  
+  <div id="error" class="error" style="display: none;"></div>
+  
+  <script>
+    const API_URL = "http://127.0.0.1:8765/performance/dashboard-data";
+    const COLORS = {
+      gold: "#ffd700",
+      green: "#00ff88",
+      red: "#ff4444",
+      blue: "#8888ff",
+      bg: "#2a2a2a",
+      text: "#ffd700"
+    };
+    
+    let charts = {};
+    
+    async function loadDashboard() {
+      const loadingEl = document.getElementById("loading");
+      const chartsEl = document.getElementById("charts");
+      const errorEl = document.getElementById("error");
+      
+      try {
+        loadingEl.style.display = "block";
+        chartsEl.style.display = "none";
+        errorEl.style.display = "none";
+        
+        const response = await fetch(API_URL);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const data = await response.json();
+        console.log("[Dashboard] Data loaded:", data);
+        
+        // Destroy old charts if they exist
+        Object.values(charts).forEach(chart => chart?.destroy());
+        charts = {};
+        
+        drawCharts(data);
+        
+        loadingEl.style.display = "none";
+        chartsEl.style.display = "grid";
+      } catch (error) {
+        console.error("[Dashboard] Error:", error);
+        loadingEl.style.display = "none";
+        errorEl.textContent = `⚠️ Failed to load dashboard: ${error.message}`;
+        errorEl.style.display = "block";
+      }
+    }
+    
+    function drawCharts(data) {
+      const chartDefaults = {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+          legend: {
+            labels: { color: COLORS.text, font: { size: 14 } }
+          }
+        },
+        scales: {
+          x: { ticks: { color: COLORS.text }, grid: { color: "rgba(255,255,255,0.1)" } },
+          y: { ticks: { color: COLORS.text }, grid: { color: "rgba(255,255,255,0.1)" } }
+        }
+      };
+      
+      // Line Chart: Win Rate Over Time
+      charts.line = new Chart(document.getElementById("lineChart"), {
+        type: "line",
+        data: {
+          labels: data.dates,
+          datasets: [{
+            label: "Win Rate %",
+            data: data.win_rates,
+            borderColor: COLORS.gold,
+            backgroundColor: "rgba(255, 215, 0, 0.1)",
+            fill: true,
+            tension: 0.4,
+            borderWidth: 3,
+            pointRadius: 4,
+            pointBackgroundColor: COLORS.gold
+          }]
+        },
+        options: {
+          ...chartDefaults,
+          scales: {
+            ...chartDefaults.scales,
+            y: {
+              ...chartDefaults.scales.y,
+              beginAtZero: true,
+              max: 100,
+              ticks: {
+                ...chartDefaults.scales.y.ticks,
+                callback: (value) => value + "%"
+              }
+            }
+          }
+        }
+      });
+      
+      // Bar Chart: Avg R by Setup
+      charts.bar = new Chart(document.getElementById("barChart"), {
+        type: "bar",
+        data: {
+          labels: data.setups,
+          datasets: [{
+            label: "Avg R-Multiple",
+            data: data.avg_r,
+            backgroundColor: data.avg_r.map(r => r >= 0 ? COLORS.green : COLORS.red),
+            borderColor: COLORS.gold,
+            borderWidth: 2
+          }]
+        },
+        options: chartDefaults
+      });
+      
+      // Pie Chart: Outcome Distribution
+      const outcomes = data.outcomes || {};
+      charts.pie = new Chart(document.getElementById("pieChart"), {
+        type: "pie",
+        data: {
+          labels: ["Win", "Loss", "Breakeven"],
+          datasets: [{
+            data: [outcomes.win || 0, outcomes.loss || 0, outcomes.breakeven || 0],
+            backgroundColor: [COLORS.green, COLORS.red, COLORS.blue],
+            borderColor: COLORS.bg,
+            borderWidth: 3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              labels: { color: COLORS.text, font: { size: 14 } }
+            }
+          }
+        }
+      });
+    }
+    
+    // Event listeners
+    document.getElementById("refresh").onclick = () => loadDashboard();
+    
+    // Load on page load
+    loadDashboard();
+  </script>
+</body>
+</html>
+

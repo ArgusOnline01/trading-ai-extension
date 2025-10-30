@@ -356,3 +356,255 @@ body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
 }
+
+/* ========== Phase 4A: Performance Panel ========== */
+
+.performance-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  padding: 16px;
+  z-index: 1000;
+  overflow-y: auto;
+  transition: opacity 0.2s ease;
+}
+
+.performance-panel.hidden {
+  display: none;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid rgba(255, 215, 0, 0.2);
+}
+
+.panel-header h3 {
+  font-size: 18px;
+  color: #ffd700;
+  margin: 0;
+}
+
+.close-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #e0e0e0;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: #ffd700;
+}
+
+.stats-content {
+  min-height: 200px;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px 20px;
+  color: #888;
+  font-size: 14px;
+}
+
+.error {
+  text-align: center;
+  padding: 20px;
+  color: #ff453a;
+  font-size: 13px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.empty-state p {
+  font-size: 16px;
+  margin-bottom: 8px;
+  color: #e0e0e0;
+}
+
+.empty-desc {
+  font-size: 12px !important;
+  color: #888 !important;
+  line-height: 1.5;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.stat-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 14px;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.stat-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: #ffd700;
+  transform: translateY(-2px);
+}
+
+.stat-label {
+  font-size: 11px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #ffd700;
+  margin-bottom: 4px;
+}
+
+.stat-value.good {
+  color: #30d158;
+}
+
+.stat-value.ok {
+  color: #ffd60a;
+}
+
+.stat-value.bad {
+  color: #ff453a;
+}
+
+.stat-value.neutral {
+  color: #ffd700;
+}
+
+.stat-breakdown {
+  font-size: 10px;
+  color: #666;
+}
+
+.stats-footer {
+  margin-top: 16px;
+  padding: 12px;
+  background: rgba(255, 215, 0, 0.05);
+  border: 1px solid rgba(255, 215, 0, 0.2);
+  border-radius: 8px;
+}
+
+.stats-hint {
+  font-size: 11px;
+  color: #888;
+  line-height: 1.5;
+  text-align: center;
+  margin: 0;
+}
+
+/* Phase 4A.2: Trade History List */
+.trades-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 300px;
+  overflow-y: auto;
+  margin-top: 12px;
+}
+
+.trade-item {
+  background: #2d2d2d;
+  border: 1px solid #444;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.trade-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.trade-symbol {
+  font-weight: 700;
+  font-size: 16px;
+  color: #00ff99;
+}
+
+.trade-outcome {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.trade-outcome.good {
+  background: rgba(0, 255, 153, 0.2);
+  color: #00ff99;
+}
+
+.trade-outcome.bad {
+  background: rgba(255, 68, 68, 0.2);
+  color: #ff4444;
+}
+
+.trade-outcome.neutral {
+  background: rgba(255, 215, 0, 0.2);
+  color: #ffd700;
+}
+
+.trade-details-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.trade-details-grid .label {
+  color: #888;
+  margin-right: 4px;
+}
+
+.trade-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid #444;
+}
+
+.trade-time {
+  font-size: 11px;
+  color: #666;
+}
+
+.trade-delete-btn {
+  background: #ff4444;
+  color: #fff;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.trade-delete-btn:hover {
+  background: #cc0000;
+}

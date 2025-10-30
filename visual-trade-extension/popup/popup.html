@@ -42,18 +42,45 @@
           <span class="btn-desc">View conversation history</span>
         </div>
       </button>
+      
+      <button id="viewPerformance" class="action-btn secondary">
+        <span class="btn-icon">📊</span>
+        <div class="btn-content">
+          <span class="btn-text">My Performance</span>
+          <span class="btn-desc">View trading stats</span>
+        </div>
+      </button>
+      
+      <button id="openDashboard" class="action-btn secondary">
+        <span class="btn-icon">📈</span>
+        <div class="btn-content">
+          <span class="btn-text">Analytics Dashboard</span>
+          <span class="btn-desc">Visual performance charts</span>
+        </div>
+      </button>
+    </div>
+    
+    <!-- Performance Panel (Phase 4A) -->
+    <div id="performancePanel" class="performance-panel hidden">
+      <div class="panel-header">
+        <h3>📊 Performance Summary</h3>
+        <button id="closePerformance" class="close-btn">✖</button>
+      </div>
+      <div id="statsContent" class="stats-content">
+        <div class="loading">Loading stats...</div>
+      </div>
     </div>
     
     <!-- Model Selection -->
     <div class="model-selection">
       <label class="model-label">AI Model:</label>
           <div class="model-grid">
-            <button class="model-option" data-model="fast">
+            <button class="model-option active" data-model="fast">
               <span class="model-icon">⚡</span>
               <span class="model-name">Fast</span>
               <span class="model-desc">GPT-5 Chat</span>
             </button>
-            <button class="model-option active" data-model="balanced">
+            <button class="model-option" data-model="balanced">
               <span class="model-icon">🧠</span>
               <span class="model-name">Balanced</span>
               <span class="model-desc">GPT-5 Search</span>

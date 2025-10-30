@@ -1,0 +1,212 @@
+[
+  {
+    "trade_id": 1540306142,
+    "symbol": "6EZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\6EZ5_5m_1540306142.png",
+    "rendered_at": "2025-10-30 04:23:28",
+    "candles": 687
+  },
+  {
+    "trade_id": 1499163878,
+    "symbol": "MCLZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\MCLZ5_5m_1499163878.png",
+    "rendered_at": "2025-10-30 04:23:36",
+    "candles": 824
+  },
+  {
+    "trade_id": 1460693882,
+    "symbol": "MNQZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\MNQZ5_5m_1460693882.png",
+    "rendered_at": "2025-10-30 04:23:45",
+    "candles": 608
+  },
+  {
+    "trade_id": 1458717017,
+    "symbol": "MNQZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\MNQZ5_5m_1458717017.png",
+    "rendered_at": "2025-10-30 04:23:53",
+    "candles": 560
+  },
+  {
+    "trade_id": 1511856866,
+    "symbol": "6EZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\6EZ5_5m_1511856866.png",
+    "rendered_at": "2025-10-30 04:24:02",
+    "candles": 823
+  },
+  {
+    "trade_id": 1445109835,
+    "symbol": "MGCZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\MGCZ5_5m_1445109835.png",
+    "rendered_at": "2025-10-30 04:24:10",
+    "candles": 825
+  },
+  {
+    "trade_id": 1484380180,
+    "symbol": "6EZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\6EZ5_5m_1484380180.png",
+    "rendered_at": "2025-10-30 04:24:19",
+    "candles": 635
+  },
+  {
+    "trade_id": 1464026900,
+    "symbol": "6EZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\6EZ5_5m_1464026900.png",
+    "rendered_at": "2025-10-30 04:24:27",
+    "candles": 781
+  },
+  {
+    "trade_id": 1464422308,
+    "symbol": "6EZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\6EZ5_5m_1464422308.png",
+    "rendered_at": "2025-10-30 04:24:36",
+    "candles": 788
+  },
+  {
+    "trade_id": 1464422597,
+    "symbol": "6EZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\6EZ5_5m_1464422597.png",
+    "rendered_at": "2025-10-30 04:24:45",
+    "candles": 806
+  },
+  {
+    "trade_id": 1439439432,
+    "symbol": "MNQZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\MNQZ5_5m_1439439432.png",
+    "rendered_at": "2025-10-30 04:24:53",
+    "candles": 700
+  },
+  {
+    "trade_id": 1440244144,
+    "symbol": "MNQZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\MNQZ5_5m_1440244144.png",
+    "rendered_at": "2025-10-30 04:25:02",
+    "candles": 700
+  },
+  {
+    "trade_id": 1440254576,
+    "symbol": "MNQZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\MNQZ5_5m_1440254576.png",
+    "rendered_at": "2025-10-30 04:25:10",
+    "candles": 708
+  },
+  {
+    "trade_id": 1440742861,
+    "symbol": "MNQZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\MNQZ5_5m_1440742861.png",
+    "rendered_at": "2025-10-30 04:25:19",
+    "candles": 714
+  },
+  {
+    "trade_id": 1440791798,
+    "symbol": "MNQZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\MNQZ5_5m_1440791798.png",
+    "rendered_at": "2025-10-30 04:25:27",
+    "candles": 741
+  },
+  {
+    "trade_id": 1486240064,
+    "symbol": "SILZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\SILZ5_5m_1486240064.png",
+    "rendered_at": "2025-10-30 04:25:36",
+    "candles": 512
+  },
+  {
+    "trade_id": 1486294127,
+    "symbol": "SILZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\SILZ5_5m_1486294127.png",
+    "rendered_at": "2025-10-30 04:25:44",
+    "candles": 509
+  },
+  {
+    "trade_id": 1486323391,
+    "symbol": "SILZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\SILZ5_5m_1486323391.png",
+    "rendered_at": "2025-10-30 04:25:53",
+    "candles": 509
+  },
+  {
+    "trade_id": 1477085979,
+    "symbol": "MNQZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\MNQZ5_5m_1477085979.png",
+    "rendered_at": "2025-10-30 04:26:01",
+    "candles": 820
+  },
+  {
+    "trade_id": 1448456981,
+    "symbol": "SILZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\SILZ5_5m_1448456981.png",
+    "rendered_at": "2025-10-30 04:26:10",
+    "candles": 764
+  },
+  {
+    "trade_id": 1448915156,
+    "symbol": "SILZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\SILZ5_5m_1448915156.png",
+    "rendered_at": "2025-10-30 04:26:18",
+    "candles": 756
+  },
+  {
+    "trade_id": 1449624109,
+    "symbol": "MGCZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\MGCZ5_5m_1449624109.png",
+    "rendered_at": "2025-10-30 04:26:27",
+    "candles": 735
+  },
+  {
+    "trade_id": 1449972007,
+    "symbol": "MGCZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\MGCZ5_5m_1449972007.png",
+    "rendered_at": "2025-10-30 04:26:36",
+    "candles": 720
+  },
+  {
+    "trade_id": 1451213719,
+    "symbol": "MNQZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\MNQZ5_5m_1451213719.png",
+    "rendered_at": "2025-10-30 04:26:44",
+    "candles": 604
+  },
+  {
+    "trade_id": 1451419394,
+    "symbol": "6EZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\6EZ5_5m_1451419394.png",
+    "rendered_at": "2025-10-30 04:26:53",
+    "candles": 576
+  },
+  {
+    "trade_id": 1453918443,
+    "symbol": "SILZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\SILZ5_5m_1453918443.png",
+    "rendered_at": "2025-10-30 04:27:01",
+    "candles": 501
+  },
+  {
+    "trade_id": 1486940457,
+    "symbol": "CLZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\CLZ5_5m_1486940457.png",
+    "rendered_at": "2025-10-30 04:27:09",
+    "candles": 505
+  },
+  {
+    "trade_id": 1454625013,
+    "symbol": "SILZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\SILZ5_5m_1454625013.png",
+    "rendered_at": "2025-10-30 04:27:18",
+    "candles": 484
+  },
+  {
+    "trade_id": 1455264980,
+    "symbol": "MGCZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\MGCZ5_5m_1455264980.png",
+    "rendered_at": "2025-10-30 04:27:26",
+    "candles": 471
+  },
+  {
+    "trade_id": 1518733810,
+    "symbol": "SILZ5",
+    "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\SILZ5_5m_1518733810.png",
+    "rendered_at": "2025-10-30 04:27:35",
+    "candles": 588
+  }
+]

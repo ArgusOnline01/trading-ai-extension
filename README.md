@@ -8,7 +8,17 @@ A Chrome extension with FastAPI backend that provides real-time trading chart an
 
 ## ✨ Features
 
-### 🧠 **Phase 3C: Hybrid Vision → Reasoning** (Latest - v3.3.0)
+### 📊 **Phase 4A: Performance Tracking** (Latest - v4.0.0)
+- **Auto-Detect Trade Logging** - Automatically logs trades when you mention "entered", "took trade", etc.
+- **Trade Outcome Tracking** - Auto-updates with "closed", "exited", "hit stop" keywords
+- **Smart R-Multiple Extraction** - Recognizes "2r", "1.5r", "3:1" patterns in your messages
+- **Performance Dashboard** - View win rate, avg R:R, profit factor, total R in extension popup
+- **Dual Persistence** - Trades saved to both IndexedDB and backend JSON for reliability
+- **7 New API Endpoints** - Full CRUD operations for trade management
+- **Real-Time Notifications** - "📊 Trade logged!" and "📊 Trade closed: win (2.5R)" feedback
+- **Color-Coded Stats** - Green for good performance, yellow for ok, red for bad
+
+### 🧠 **Phase 3C: Hybrid Vision → Reasoning** (v3.3.0)
 - **Hybrid Pipeline** - GPT-4o vision → GPT-5 reasoning for cost-efficient chart analysis
 - **Smart Image Cache** - MD5 hash-based cache invalidation (auto-refreshes on new charts)
 - **Auto-Routing** - Frontend automatically detects text-only models and enables hybrid mode

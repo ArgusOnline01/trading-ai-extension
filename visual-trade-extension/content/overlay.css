@@ -601,9 +601,9 @@
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(4px);
-  z-index: 2147483646; /* Below chat panel */
+  background: rgba(0, 0, 0, 0.95);
+  backdrop-filter: blur(8px);
+  z-index: 2147483648; /* Above everything */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -882,7 +882,9 @@
 }
 
 .vtc-btn-text,
-.vtc-btn-image {
+.vtc-btn-image,
+.vtc-btn-upload,
+.vtc-btn-log {
   border: none;
   padding: 10px 16px;
   margin: 0;
@@ -929,11 +931,181 @@
   transform: translateY(0);
 }
 
+/* Phase 4A.1: Upload button */
+.vtc-btn-upload {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  color: #fff;
+  border: 1px solid #8b5cf6;
+}
+
+.vtc-btn-upload:hover {
+  background: linear-gradient(135deg, #9333ea 0%, #7c3aed 100%);
+  border-color: #ffd700;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+}
+
+.vtc-btn-upload:active {
+  transform: translateY(0);
+}
+
+/* Phase 4A.1: Log Trade button */
+.vtc-btn-log {
+  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
+  color: #fff;
+  border: 1px solid #06b6d4;
+}
+
+.vtc-btn-log:hover {
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
+  border-color: #ffd700;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
+}
+
+.vtc-btn-log:active {
+  transform: translateY(0);
+}
+
 .vtc-btn-text:disabled,
-.vtc-btn-image:disabled {
+.vtc-btn-image:disabled,
+.vtc-btn-upload:disabled,
+.vtc-btn-log:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
+}
+
+/* Phase 4A.1: Trade Log Modal */
+.vtc-trade-log-content {
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.vtc-log-hint {
+  color: #00ff99;
+  font-size: 14px;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.vtc-trade-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vtc-form-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.vtc-form-row label {
+  flex: 0 0 120px;
+  font-weight: 600;
+  color: #ffd700;
+  font-size: 14px;
+}
+
+.vtc-form-row input,
+.vtc-form-row select,
+.vtc-form-row textarea {
+  flex: 1;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid #444;
+  background: #2d2d2d;
+  color: #fff;
+  font-size: 14px;
+}
+
+.vtc-form-row input:focus,
+.vtc-form-row select:focus,
+.vtc-form-row textarea:focus {
+  outline: none;
+  border-color: #00ff99;
+  box-shadow: 0 0 0 2px rgba(0, 255, 153, 0.1);
+}
+
+.vtc-form-full {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.vtc-form-full label {
+  flex: none;
+  margin-bottom: 6px;
+}
+
+.vtc-form-stats {
+  display: flex;
+  justify-content: space-around;
+  padding: 16px;
+  background: #1a1a1a;
+  border-radius: 8px;
+  border: 1px solid #444;
+  margin: 8px 0;
+}
+
+.vtc-stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.vtc-stat-label {
+  font-size: 12px;
+  color: #888;
+  text-transform: uppercase;
+}
+
+.vtc-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #00ff99;
+}
+
+.vtc-form-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.vtc-btn-primary,
+.vtc-btn-secondary {
+  flex: 1;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: none;
+}
+
+.vtc-btn-primary {
+  background: linear-gradient(135deg, #00ff99 0%, #00cc77 100%);
+  color: #000;
+}
+
+.vtc-btn-primary:hover {
+  background: linear-gradient(135deg, #00cc77 0%, #009955 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 255, 153, 0.3);
+}
+
+.vtc-btn-secondary {
+  background: #2d2d2d;
+  color: #fff;
+  border: 1px solid #444;
+}
+
+.vtc-btn-secondary:hover {
+  background: #3d3d3d;
+  border-color: #666;
 }
 
 /* Debug Overlay (Token/Cost Display) - Sticks to left of chat panel */
@@ -979,7 +1151,9 @@
   }
   
   .vtc-btn-text,
-  .vtc-btn-image {
+  .vtc-btn-image,
+  .vtc-btn-upload,
+  .vtc-btn-log {
     width: 100%;
   }
 }

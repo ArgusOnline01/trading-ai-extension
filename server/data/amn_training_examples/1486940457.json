@@ -1,0 +1,13 @@
+{
+  "trade_id": 1486940457,
+  "symbol": "CLZ5",
+  "direction": "short",
+  "pnl": -200.0,
+  "label": "loss",
+  "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\CLZ5_5m_1486940457.png",
+  "poi_range": null,
+  "bos_range": null,
+  "outcome": "loss",
+  "explanation": "",
+  "created_at": "2025-10-30T17:56:20.152044"
+}

@@ -1,0 +1,22 @@
+{
+  "total_trades": 5,
+  "completed_trades": 5,
+  "win_rate": 1.0,
+  "best_setup": "Demand",
+  "worst_setup": "Supply",
+  "avg_rr": 4.81,
+  "setup_performance": {
+    "Demand": 5.35,
+    "Supply": 4.45
+  },
+  "bias_performance": {
+    "bullish": 5.35,
+    "bearish": 4.45
+  },
+  "common_mistakes": [],
+  "recent_trend": {
+    "win_rate_change": 100.0,
+    "rr_change": 4.81
+  },
+  "last_updated": "2025-10-30T06:32:41.696768"
+}

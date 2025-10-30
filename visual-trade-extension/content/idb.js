@@ -13,7 +13,7 @@ window.IDB = window.IDB || {};
 console.log("📦 window.IDB namespace created:", window.IDB);
 
 const DB_NAME = "vtc_memory";
-const DB_VERSION = 2; // Upgraded from v1 (Phase 3A) to v2 (Phase 3B)
+const DB_VERSION = 3; // Upgraded to v3 (Phase 4A: Performance Tracking)
 
 console.log("🗄️ DB config:", DB_NAME, "version", DB_VERSION);
 
@@ -43,6 +43,16 @@ window.IDB.openDB = async function openDB() {
         const messagesStore = db.createObjectStore("messages", { keyPath: "id", autoIncrement: true });
         messagesStore.createIndex("sessionId", "sessionId", { unique: false });
         messagesStore.createIndex("timestamp", "timestamp", { unique: false });
+      }
+
+      // Phase 4A: Create performance_logs store (if not exists)
+      if (!db.objectStoreNames.contains("performance_logs")) {
+        const perfStore = db.createObjectStore("performance_logs", { keyPath: "id", autoIncrement: true });
+        perfStore.createIndex("session_id", "session_id", { unique: false });
+        perfStore.createIndex("symbol", "symbol", { unique: false });
+        perfStore.createIndex("timestamp", "timestamp", { unique: false });
+        perfStore.createIndex("outcome", "outcome", { unique: false });
+        console.log("📊 Created performance_logs store");
       }
 
       // Migrate old chat_history to new structure (Phase 3A → 3B migration)
@@ -392,5 +402,156 @@ window.IDB.getSessionStats = async function getSessionStats(sessionId) {
   };
 }
 
-console.log("✅ IndexedDB helpers loaded (Phase 3B)");
+// ========== Phase 4A: Performance Tracking Functions ==========
+
+/**
+ * Save a performance log entry
+ * @param {Object} tradeData - Trade record data
+ * @returns {Promise<number>} The new trade's ID
+ */
+window.IDB.savePerformanceLog = async function savePerformanceLog(tradeData) {
+  const db = await window.IDB.openDB();
+  
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(["performance_logs"], "readwrite");
+    const store = transaction.objectStore("performance_logs");
+    
+    const record = {
+      ...tradeData,
+      timestamp: tradeData.timestamp || new Date().toISOString(),
+      created_at: Date.now()
+    };
+    
+    const request = store.add(record);
+    
+    request.onsuccess = () => {
+      console.log(`📊 [Performance] Saved trade log #${request.result}`);
+      resolve(request.result);
+    };
+    request.onerror = () => {
+      console.error("📊 [Performance] Error saving trade log:", request.error);
+      reject(request.error);
+    };
+  });
+}
+
+/**
+ * Get all performance logs
+ * @param {Object} filters - Optional filters (symbol, outcome)
+ * @returns {Promise<Array>}
+ */
+window.IDB.getPerformanceLogs = async function getPerformanceLogs(filters = {}) {
+  const db = await window.IDB.openDB();
+  
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(["performance_logs"], "readonly");
+    const store = transaction.objectStore("performance_logs");
+    const request = store.getAll();
+    
+    request.onsuccess = () => {
+      let logs = request.result;
+      
+      // Apply filters
+      if (filters.symbol) {
+        logs = logs.filter(log => log.symbol === filters.symbol);
+      }
+      if (filters.outcome) {
+        logs = logs.filter(log => log.outcome === filters.outcome);
+      }
+      
+      // Sort by timestamp (newest first)
+      logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      
+      resolve(logs);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/**
+ * Update a performance log entry
+ * @param {string} sessionId - Session ID
+ * @param {Object} updates - Fields to update
+ * @returns {Promise<void>}
+ */
+window.IDB.updatePerformanceLog = async function updatePerformanceLog(sessionId, updates) {
+  const db = await window.IDB.openDB();
+  
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(["performance_logs"], "readwrite");
+    const store = transaction.objectStore("performance_logs");
+    const index = store.index("session_id");
+    const request = index.openCursor(IDBKeyRange.only(sessionId));
+    
+    request.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        const record = cursor.value;
+        const updated = { ...record, ...updates, updated_at: Date.now() };
+        cursor.update(updated);
+        console.log(`📊 [Performance] Updated trade log for session ${sessionId}`);
+        resolve();
+      } else {
+        reject(new Error(`Trade log not found for session ${sessionId}`));
+      }
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/**
+ * Calculate performance statistics from local logs
+ * @param {Object} filters - Optional filters
+ * @returns {Promise<Object>}
+ */
+window.IDB.calculatePerformanceStats = async function calculatePerformanceStats(filters = {}) {
+  const logs = await window.IDB.getPerformanceLogs(filters);
+  
+  if (logs.length === 0) {
+    return {
+      total_trades: 0,
+      win_rate: null,
+      avg_r: null,
+      profit_factor: null,
+      total_r: null,
+      wins: 0,
+      losses: 0,
+      breakevens: 0
+    };
+  }
+  
+  const wins = logs.filter(log => log.outcome === "win");
+  const losses = logs.filter(log => log.outcome === "loss");
+  const breakevens = logs.filter(log => log.outcome === "breakeven");
+  
+  const rValues = logs.filter(log => log.r_multiple != null).map(log => log.r_multiple);
+  const winningR = wins.filter(log => log.r_multiple != null).map(log => log.r_multiple);
+  const losingR = losses.filter(log => log.r_multiple != null).map(log => Math.abs(log.r_multiple));
+  
+  const totalTrades = logs.length;
+  const completedTrades = wins.length + losses.length + breakevens.length;
+  const winRate = completedTrades > 0 ? (wins.length / completedTrades) * 100 : null;
+  const avgR = rValues.length > 0 ? rValues.reduce((a, b) => a + b, 0) / rValues.length : null;
+  const totalR = rValues.length > 0 ? rValues.reduce((a, b) => a + b, 0) : null;
+  
+  let profitFactor = null;
+  if (winningR.length > 0 && losingR.length > 0) {
+    const totalWins = winningR.reduce((a, b) => a + b, 0);
+    const totalLosses = losingR.reduce((a, b) => a + b, 0);
+    profitFactor = totalLosses > 0 ? totalWins / totalLosses : null;
+  }
+  
+  return {
+    total_trades: totalTrades,
+    win_rate: winRate != null ? Math.round(winRate * 10) / 10 : null,
+    avg_r: avgR != null ? Math.round(avgR * 100) / 100 : null,
+    profit_factor: profitFactor != null ? Math.round(profitFactor * 100) / 100 : null,
+    total_r: totalR != null ? Math.round(totalR * 100) / 100 : null,
+    wins: wins.length,
+    losses: losses.length,
+    breakevens: breakevens.length
+  };
+}
+
+console.log("✅ IndexedDB helpers loaded (Phase 3B + 4A)");
 

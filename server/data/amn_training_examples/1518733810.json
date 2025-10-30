@@ -1,0 +1,13 @@
+{
+  "trade_id": 1518733810,
+  "symbol": "SILZ5",
+  "direction": "short",
+  "pnl": -180.0,
+  "label": "loss",
+  "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\SILZ5_5m_1518733810.png",
+  "poi_range": null,
+  "bos_range": null,
+  "outcome": "loss",
+  "explanation": "",
+  "created_at": "2025-10-30T17:56:20.222730"
+}

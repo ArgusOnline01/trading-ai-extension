@@ -1,5 +1,6 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import base64
 import io
@@ -8,6 +9,16 @@ import os
 from dotenv import load_dotenv
 from decision import analyze_chart_with_gpt4v, get_base_prompt
 from openai_client import get_client, get_budget_status, resolve_model, list_available_models, sync_model_aliases
+from performance.routes import router as performance_router
+from performance.dashboard import router as dashboard_router
+from performance.learning import learning_router
+from memory.routes import memory_router
+from memory.utils import initialize_default_files, get_memory_status
+from trades_import.routes import router as trades_import_router
+from chart_reconstruction.routes import router as chart_reconstruction_router
+from trades_merge.routes import router as trades_merge_router
+from amn_teaching.routes import router as amn_teaching_router
+from copilot_bridge.routes import router as copilot_router
 
 # Try to import PIL, but make it optional for now
 try:
@@ -43,16 +54,70 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Sync model aliases at startup to auto-detect GPT-5
+# Mount performance tracking router (Phase 4A)
+app.include_router(performance_router)
+app.include_router(dashboard_router)
+
+# Mount learning router (Phase 4C)
+app.include_router(learning_router)
+
+# Mount memory router (Phase 4C.1)
+app.include_router(memory_router)
+
+# Mount trades import router (Phase 4D.0)
+app.include_router(trades_import_router)
+
+# Mount chart reconstruction router (Phase 4D.1)
+app.include_router(chart_reconstruction_router)
+
+# Mount trades merge router (Phase 4D.2)
+app.include_router(trades_merge_router)
+
+# Mount AMN teaching router (Phase 4D.2)
+app.include_router(amn_teaching_router)
+
+# Mount static files for dashboard (Phase 4B.1)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Mount copilot bridge router (Phase 4D.2.1)
+app.include_router(copilot_router)
+
+# Phase 4C.1: Startup initialization with persistent memory
 @app.on_event("startup")
 async def startup_event():
-    """Run model alias sync on server startup"""
+    """Initialize system on server startup"""
+    print("=" * 60)
+    print("[BOOT] Visual Trade Copilot v4.6.0")
+    print("=" * 60)
+    
+    # Initialize memory system
     try:
-        print("Syncing model aliases with OpenAI API...")
+        print("[MEMORY] Checking data directory...")
+        initialize_default_files()
+        
+        status = get_memory_status()
+        print(f"[MEMORY] Loaded persistent memory:")
+        print(f"         - {status['total_trades']} trades")
+        print(f"         - {status['active_sessions']} sessions")
+        print(f"         - {status['conversation_messages']} conversation messages")
+        
+        if status['total_trades'] > 0:
+            print(f"         - Win rate: {status['win_rate']*100:.1f}%")
+            print(f"         - Avg R: {status['avg_rr']:+.2f}")
+    except Exception as e:
+        print(f"[MEMORY] Warning: Could not load memory: {e}")
+    
+    # Sync model aliases
+    try:
+        print("[SYSTEM] Syncing model aliases with OpenAI API...")
         sync_model_aliases()
     except Exception as e:
-        print(f"Warning: Could not sync model aliases: {e}")
-        print("Continuing with default aliases...")
+        print(f"[SYSTEM] Warning: Could not sync model aliases: {e}")
+        print("[SYSTEM] Continuing with default aliases...")
+    
+    print("[SYSTEM] Awareness layer initialized")
+    print("[SYSTEM] Commands registered: stats, delete, clear, model, sessions, help")
+    print("=" * 60)
 
 # Pydantic models
 class AskResponse(BaseModel):

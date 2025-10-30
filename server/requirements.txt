@@ -5,3 +5,9 @@ uvicorn==0.22.0
 python-multipart==0.0.6
 pypng==0.20220715.0
 # pillow==9.5.0  # Optional - requires system libraries (zlib) for compilation
+
+# Phase 4D.1: Chart Reconstruction
+yfinance>=0.2.28
+mplfinance>=0.12.10b0
+matplotlib>=3.7.0
+pandas>=2.0.0

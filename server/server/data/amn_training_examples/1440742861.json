@@ -1,0 +1,13 @@
+{
+  "trade_id": 1440742861,
+  "symbol": "MNQZ5",
+  "direction": "short",
+  "pnl": 15.0,
+  "label": "win",
+  "chart_path": null,
+  "poi_range": null,
+  "bos_range": null,
+  "outcome": "win",
+  "explanation": "",
+  "created_at": "2025-10-30T05:55:01.405604"
+}

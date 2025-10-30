@@ -9,7 +9,7 @@ from typing import Dict, Any, Optional
 import json
 
 # Configuration
-DEFAULT_MODEL = "gpt-4o"
+DEFAULT_MODEL = "gpt-5-chat-latest"  # Phase 4C.1: Updated default to GPT-5 Chat
 MAX_TOKENS = 1000
 TEMPERATURE = 0.1
 
@@ -94,6 +94,66 @@ When the user references previous messages (e.g., "the setup I showed earlier", 
                         context_str += f"Notes: {', '.join(notes[:3])}\n"  # Show first 3 notes
                 
                 system_prompt += context_str
+            
+            # Phase 4C: Inject learning profile for adaptive advice
+            try:
+                from performance.learning import get_learning_context
+                learning_context = get_learning_context()
+                if learning_context:
+                    system_prompt += learning_context
+                    print("[LEARNING] ✅ Injected performance profile into AI prompt")
+            except Exception as e:
+                print(f"[LEARNING] Could not load profile: {e}")
+            
+            # Phase 4C.1: Inject system awareness context
+            try:
+                from memory.utils import get_memory_status
+                from memory.system_commands import COMMAND_PATTERNS
+                
+                status = get_memory_status()
+                
+                awareness_context = """
+
+[AI SYSTEM AWARENESS]
+You are the Visual Trade Copilot. You live inside a Chrome Extension backed by FastAPI.
+You analyze charts, log trades, and learn from user strategy.
+
+Your capabilities:
+- All memory persists in backend JSON files (survives browser restarts)
+- You have access to {} trades, {} sessions, {} conversation messages
+- Current win rate: {:.1f}%, Avg R: {:+.2f}
+- You can execute system commands
+
+Available commands (recognize natural language):
+- "show my stats" / "how am i doing" -> Display performance summary
+- "delete last trade" -> Remove most recent trade entry
+- "what model are you using" -> Show current AI model
+- "list sessions" -> Show active chat sessions  
+- "clear memory" -> Reset temporary data
+- "help" -> Show all commands
+
+When users ask these questions, provide helpful formatted responses.
+For chart analysis, use your SMC expertise combined with their trading history.
+
+[Copilot Bridge]
+You have direct API access to:
+- /copilot/performance → summarize trading performance
+- /copilot/teach/examples → list teaching examples
+- /copilot/teach/example/{id} → fetch specific teaching example
+When users ask about their stats, performance, teaching data, or specific trades, always reference these endpoints to ensure your responses are accurate and live.
+""".format(
+                    status.get('total_trades', 0),
+                    status.get('active_sessions', 0),
+                    status.get('conversation_messages', 0),
+                    status.get('win_rate', 0) * 100,
+                    status.get('avg_rr', 0)
+                )
+                
+                system_prompt += awareness_context
+                print("[SYSTEM] ✅ Injected awareness context")
+                
+            except Exception as e:
+                print(f"[SYSTEM] Could not inject awareness: {e}")
             
             # Build messages array starting with system prompt
             messages = [

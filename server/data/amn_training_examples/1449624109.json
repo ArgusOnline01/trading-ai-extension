@@ -1,0 +1,13 @@
+{
+  "trade_id": 1449624109,
+  "symbol": "MGCZ5",
+  "direction": "short",
+  "pnl": -130.0,
+  "label": "loss",
+  "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\MGCZ5_5m_1449624109.png",
+  "poi_range": null,
+  "bos_range": null,
+  "outcome": "loss",
+  "explanation": "",
+  "created_at": "2025-10-30T17:56:20.022310"
+}

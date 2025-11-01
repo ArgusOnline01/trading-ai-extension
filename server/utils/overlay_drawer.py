@@ -195,16 +195,10 @@ def get_overlay_url(overlay_path: str) -> str:
     if not overlay_path:
         return ""
     
-    # Extract relative path from data directory
+    # Extract filename from full path
     path = Path(overlay_path)
-    data_dir = Path(__file__).parent.parent / "data"
+    filename = path.name
     
-    try:
-        relative = path.relative_to(data_dir)
-        # Convert to URL path (forward slashes)
-        url_path = str(relative).replace("\\", "/")
-        return f"/charts/overlays/{url_path}" if "overlays" not in url_path else f"/data/{url_path}"
-    except ValueError:
-        # Path not relative to data dir, return as-is
-        return overlay_path
+    # Return URL path (overlays are mounted at /overlays)
+    return f"/overlays/{filename}"
 

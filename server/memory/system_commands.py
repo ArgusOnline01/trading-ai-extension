@@ -13,19 +13,50 @@ import os
 # Command patterns (lowercase for fuzzy matching)
 # IMPORTANT: Order matters - more specific patterns should come first!
 COMMAND_PATTERNS = {
+    # Performance Commands
     "stats": ["show my stats", "show stats", "my performance", "how am i doing", "my results"],
     "restore_last": ["restore last trade", "undo delete", "add it back", "re-add last trade", "undelete last trade", "put it back", "bring it back"],
     "delete_last": ["delete last trade", "remove last trade", "delete recent trade"],
-    "switch_session": ["switch session", "change session", "load session", "open session", "go to session"],
+    "delete_trade": ["delete trade", "remove trade", "delete this trade", "remove this trade", "delete trade by id"],
+    "view_trade": ["view trade", "show trade", "trade details", "show trade details", "what is this trade"],
+    
+    # Session Management
+    "switch_session": ["switch session", "change session", "load session", "open session", "go to session", "switch to"],
     "create_session": ["create session", "new session", "start session", "add session", "make session"],
     "delete_session": ["delete session", "remove session"],
-    "rename_session": ["rename session", "change session name", "edit session title"],
-    "clear_memory": ["clear memory", "reset memory", "delete all data", "wipe memory"],
-    "model_info": ["what model", "which model", "current model", "what ai", "which gpt"],
+    "rename_session": ["rename session", "change session name", "edit session title", "rename to"],
     "list_sessions": ["list sessions", "show sessions", "my sessions", "active sessions"],
+    
+    # UI Controls
+    "close_chat": ["close chat", "hide chat", "close copilot", "hide copilot", "close the chat", "close this chat"],
+    "open_chat": ["open chat", "show chat", "open copilot", "show copilot", "bring chat back", "open the chat", "bring back chat"],
+    "minimize_chat": ["minimize chat", "minimize", "minimize copilot", "minimize the chat"],
+    "resize_chat": ["resize chat", "make chat bigger", "make chat smaller", "resize copilot", "change chat size", "bigger chat", "smaller chat"],
+    "reset_chat_size": ["reset chat size", "reset size", "default size", "reset chat", "normal size"],
+    "show_session_manager": ["show session manager", "open session manager", "session manager", "sessions", "manage sessions"],
+    
+    # Teaching Commands
     "open_teach_copilot": ["open teach copilot", "start teaching", "teach copilot", "open teaching", "show teach copilot", "launch teaching mode", "begin teaching", "review trades one by one", "lets review the trades", "teach me", "let's teach", "redo this in teach mode", "lets redo this", "redo in teach mode", "do this in teaching", "open teaching for this trade", "teach me about this", "review this trade", "lets review this"],
     "close_teach_copilot": ["close teach copilot", "pause teaching", "pause teaching mode", "close teaching", "exit teaching mode", "stop teaching", "discard teaching lesson", "cancel teaching"],
+    "start_teaching": ["start teaching session", "begin teaching session"],
+    "end_teaching": ["end teaching session", "stop teaching session", "finish teaching", "complete teaching"],
+    "next_trade_teaching": ["next trade", "next", "skip to next", "move to next trade", "go to next trade"],
+    "skip_trade_teaching": ["skip trade", "skip this trade", "skip", "skip current trade"],
+    "teaching_progress": ["teaching progress", "learning progress", "teaching stats", "how many lessons", "teaching summary", "teaching status"],
+    
+    # Lesson Management
+    "view_lessons": ["view lessons", "show lessons", "list lessons", "my lessons", "show my lessons", "all lessons", "lessons list"],
+    "view_lesson": ["view lesson", "show lesson", "lesson details", "show lesson details", "view lesson details"],
+    "delete_lesson": ["delete lesson", "remove lesson", "delete this lesson", "remove this lesson"],
+    "edit_lesson": ["edit lesson", "update lesson", "modify lesson", "change lesson", "update this lesson"],
+    
+    # Chart Commands
     "show_chart": ["show chart", "show image", "show the chart", "display chart", "pull up chart", "show me the chart", "open chart", "view chart", "can you show the chart", "show that chart", "show this chart", "chart please"],
+    "close_chart": ["close chart", "hide chart", "close image", "close the chart", "close chart popup"],
+    
+    # System Commands
+    "clear_memory": ["clear memory", "reset memory", "delete all data", "wipe memory"],
+    "model_info": ["what model", "which model", "current model", "what ai", "which gpt"],
     "help": ["help", "commands", "what can you do", "available commands", "show me commands", "what commands", "list commands", "what can i ask", "how can you help"]
 }
 
@@ -160,6 +191,52 @@ def execute_command(command: str, context: Dict[str, Any] = None) -> Dict[str, A
     
     elif command == "help":
         return execute_help_command()
+    
+    # UI Control Commands
+    elif command == "close_chat":
+        return execute_close_chat_command()
+    elif command == "open_chat":
+        return execute_open_chat_command()
+    elif command == "minimize_chat":
+        return execute_minimize_chat_command()
+    elif command == "resize_chat":
+        return execute_resize_chat_command(context)
+    elif command == "reset_chat_size":
+        return execute_reset_chat_size_command()
+    elif command == "show_session_manager":
+        return execute_show_session_manager_command()
+    
+    # Lesson Management Commands
+    elif command == "view_lessons":
+        return execute_view_lessons_command()
+    elif command == "view_lesson":
+        return execute_view_lesson_command(context)
+    elif command == "delete_lesson":
+        return execute_delete_lesson_command(context)
+    elif command == "edit_lesson":
+        return execute_edit_lesson_command(context)
+    elif command == "teaching_progress":
+        return execute_teaching_progress_command()
+    
+    # Teaching Session Commands
+    elif command == "start_teaching":
+        return execute_start_teaching_command()
+    elif command == "end_teaching":
+        return execute_end_teaching_command()
+    elif command == "next_trade_teaching":
+        return execute_next_trade_teaching_command()
+    elif command == "skip_trade_teaching":
+        return execute_skip_trade_teaching_command()
+    
+    # Trade Management Commands
+    elif command == "delete_trade":
+        return execute_delete_trade_command(context)
+    elif command == "view_trade":
+        return execute_view_trade_command(context)
+    
+    # Chart Commands
+    elif command == "close_chart":
+        return execute_close_chart_command()
     
     else:
         return {
@@ -533,7 +610,25 @@ def execute_show_chart_command(context: Dict[str, Any] = None) -> Dict[str, Any]
         command_text = context.get('command_text', '')
         conversation_history = context.get('all_sessions') or []
         
-        detected_trade = detect_trade_reference(command_text or '', all_trades, conversation_history)
+        # Build combined text from command + recent conversation
+        combined_text = command_text
+        if conversation_history:
+            # Add last few messages to help with detection
+            for msg in reversed(conversation_history[-5:]):
+                if msg.get('role') == 'assistant':
+                    combined_text += " " + str(msg.get('content', ''))
+                elif msg.get('role') == 'user':
+                    combined_text += " " + str(msg.get('content', ''))
+        
+        print(f"[SHOW_CHART] Detecting trade from: '{combined_text[:200]}...'")
+        print(f"[SHOW_CHART] History length: {len(conversation_history)}")
+        
+        detected_trade = detect_trade_reference(combined_text, all_trades, conversation_history)
+        
+        if detected_trade:
+            print(f"[SHOW_CHART] Detected trade: {detected_trade.get('id')} - {detected_trade.get('symbol')}")
+        else:
+            print(f"[SHOW_CHART] No trade detected")
     
     if not detected_trade:
         return {
@@ -548,20 +643,44 @@ def execute_show_chart_command(context: Dict[str, Any] = None) -> Dict[str, Any]
     
     # Find chart path
     chart_path = detected_trade.get('chart_path')
+    print(f"[SHOW_CHART] Trade chart_path from object: {chart_path}")
+    
     if not chart_path:
-        # Try to find via metadata
+        # Try to find via metadata API
+        try:
+            import requests
+            meta_response = requests.get(f"http://127.0.0.1:8765/charts/chart/{trade_id}", timeout=2)
+            if meta_response.ok:
+                meta = meta_response.json()
+                chart_path = meta.get('chart_path')
+                print(f"[SHOW_CHART] Found via metadata API: {chart_path}")
+        except Exception as e:
+            print(f"[SHOW_CHART] Metadata API lookup failed: {e}")
+    
+    if not chart_path:
+        # Try to find via file system
         try:
             from pathlib import Path
             charts_dir = Path(__file__).parent.parent / "data" / "charts"
+            print(f"[SHOW_CHART] Searching in: {charts_dir}")
+            
             if trade_id and symbol:
-                patterns = [f"{symbol}_5m_{trade_id}.png", f"{symbol}_5m_{trade_id}*.png"]
+                patterns = [
+                    f"{symbol}_5m_{trade_id}.png",
+                    f"{symbol}_5m_{trade_id}*.png",
+                    f"{symbol}_*_{trade_id}.png"
+                ]
                 for pattern in patterns:
                     matches = list(charts_dir.glob(pattern))
                     if matches:
                         chart_path = str(matches[0])
+                        print(f"[SHOW_CHART] Found via pattern {pattern}: {chart_path}")
                         break
-        except:
-            pass
+        except Exception as e:
+            print(f"[SHOW_CHART] File system lookup failed: {e}")
+    
+    if not chart_path:
+        print(f"[SHOW_CHART] Chart not found. Trade: {symbol} {trade_id}")
     
     if not chart_path:
         return {
@@ -575,47 +694,536 @@ def execute_show_chart_command(context: Dict[str, Any] = None) -> Dict[str, Any]
     import os
     filename = os.path.basename(chart_path)
     
+    # Build chart URL (charts are mounted at /charts)
+    chart_url = f"/charts/{filename}"
+    print(f"[SHOW_CHART] Returning chart_url: {chart_url}")
+    print(f"[SHOW_CHART] Full URL will be: http://127.0.0.1:8765{chart_url}")
+    
     return {
         "success": True,
         "command": "show_chart",
         "message": f"📊 Opening chart for {symbol} trade {trade_id}...",
         "frontend_action": "show_chart_popup",
         "trade_id": trade_id,
-        "chart_url": f"/charts/{filename}",
-        "symbol": symbol
+        "chart_url": chart_url,
+        "symbol": symbol,
+        "debug": {
+            "chart_path": chart_path,
+            "filename": filename
+        }
     }
 
 
 def execute_help_command() -> Dict[str, Any]:
     """Execute 'help' command - show available commands"""
-    message = "🤖 **Visual Trade Copilot - System Commands**\n\n"
-    message += "**Performance:**\n"
+    message = "🤖 **Visual Trade Copilot - Comprehensive System Commands**\n\n"
+    
+    message += "**📊 Performance:**\n"
     message += "• `show my stats` - View trading performance\n"
     message += "• `delete last trade` - Remove most recent trade\n"
-    message += "• `restore last trade` - Undo the last deletion\n\n"
-    message += "**Teaching:**\n"
-    message += "• `open teach copilot` / `start teaching` - Open teaching mode UI to review trades and teach AI\n"
+    message += "• `restore last trade` - Undo the last deletion\n"
+    message += "• `delete trade` / `view trade` - Delete or view specific trade\n\n"
+    
+    message += "**🎓 Teaching & Lessons:**\n"
+    message += "• `open teach copilot` / `start teaching` - Open teaching mode UI\n"
     message += "• `close teach copilot` / `pause teaching` - Close teaching mode UI\n"
-    message += "• `review trades one by one` - Begin teaching session\n"
-    message += "• `show chart` / `show image` - Display chart for current trade\n\n"
-    message += "**Sessions:**\n"
+    message += "• `start teaching session` - Begin teaching session\n"
+    message += "• `end teaching session` - End teaching session\n"
+    message += "• `next trade` - Move to next trade in teaching\n"
+    message += "• `skip trade` - Skip current trade\n"
+    message += "• `view lessons` - List all saved lessons\n"
+    message += "• `view lesson` - Show lesson details\n"
+    message += "• `delete lesson` - Delete a lesson\n"
+    message += "• `edit lesson` - Edit a lesson\n"
+    message += "• `teaching progress` - Show teaching statistics\n\n"
+    
+    message += "**📂 Sessions:**\n"
     message += "• `list sessions` - Show all active sessions\n"
     message += "• `create session [symbol]` - Create a new trading session\n"
     message += "• `switch session` - Switch to a different session\n"
     message += "• `rename session [name]` - Rename current session\n"
-    message += "• `delete session` - Delete a session\n\n"
-    message += "**System:**\n"
+    message += "• `delete session` - Delete a session\n"
+    message += "• `show session manager` - Open session manager UI\n\n"
+    
+    message += "**🖥️ UI Controls:**\n"
+    message += "• `close chat` - Hide chat panel\n"
+    message += "• `open chat` - Show chat panel\n"
+    message += "• `minimize chat` - Minimize chat\n"
+    message += "• `resize chat` - Resize chat panel\n"
+    message += "• `reset chat size` - Reset to default size\n\n"
+    
+    message += "**📈 Charts:**\n"
+    message += "• `show chart` / `open chart` - Display chart for trade\n"
+    message += "• `close chart` - Close chart popup\n\n"
+    
+    message += "**⚙️ System:**\n"
     message += "• `what model are you using` - View current AI model\n"
-    message += "• `clear memory` - Reset all temporary data\n\n"
-    message += "**Analysis:**\n"
-    message += "• Upload chart + ask questions\n"
-    message += "• Use 📊 Log Trade button to track performance\n"
-    message += "• AI learns from your trading history!"
+    message += "• `clear memory` - Reset all temporary data\n"
+    message += "• `help` - Show this help message\n\n"
+    
+    message += "💡 **Tip:** All commands work as questions too! (e.g., 'can you show my stats?')"
     
     return {
         "success": True,
         "command": "help",
         "message": message,
         "data": {"commands": list(COMMAND_PATTERNS.keys())}
+    }
+
+
+# ========== NEW COMMAND EXECUTORS ==========
+
+def execute_close_chat_command() -> Dict[str, Any]:
+    """Execute 'close chat' command"""
+    return {
+        "success": True,
+        "command": "close_chat",
+        "message": "👋 Closing chat panel...",
+        "frontend_action": "close_chat"
+    }
+
+def execute_open_chat_command() -> Dict[str, Any]:
+    """Execute 'open chat' command"""
+    return {
+        "success": True,
+        "command": "open_chat",
+        "message": "👋 Opening chat panel...",
+        "frontend_action": "open_chat"
+    }
+
+def execute_minimize_chat_command() -> Dict[str, Any]:
+    """Execute 'minimize chat' command"""
+    return {
+        "success": True,
+        "command": "minimize_chat",
+        "message": "⬇️ Minimizing chat...",
+        "frontend_action": "minimize_chat"
+    }
+
+def execute_resize_chat_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Execute 'resize chat' command - extract size from context if provided"""
+    context = context or {}
+    command_text = context.get('command_text', '').lower()
+    
+    # Try to extract size hints
+    size_hint = None
+    if 'bigger' in command_text or 'larger' in command_text or 'increase' in command_text:
+        size_hint = "bigger"
+    elif 'smaller' in command_text or 'reduce' in command_text or 'decrease' in command_text:
+        size_hint = "smaller"
+    
+    return {
+        "success": True,
+        "command": "resize_chat",
+        "message": f"📐 Resizing chat panel...",
+        "frontend_action": "resize_chat",
+        "data": {"size_hint": size_hint}
+    }
+
+def execute_reset_chat_size_command() -> Dict[str, Any]:
+    """Execute 'reset chat size' command"""
+    return {
+        "success": True,
+        "command": "reset_chat_size",
+        "message": "⬜ Resetting chat to default size...",
+        "frontend_action": "reset_chat_size"
+    }
+
+def execute_show_session_manager_command() -> Dict[str, Any]:
+    """Execute 'show session manager' command"""
+    return {
+        "success": True,
+        "command": "show_session_manager",
+        "message": "📂 Opening Session Manager...",
+        "frontend_action": "show_session_manager"
+    }
+
+def execute_view_lessons_command() -> Dict[str, Any]:
+    """Execute 'view lessons' command - opens lessons viewer in Teach Copilot"""
+    return {
+        "success": True,
+        "command": "view_lessons",
+        "message": "📚 Opening lessons viewer...\n\nYou can view all saved lessons, see what the AI extracted (BOS/POI), and view teaching progress statistics.",
+        "frontend_action": "view_lessons"
+    }
+
+def execute_view_lesson_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Execute 'view lesson' command - shows detailed lesson information"""
+    context = context or {}
+    
+    # Try to extract lesson ID from context or conversation
+    lesson_id = None
+    if context.get('lesson_id'):
+        lesson_id = context['lesson_id']
+    elif context.get('detected_lesson'):
+        lesson_id = context['detected_lesson'].get('example_id') or context['detected_lesson'].get('trade_id')
+    
+    # Try to extract from command text
+    if not lesson_id:
+        command_text = context.get('command_text', '')
+        import re
+        # Try to find ID patterns
+        id_match = re.search(r'(?:lesson|id|trade)\s*[#:]?\s*(\d+)', command_text, re.IGNORECASE)
+        if id_match:
+            lesson_id = id_match.group(1)
+    
+    if lesson_id:
+        return {
+            "success": True,
+            "command": "view_lesson",
+            "message": f"📚 Viewing lesson {lesson_id}...",
+            "frontend_action": "view_lesson_details",
+            "data": {"lesson_id": lesson_id}
+        }
+    else:
+        return {
+            "success": False,
+            "command": "view_lesson",
+            "message": "❓ Please specify which lesson to view. Try 'view lesson [ID]' or say 'view this lesson' after mentioning a specific lesson.",
+            "frontend_action": "view_lessons"  # Fallback: show lessons list
+        }
+
+def execute_delete_lesson_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Execute 'delete lesson' command"""
+    context = context or {}
+    
+    # Try to extract lesson ID
+    lesson_id = None
+    if context.get('lesson_id'):
+        lesson_id = context['lesson_id']
+    elif context.get('detected_lesson'):
+        lesson_id = context['detected_lesson'].get('example_id') or context['detected_lesson'].get('trade_id')
+    
+    if not lesson_id:
+        command_text = context.get('command_text', '')
+        import re
+        id_match = re.search(r'(?:lesson|id|trade)\s*[#:]?\s*(\d+)', command_text, re.IGNORECASE)
+        if id_match:
+            lesson_id = id_match.group(1)
+    
+    if lesson_id:
+        # Delete via API
+        try:
+            import requests
+            response = requests.delete(f"http://127.0.0.1:8765/teach/lessons/{lesson_id}", timeout=5)
+            if response.status_code == 200:
+                return {
+                    "success": True,
+                    "command": "delete_lesson",
+                    "message": f"🗑️ Lesson {lesson_id} deleted successfully.",
+                    "data": {"deleted_lesson_id": lesson_id}
+                }
+            else:
+                return {
+                    "success": False,
+                    "command": "delete_lesson",
+                    "message": f"⚠️ Could not delete lesson {lesson_id}: {response.text}"
+                }
+        except Exception as e:
+            return {
+                "success": False,
+                "command": "delete_lesson",
+                "message": f"⚠️ Error deleting lesson: {str(e)}"
+            }
+    else:
+        return {
+            "success": False,
+            "command": "delete_lesson",
+            "message": "❓ Please specify which lesson to delete. Try 'delete lesson [ID]' or say 'delete this lesson' after mentioning a specific lesson."
+        }
+
+def execute_edit_lesson_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Execute 'edit lesson' command"""
+    context = context or {}
+    
+    # Try to extract lesson ID
+    lesson_id = None
+    if context.get('lesson_id'):
+        lesson_id = context['lesson_id']
+    elif context.get('detected_lesson'):
+        lesson_id = context['detected_lesson'].get('example_id') or context['detected_lesson'].get('trade_id')
+    
+    if not lesson_id:
+        command_text = context.get('command_text', '')
+        import re
+        id_match = re.search(r'(?:lesson|id|trade)\s*[#:]?\s*(\d+)', command_text, re.IGNORECASE)
+        if id_match:
+            lesson_id = id_match.group(1)
+    
+    if lesson_id:
+        return {
+            "success": True,
+            "command": "edit_lesson",
+            "message": f"✏️ Opening lesson {lesson_id} for editing...\n\nYou can modify the lesson text, BOS, POI, or other fields.",
+            "frontend_action": "edit_lesson",
+            "data": {"lesson_id": lesson_id}
+        }
+    else:
+        return {
+            "success": False,
+            "command": "edit_lesson",
+            "message": "❓ Please specify which lesson to edit. Try 'edit lesson [ID]' or say 'edit this lesson' after mentioning a specific lesson."
+        }
+
+def execute_teaching_progress_command() -> Dict[str, Any]:
+    """Execute 'teaching progress' command"""
+    try:
+        import requests
+        response = requests.get("http://127.0.0.1:8765/teach/progress", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            progress = data.get("progress", {})
+            
+            message = "📊 **Teaching Progress**\n\n"
+            message += f"• Total Lessons: {progress.get('total_lessons', 0)}\n"
+            message += f"• Understood: {progress.get('understood', 0)}\n"
+            message += f"• Average Confidence: {progress.get('avg_confidence', 0) * 100:.0f}%\n"
+            message += f"• Wins: {progress.get('win_count', 0)}\n"
+            message += f"• Losses: {progress.get('loss_count', 0)}\n"
+            
+            return {
+                "success": True,
+                "command": "teaching_progress",
+                "message": message,
+                "data": progress
+            }
+        else:
+            return {
+                "success": False,
+                "command": "teaching_progress",
+                "message": f"⚠️ Could not load teaching progress: {response.text}"
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "command": "teaching_progress",
+            "message": f"⚠️ Error loading teaching progress: {str(e)}"
+        }
+
+def execute_start_teaching_command() -> Dict[str, Any]:
+    """Execute 'start teaching session' command"""
+    try:
+        import requests
+        response = requests.post("http://127.0.0.1:8765/teach/start", timeout=15)
+        if response.status_code == 200:
+            return {
+                "success": True,
+                "command": "start_teaching",
+                "message": "🎓 Teaching session started! You can now review trades one by one.",
+                "data": response.json()
+            }
+        else:
+            return {
+                "success": False,
+                "command": "start_teaching",
+                "message": f"⚠️ Could not start teaching session: {response.text}"
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "command": "start_teaching",
+            "message": f"⚠️ Error starting teaching session: {str(e)}"
+        }
+
+def execute_end_teaching_command() -> Dict[str, Any]:
+    """Execute 'end teaching session' command"""
+    try:
+        import requests
+        response = requests.post("http://127.0.0.1:8765/teach/end", timeout=15)
+        if response.status_code == 200:
+            data = response.json()
+            duration = data.get('session_duration', 0)
+            duration_min = duration // 60 if duration else 0
+            
+            message = "✅ Teaching session ended."
+            if duration_min:
+                message += f" Duration: {duration_min} minutes"
+            
+            return {
+                "success": True,
+                "command": "end_teaching",
+                "message": message,
+                "data": data
+            }
+        else:
+            return {
+                "success": False,
+                "command": "end_teaching",
+                "message": f"⚠️ Could not end teaching session: {response.text}"
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "command": "end_teaching",
+            "message": f"⚠️ Error ending teaching session: {str(e)}"
+        }
+
+def execute_next_trade_teaching_command() -> Dict[str, Any]:
+    """Execute 'next trade' command in teaching mode"""
+    try:
+        import requests
+        response = requests.post("http://127.0.0.1:8765/teach/next", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            return {
+                "success": True,
+                "command": "next_trade_teaching",
+                "message": f"➡️ Moved to trade index {data.get('trade_index', 0)}",
+                "data": data
+            }
+        else:
+            return {
+                "success": False,
+                "command": "next_trade_teaching",
+                "message": f"⚠️ Could not move to next trade: {response.text}"
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "command": "next_trade_teaching",
+            "message": f"⚠️ Error moving to next trade: {str(e)}"
+        }
+
+def execute_skip_trade_teaching_command() -> Dict[str, Any]:
+    """Execute 'skip trade' command in teaching mode"""
+    try:
+        import requests
+        response = requests.post("http://127.0.0.1:8765/teach/skip", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            return {
+                "success": True,
+                "command": "skip_trade_teaching",
+                "message": f"⏭️ Trade skipped. Moved to index {data.get('next_trade_index', 0)}",
+                "data": data
+            }
+        else:
+            return {
+                "success": False,
+                "command": "skip_trade_teaching",
+                "message": f"⚠️ Could not skip trade: {response.text}"
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "command": "skip_trade_teaching",
+            "message": f"⚠️ Error skipping trade: {str(e)}"
+        }
+
+def execute_delete_trade_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Execute 'delete trade' command"""
+    context = context or {}
+    
+    # Try to extract trade ID
+    trade_id = None
+    if context.get('trade_id'):
+        trade_id = context['trade_id']
+    elif context.get('detected_trade'):
+        trade_id = context['detected_trade'].get('id') or context['detected_trade'].get('trade_id')
+    
+    if not trade_id:
+        command_text = context.get('command_text', '')
+        import re
+        id_match = re.search(r'(?:trade|id)\s*[#:]?\s*(\d+)', command_text, re.IGNORECASE)
+        if id_match:
+            trade_id = id_match.group(1)
+    
+    if trade_id:
+        try:
+            import requests
+            response = requests.delete(f"http://127.0.0.1:8765/performance/trades/{trade_id}", timeout=5)
+            if response.status_code == 200:
+                return {
+                    "success": True,
+                    "command": "delete_trade",
+                    "message": f"🗑️ Trade {trade_id} deleted successfully.",
+                    "data": {"deleted_trade_id": trade_id}
+                }
+            else:
+                return {
+                    "success": False,
+                    "command": "delete_trade",
+                    "message": f"⚠️ Could not delete trade {trade_id}: {response.text}"
+                }
+        except Exception as e:
+            return {
+                "success": False,
+                "command": "delete_trade",
+                "message": f"⚠️ Error deleting trade: {str(e)}"
+            }
+    else:
+        return {
+            "success": False,
+            "command": "delete_trade",
+            "message": "❓ Please specify which trade to delete. Try 'delete trade [ID]' or say 'delete this trade' after mentioning a specific trade."
+        }
+
+def execute_view_trade_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Execute 'view trade' command"""
+    context = context or {}
+    
+    # Try to extract trade ID
+    trade_id = None
+    if context.get('trade_id'):
+        trade_id = context['trade_id']
+    elif context.get('detected_trade'):
+        trade_id = context['detected_trade'].get('id') or context['detected_trade'].get('trade_id')
+    
+    if not trade_id:
+        command_text = context.get('command_text', '')
+        import re
+        id_match = re.search(r'(?:trade|id)\s*[#:]?\s*(\d+)', command_text, re.IGNORECASE)
+        if id_match:
+            trade_id = id_match.group(1)
+    
+    if trade_id:
+        try:
+            import requests
+            response = requests.get(f"http://127.0.0.1:8765/performance/trades/{trade_id}", timeout=5)
+            if response.status_code == 200:
+                trade = response.json().get('trade', {})
+                symbol = trade.get('symbol', 'Unknown')
+                outcome = trade.get('outcome', 'pending')
+                pnl = trade.get('pnl', 0)
+                r_multiple = trade.get('r_multiple', 0)
+                
+                message = f"📊 **Trade {trade_id} Details**\n\n"
+                message += f"• Symbol: {symbol}\n"
+                message += f"• Outcome: {outcome}\n"
+                message += f"• P&L: ${pnl:.2f}\n"
+                message += f"• R-Multiple: {r_multiple:.2f}R\n"
+                
+                return {
+                    "success": True,
+                    "command": "view_trade",
+                    "message": message,
+                    "data": trade
+                }
+            else:
+                return {
+                    "success": False,
+                    "command": "view_trade",
+                    "message": f"⚠️ Could not load trade {trade_id}: {response.text}"
+                }
+        except Exception as e:
+            return {
+                "success": False,
+                "command": "view_trade",
+                "message": f"⚠️ Error loading trade: {str(e)}"
+            }
+    else:
+        return {
+            "success": False,
+            "command": "view_trade",
+            "message": "❓ Please specify which trade to view. Try 'view trade [ID]' or say 'view this trade' after mentioning a specific trade."
+        }
+
+def execute_close_chart_command() -> Dict[str, Any]:
+    """Execute 'close chart' command"""
+    return {
+        "success": True,
+        "command": "close_chart",
+        "message": "📊 Closing chart popup...",
+        "frontend_action": "close_chart"
     }
 

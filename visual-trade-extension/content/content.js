@@ -450,6 +450,241 @@ async function renameSession() {
   }
 }
 
+// ========== Global Chart Popup Function (Phase 5C) ==========
+
+/**
+ * Open a full-size chart popup modal
+ * Available globally for use in both normal mode and teaching mode
+ */
+window.openChartPopup = function(src) {
+  if (!src) {
+    console.error("[CHART_POPUP] No source URL provided");
+    return;
+  }
+  
+  console.log("[CHART_POPUP] Opening side panel with URL:", src);
+  
+  // Remove existing popup if any
+  const existing = document.getElementById("vtc-chart-side-panel");
+  if (existing) {
+    console.log("[CHART_POPUP] Removing existing side panel");
+    existing.remove();
+  }
+  
+  // Create side panel (not full-screen, positioned on the right, resizable and draggable)
+  const sidePanel = document.createElement('div');
+  sidePanel.id = 'vtc-chart-side-panel';
+  
+  // Initialize position - avoid covering chat panel (which is usually on the right at ~620px width)
+  const chatWidth = 620; // Approximate chat panel width
+  const initialRight = 20; // Start from right edge with some margin
+  const initialWidth = 500;
+  const initialTop = 100;
+  const initialHeight = 600;
+  
+  sidePanel.style.cssText = `
+    position: fixed;
+    top: ${initialTop}px;
+    right: ${initialRight}px;
+    width: ${initialWidth}px;
+    height: ${initialHeight}px;
+    min-width: 300px;
+    min-height: 400px;
+    max-width: 90vw;
+    max-height: 90vh;
+    background: linear-gradient(135deg, #1c1c1c 0%, #2a2a2a 100%);
+    border: 2px solid #ffd700;
+    border-radius: 12px;
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.8);
+    z-index: 2147483647;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+    cursor: default;
+  `;
+  
+  // Make it draggable
+  let isDragging = false;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let startLeft = 0;
+  let startTop = 0;
+  
+  const header = document.createElement('div');
+  header.style.cssText = `
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(255, 215, 0, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(135deg, #111 0%, #1a1a1a 100%);
+    cursor: move;
+    user-select: none;
+  `;
+  
+  header.onmousedown = (e) => {
+    isDragging = true;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    const rect = sidePanel.getBoundingClientRect();
+    startLeft = rect.left;
+    startTop = rect.top;
+    sidePanel.style.cursor = 'grabbing';
+    e.preventDefault();
+  };
+  
+  document.addEventListener('mousemove', (e) => {
+    if (isDragging) {
+      const deltaX = e.clientX - dragStartX;
+      const deltaY = e.clientY - dragStartY;
+      const newLeft = startLeft + deltaX;
+      const newTop = startTop + deltaY;
+      // Keep within viewport bounds
+      const maxLeft = window.innerWidth - sidePanel.offsetWidth;
+      const maxTop = window.innerHeight - sidePanel.offsetHeight;
+      sidePanel.style.left = `${Math.max(0, Math.min(newLeft, maxLeft))}px`;
+      sidePanel.style.top = `${Math.max(0, Math.min(newTop, maxTop))}px`;
+      sidePanel.style.right = 'auto';
+    }
+  });
+  
+  document.addEventListener('mouseup', () => {
+    if (isDragging) {
+      isDragging = false;
+      sidePanel.style.cursor = 'default';
+    }
+  });
+  
+  // Make it resizable
+  const resizeHandle = document.createElement('div');
+  resizeHandle.style.cssText = `
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 20px;
+    height: 20px;
+    cursor: nwse-resize;
+    background: transparent;
+    z-index: 10;
+  `;
+  
+  let isResizing = false;
+  let resizeStartX = 0;
+  let resizeStartY = 0;
+  let startWidth = 0;
+  let startHeight = 0;
+  
+  resizeHandle.onmousedown = (e) => {
+    isResizing = true;
+    resizeStartX = e.clientX;
+    resizeStartY = e.clientY;
+    startWidth = sidePanel.offsetWidth;
+    startHeight = sidePanel.offsetHeight;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  
+  document.addEventListener('mousemove', (e) => {
+    if (isResizing) {
+      const deltaX = resizeStartX - e.clientX; // Reverse because we're resizing from right
+      const deltaY = e.clientY - resizeStartY;
+      const newWidth = Math.max(300, Math.min(startWidth + deltaX, window.innerWidth - 20));
+      const newHeight = Math.max(400, Math.min(startHeight + deltaY, window.innerHeight - 20));
+      sidePanel.style.width = `${newWidth}px`;
+      sidePanel.style.height = `${newHeight}px`;
+    }
+  });
+  
+  document.addEventListener('mouseup', () => {
+    if (isResizing) {
+      isResizing = false;
+    }
+  });
+  
+  header.innerHTML = `
+    <h3 style="margin: 0; color: #ffd700; font-size: 18px; font-weight: 600;">📊 Chart View</h3>
+    <button id="vtc-close-chart-panel" style="background: transparent; border: none; color: #999; font-size: 24px; cursor: pointer; padding: 0 10px; transition: color 0.2s;" 
+            onmouseover="this.style.color='#fff'" 
+            onmouseout="this.style.color='#999'">✕</button>
+  `;
+  
+  const body = document.createElement('div');
+  body.style.cssText = `
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    background: #1a1a1a;
+    position: relative;
+  `;
+  
+  body.innerHTML = `
+    <div style="text-align: center; background: #131722; border-radius: 8px; padding: 15px;">
+      <img id="vtc-chart-side-img" src="${src}" alt="Chart" 
+           style="max-width: 100%; height: auto; border-radius: 6px; cursor: pointer;"
+           onclick="this.style.maxWidth === '100%' ? (this.style.maxWidth='200%', this.style.position='relative', this.style.zIndex='9999') : (this.style.maxWidth='100%', this.style.position='static', this.style.zIndex='auto')"
+           onerror="console.error('[CHART_POPUP] Image failed to load:', this.src); this.style.display='none'; this.parentElement.innerHTML='<p style=\\'color: #ff453a; padding: 20px;\\'>❌ Failed to load chart image. URL: ' + this.src + '</p>';"
+           onload="console.log('[CHART_POPUP] Image loaded successfully:', this.src);">
+    </div>
+    <div style="margin-top: 15px; padding: 12px; background: #131722; border-radius: 8px; font-size: 12px; color: #888;">
+      <div style="margin-bottom: 8px;">💡 <strong>Tip:</strong> Click image to zoom in</div>
+      <div>Drag header to move • Drag bottom-right corner to resize</div>
+      <div style="margin-top: 6px;">Press <kbd style="background: #2a2a2a; padding: 2px 6px; border-radius: 3px; border: 1px solid #444;">Esc</kbd> or click ✕ to close</div>
+    </div>
+  `;
+  
+  sidePanel.appendChild(header);
+  sidePanel.appendChild(body);
+  sidePanel.appendChild(resizeHandle);
+  
+  document.body.appendChild(sidePanel);
+  
+  console.log("[CHART_POPUP] Side panel appended to body");
+  
+  // Image load handlers
+  setTimeout(() => {
+    const img = document.getElementById("vtc-chart-side-img");
+    if (img) {
+      console.log("[CHART_POPUP] Image element found, src:", img.src);
+      img.addEventListener('load', () => {
+        console.log("[CHART_POPUP] ✅ Chart image loaded successfully!");
+        showNotification("📊 Chart opened in side panel", "success");
+      });
+      img.addEventListener('error', () => {
+        console.error("[CHART_POPUP] ❌ Chart image failed to load:", img.src);
+        showNotification("❌ Failed to load chart image. Check console for details.", "error");
+      });
+    }
+  }, 100);
+  
+  // Close button
+  document.getElementById("vtc-close-chart-panel").onclick = () => {
+    console.log("[CHART_POPUP] Close button clicked");
+    sidePanel.remove();
+  };
+  
+  // Close on Escape key
+  const escapeHandler = (e) => {
+    if (e.key === 'Escape') {
+      console.log("[CHART_POPUP] Escape key pressed, closing");
+      sidePanel.remove();
+      document.removeEventListener('keydown', escapeHandler);
+    }
+  };
+  document.addEventListener('keydown', escapeHandler);
+  
+  // Add slide-in animation from right
+  sidePanel.style.opacity = '0';
+  sidePanel.style.transform = 'translateX(100%) scale(0.95)';
+  sidePanel.style.transition = 'opacity 0.3s, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+  setTimeout(() => {
+    sidePanel.style.opacity = '1';
+    sidePanel.style.transform = 'translateX(0) scale(1)';
+  }, 10);
+  
+  console.log("[CHART_POPUP] Side panel setup complete");
+};
+
 // ========== Chat UI Functions ==========
 
 /**
@@ -708,7 +943,18 @@ function ensureChatUI() {
       }
       
       // NEW: System command intercept (delete last trade, show stats, etc.) - only when Reasoned Commands OFF
-      if (!reasonedCommandsEnabled) {
+      // Phase 5C: ALWAYS check for "show chart" commands (they need to open popup, not go to AI)
+      // Note: 'lower' is already declared above
+      const isShowChartCommand = lower.includes('show chart') || 
+                                 lower.includes('show image') || 
+                                 lower.includes('show its chart') ||
+                                 lower.includes('show the chart') ||
+                                 lower.includes('can you show') ||
+                                 lower.includes('display chart') ||
+                                 lower.includes('pull up chart') ||
+                                 lower.includes('pull up image');
+      
+      if (!reasonedCommandsEnabled || isShowChartCommand) {
         const sysReply = await handleSystemCommand(question);
         if (sysReply) {
           await window.IDB.saveMessage(currentSession.sessionId, "user", question);
@@ -716,7 +962,14 @@ function ensureChatUI() {
           chatHistory = await window.IDB.loadMessages(currentSession.sessionId);
           renderMessages();
           input.value = "";
-          showNotification("Executed system command", "success");
+          
+          // Phase 5C: If it was a show_chart command and popup should open, the frontend_action handler already ran
+          // Just return here to prevent sending to AI
+          if (isShowChartCommand) {
+            console.log("[SHOW_CHART] Command intercepted, popup should have opened");
+          } else {
+            showNotification("Executed system command", "success");
+          }
           return;
         }
       }
@@ -1659,6 +1912,7 @@ async function detectAndLogTrade(userMessage, aiResponse, sessionContext) {
 // ========== Phase 5A.2: Teach Copilot Modal ==========
 
 let teachCopilotModal = null;
+let selectedTeachCopilotTrade = null; // Phase 5B.1: Store currently selected trade
 
 /**
  * Show Teach Copilot modal (overlay popup like Log Trade)
@@ -1714,13 +1968,30 @@ async function showTeachCopilotModal() {
             <button id="vtc-teach-preview" class="vtc-btn-secondary" style="flex: 1;">👁️ Preview Overlay</button>
             <button id="vtc-teach-save" class="vtc-btn-primary" style="flex: 1;">💾 Save Lesson</button>
             <button id="vtc-teach-skip" class="vtc-btn-secondary" style="flex: 1;">⏭️ Skip</button>
+            <button id="vtc-teach-view-lessons" class="vtc-btn-secondary" style="flex: 1;">📚 View Lessons</button>
           </div>
           <div id="vtc-teach-status" style="margin-top: 12px; padding: 8px; border-radius: 6px; min-height: 20px; font-size: 0.9em;"></div>
         </div>
       </div>
       <!-- Phase 5C: Live status band and chips -->
-      <div id="teach-status-band" style="background: #1e1e1e; color: #ddd; padding: 6px 10px; border-top: 1px solid #333; font-size: 13px;">Waiting for lesson input...</div>
-      <div id="lesson-chips" style="display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px; background: #1a1a1a; border-top: 1px solid #333;"></div>
+      <div id="teach-status-band" style="background: #1e1e1e; color: #ddd; padding: 8px 12px; border-top: 1px solid #333; font-size: 13px; min-height: 20px;">Waiting for lesson input...</div>
+      <div id="lesson-chips" style="display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; background: #1a1a1a; border-top: 1px solid #333; min-height: 50px; align-items: center;">
+        <span style="color: #888; font-size: 12px; margin-right: 8px;">📊 Extracted:</span>
+      </div>
+      
+      <!-- Phase 5C: Lessons Viewer Panel (hidden by default) -->
+      <div id="vtc-lessons-viewer" style="display: none; margin-top: 20px; border-top: 2px solid rgba(255, 215, 0, 0.3); padding-top: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+          <h4 style="margin: 0; color: #ffd700;">📚 Saved Lessons & Learning Progress</h4>
+          <button id="vtc-close-lessons-viewer" style="background: transparent; border: none; color: #999; font-size: 20px; cursor: pointer; padding: 0 10px;">✕</button>
+        </div>
+        <div id="vtc-lessons-list" style="max-height: 400px; overflow-y: auto; background: #131722; border-radius: 8px; padding: 15px;">
+          <div style="text-align: center; color: #666; padding: 20px;">Loading lessons...</div>
+        </div>
+        <div id="vtc-progress-stats" style="margin-top: 15px; padding: 12px; background: rgba(255, 215, 0, 0.05); border: 1px solid rgba(255, 215, 0, 0.2); border-radius: 8px; font-size: 12px;">
+          <div style="color: #888;">Loading progress stats...</div>
+        </div>
+      </div>
     </div>
   `;
   
@@ -1753,56 +2024,31 @@ async function showTeachCopilotModal() {
   document.getElementById("vtc-teach-trade-select").addEventListener("change", onTeachTradeSelected);
   document.getElementById("vtc-teach-save").onclick = saveTeachLesson;
   document.getElementById("vtc-teach-preview").onclick = generatePreview;
-  
-  // Phase 5C: Define openChartPopup function for chart popups
-  window.openChartPopup = function(src) {
-    if (!src) return;
-    
-    // Remove existing popup if any
-    const existing = document.getElementById("vtc-chart-popup-modal");
-    if (existing) existing.remove();
-    
-    // Create full-size chart pop-up modal
-    const chartModal = document.createElement('div');
-    chartModal.id = 'vtc-chart-popup-modal';
-    chartModal.className = 'vtc-modal';
-    chartModal.style.display = 'flex';
-    chartModal.style.zIndex = '10001'; // Above Teach Copilot modal
-    
-    chartModal.innerHTML = `
-      <div class="vtc-modal-content" style="max-width: 95vw; max-height: 95vh; padding: 20px;">
-        <div class="vtc-modal-header" style="margin-bottom: 15px;">
-          <h3 style="margin: 0; color: #ffd700;">📊 Chart View</h3>
-          <button class="vtc-close-modal" id="vtc-close-chart-popup" style="background: transparent; border: none; color: #fff; font-size: 24px; cursor: pointer; padding: 0 10px;">✕</button>
-        </div>
-        <div style="text-align: center; background: #1a1a1a; border-radius: 8px; padding: 20px; overflow: auto; max-height: 85vh;">
-          <img src="${src}" alt="Full-size chart" style="max-width: 100%; max-height: 85vh; border-radius: 6px; cursor: zoom-out;">
-        </div>
-      </div>
-    `;
-    
-    document.body.appendChild(chartModal);
-    
-    document.getElementById("vtc-close-chart-popup").onclick = () => {
-      chartModal.remove();
-    };
-    
-    // Close on background click
-    chartModal.onclick = (e) => {
-      if (e.target === chartModal) {
-        chartModal.remove();
-      }
-    };
-    
-    // Close on Escape key
-    const escapeHandler = (e) => {
-      if (e.key === 'Escape') {
-        chartModal.remove();
-        document.removeEventListener('keydown', escapeHandler);
-      }
-    };
-    document.addEventListener('keydown', escapeHandler);
+  document.getElementById("vtc-teach-view-lessons").onclick = showLessonsViewer;
+  document.getElementById("vtc-close-lessons-viewer").onclick = () => {
+    document.getElementById("vtc-lessons-viewer").style.display = "none";
   };
+  
+  // Phase 5C: Make charts clickable to open popup (uses global openChartPopup)
+  const chartImg = document.getElementById("vtc-teach-chart-img");
+  const chartContainer = document.getElementById("vtc-teach-chart-container");
+  
+  if (chartImg) {
+    chartImg.addEventListener('click', () => {
+      if (chartImg.src && chartImg.style.display !== 'none' && window.openChartPopup) {
+        window.openChartPopup(chartImg.src);
+      }
+    });
+  }
+  
+  if (chartContainer) {
+    chartContainer.addEventListener('click', () => {
+      const img = document.getElementById("vtc-teach-chart-img");
+      if (img && img.src && img.style.display !== 'none' && window.openChartPopup) {
+        window.openChartPopup(img.src);
+      }
+    });
+  }
   
   document.getElementById("vtc-teach-skip").onclick = async () => {
     try {
@@ -2127,11 +2373,21 @@ async function streamTeachMessage(message) {
 // Phase 5C: Update lesson chips dynamically
 function updateLessonChips(partialLesson) {
   const chipContainer = document.getElementById("lesson-chips");
-  if (!chipContainer) return;
+  if (!chipContainer) {
+    console.warn("[CHIPS] lesson-chips container not found");
+    return;
+  }
   
-  chipContainer.innerHTML = "";
+  // Clear but keep label if exists
+  const existingLabel = chipContainer.querySelector('span[style*="color: #888"]');
+  chipContainer.innerHTML = existingLabel ? existingLabel.outerHTML : '<span style="color: #888; font-size: 12px; margin-right: 8px;">📊 Extracted:</span>';
   
-  if (!partialLesson || typeof partialLesson !== "object") return;
+  if (!partialLesson || typeof partialLesson !== "object") {
+    console.log("[CHIPS] No partial lesson data");
+    return;
+  }
+  
+  console.log("[CHIPS] Updating with:", partialLesson);
   
   // BOS chip
   if (partialLesson.bos && partialLesson.bos.start && partialLesson.bos.end) {
@@ -2186,6 +2442,237 @@ function showTeachStatus(text, type = "info") {
   statusBand.textContent = text;
 }
 
+// Phase 5C: Show lessons viewer
+async function showLessonsViewer() {
+  console.log("[LESSONS] showLessonsViewer called");
+  const viewer = document.getElementById("vtc-lessons-viewer");
+  const lessonsList = document.getElementById("vtc-lessons-list");
+  const progressStats = document.getElementById("vtc-progress-stats");
+  
+  if (!viewer || !lessonsList || !progressStats) {
+    console.error("[LESSONS] Viewer elements not found", {viewer, lessonsList, progressStats});
+    showNotification("Error: Lessons viewer elements not found. Please refresh the page.", "error");
+    return;
+  }
+  
+  // Toggle visibility
+  if (viewer.style.display === "none" || !viewer.style.display) {
+    viewer.style.display = "block";
+    console.log("[LESSONS] Showing viewer panel");
+    
+    // Load lessons
+    lessonsList.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">Loading lessons...</div>';
+    progressStats.innerHTML = '<div style="color: #888;">Loading progress stats...</div>';
+    
+    try {
+      console.log("[LESSONS] Fetching lessons from API...");
+      // Fetch lessons list
+      const lessonsRes = await fetch("http://127.0.0.1:8765/teach/lessons");
+      const lessonsData = await lessonsRes.json();
+      console.log("[LESSONS] Lessons response:", lessonsData);
+      
+      if (lessonsData.status === "ok" && lessonsData.lessons) {
+        const lessons = lessonsData.lessons;
+        
+        if (lessons.length === 0) {
+          lessonsList.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">No lessons saved yet. Start teaching to create lessons!</div>';
+        } else {
+          // Render lessons
+          lessonsList.innerHTML = lessons.map((lesson, idx) => {
+            const bosDisplay = lesson.bos ? `${lesson.bos.start} → ${lesson.bos.end}` : "❌ Not extracted";
+            const poiDisplay = lesson.poi_count > 0 ? `${lesson.poi_count} zone(s)` : "❌ None";
+            const confidence = lesson.confidence ? `${Math.round(lesson.confidence * 100)}%` : "N/A";
+            const understood = lesson.understood ? "✅ Understood" : "⏳ Learning";
+            const outcomeColor = lesson.outcome === "win" ? "#30d158" : lesson.outcome === "loss" ? "#ff453a" : "#ffc107";
+            
+            return `
+              <div style="background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 15px; margin-bottom: 12px; cursor: pointer;" 
+                   onclick="viewLessonDetails('${lesson.example_id}')">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
+                  <div>
+                    <div style="font-weight: 600; color: #ffd700; font-size: 14px;">
+                      ${lesson.symbol} | ${lesson.direction.toUpperCase()} | 
+                      <span style="color: ${outcomeColor};">${lesson.outcome.toUpperCase()}</span> | 
+                      ${lesson.pnl >= 0 ? '+' : ''}$${lesson.pnl.toFixed(2)}
+                    </div>
+                    <div style="font-size: 11px; color: #888; margin-top: 4px;">
+                      Trade ID: ${lesson.trade_id} | ${new Date(lesson.timestamp).toLocaleString()}
+                    </div>
+                  </div>
+                  <div style="font-size: 11px; color: #888; text-align: right;">
+                    ${understood}
+                  </div>
+                </div>
+                
+                <div style="font-size: 12px; color: #ccc; margin-bottom: 8px;">
+                  ${lesson.lesson_preview || "No lesson text"}
+                </div>
+                
+                <div style="display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px;">
+                  <div style="background: rgba(0, 176, 255, 0.1); border: 1px solid #00B0FF; border-radius: 4px; padding: 4px 8px; color: #00B0FF;">
+                    <strong>BOS:</strong> ${bosDisplay}
+                  </div>
+                  <div style="background: rgba(79, 195, 247, 0.1); border: 1px solid #4FC3F7; border-radius: 4px; padding: 4px 8px; color: #4FC3F7;">
+                    <strong>POI:</strong> ${poiDisplay}
+                  </div>
+                  <div style="background: rgba(255, 202, 40, 0.1); border: 1px solid #FFCA28; border-radius: 4px; padding: 4px 8px; color: #FFCA28;">
+                    <strong>Confidence:</strong> ${confidence}
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join("");
+        }
+      }
+      
+      // Fetch progress stats
+      console.log("[LESSONS] Fetching progress stats...");
+      const progressRes = await fetch("http://127.0.0.1:8765/teach/progress");
+      const progressData = await progressRes.json();
+      console.log("[LESSONS] Progress response:", progressData);
+      
+      if (progressData.status === "ok" && progressData.progress) {
+        const p = progressData.progress;
+        progressStats.innerHTML = `
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+            <div>
+              <div style="color: #888; font-size: 11px;">Total Lessons</div>
+              <div style="color: #ffd700; font-size: 18px; font-weight: 600;">${p.total_lessons || p.examples_total || 0}</div>
+            </div>
+            <div>
+              <div style="color: #888; font-size: 11px;">Understood</div>
+              <div style="color: #30d158; font-size: 18px; font-weight: 600;">${p.understood || 0}</div>
+            </div>
+            <div>
+              <div style="color: #888; font-size: 11px;">Avg Confidence</div>
+              <div style="color: #FFCA28; font-size: 18px; font-weight: 600;">${((p.avg_confidence || 0) * 100).toFixed(0)}%</div>
+            </div>
+            <div>
+              <div style="color: #888; font-size: 11px;">Wins / Losses</div>
+              <div style="color: #ccc; font-size: 18px; font-weight: 600;">
+                <span style="color: #30d158;">${p.win_count || 0}</span> / 
+                <span style="color: #ff453a;">${p.loss_count || 0}</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+    } catch (error) {
+      console.error("[LESSONS] Error loading lessons:", error);
+      lessonsList.innerHTML = `<div style="text-align: center; color: #ff453a; padding: 20px;">Error loading lessons: ${error.message}</div>`;
+      progressStats.innerHTML = `<div style="color: #ff453a;">Error loading progress</div>`;
+      showNotification(`Error loading lessons: ${error.message}`, "error");
+    }
+  } else {
+    viewer.style.display = "none";
+    console.log("[LESSONS] Hiding viewer panel");
+  }
+}
+
+// View detailed lesson information
+async function viewLessonDetails(exampleId) {
+  try {
+    console.log("[LESSONS] Viewing lesson details for:", exampleId);
+    const res = await fetch(`http://127.0.0.1:8765/teach/lessons/${exampleId}`);
+    const data = await res.json();
+    
+    if (data.status === "ok" && data.lesson) {
+      const lesson = data.lesson;
+      
+      // Create detail modal
+      const detailModal = document.createElement('div');
+      detailModal.id = 'vtc-lesson-detail-modal';
+      detailModal.className = 'vtc-modal';
+      detailModal.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+        background: rgba(0, 0, 0, 0.95); backdrop-filter: blur(8px);
+        z-index: 2147483648; display: flex; align-items: center; justify-content: center;
+      `;
+      
+      detailModal.innerHTML = `
+        <div class="vtc-modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
+          <div class="vtc-modal-header">
+            <h3 style="margin: 0; color: #ffd700;">📚 Lesson Details: ${lesson.symbol} ${lesson.direction.toUpperCase()}</h3>
+            <button class="vtc-close-modal" onclick="this.closest('.vtc-modal').remove()">✕</button>
+          </div>
+          <div class="vtc-modal-body" style="padding: 20px;">
+            <div style="margin-bottom: 20px;">
+              <h4 style="color: #ffd700; margin-bottom: 10px;">Trade Information</h4>
+              <div style="background: #1a1a1a; padding: 12px; border-radius: 6px; font-size: 13px;">
+                <div><strong>Symbol:</strong> ${lesson.symbol}</div>
+                <div><strong>Direction:</strong> ${lesson.direction}</div>
+                <div><strong>Outcome:</strong> <span style="color: ${lesson.outcome === 'win' ? '#30d158' : '#ff453a'}">${lesson.outcome}</span></div>
+                <div><strong>P&L:</strong> $${lesson.pnl?.toFixed(2) || '0.00'}</div>
+                <div><strong>Confidence:</strong> ${((lesson.feedback_confidence || 0) * 100).toFixed(0)}%</div>
+                <div><strong>Understood:</strong> ${lesson.understood ? '✅ Yes' : '⏳ Not yet'}</div>
+                <div><strong>Timestamp:</strong> ${new Date(lesson.timestamp).toLocaleString()}</div>
+              </div>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+              <h4 style="color: #ffd700; margin-bottom: 10px;">Lesson Text</h4>
+              <div style="background: #1a1a1a; padding: 12px; border-radius: 6px; white-space: pre-wrap; font-size: 13px; color: #ccc;">
+                ${lesson.lesson_text || "No lesson text provided"}
+              </div>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+              <h4 style="color: #ffd700; margin-bottom: 10px;">Extracted Fields (What the Model Marked)</h4>
+              
+              <div style="background: #1a1a1a; padding: 12px; border-radius: 6px; font-size: 13px;">
+                <div style="margin-bottom: 12px;">
+                  <strong style="color: #00B0FF;">BOS (Break of Structure):</strong>
+                  ${lesson.bos ? `
+                    <div style="margin-top: 6px; padding: 8px; background: rgba(0, 176, 255, 0.1); border-left: 3px solid #00B0FF; border-radius: 4px;">
+                      Start: ${lesson.bos.start}<br>
+                      End: ${lesson.bos.end}
+                    </div>
+                  ` : '<div style="color: #888; margin-top: 6px;">❌ Not extracted</div>'}
+                </div>
+                
+                <div style="margin-bottom: 12px;">
+                  <strong style="color: #4FC3F7;">POI (Price of Interest) Zones:</strong>
+                  ${lesson.poi && lesson.poi.length > 0 ? lesson.poi.map((poi, idx) => `
+                    <div style="margin-top: 6px; padding: 8px; background: rgba(79, 195, 247, 0.1); border-left: 3px solid #4FC3F7; border-radius: 4px;">
+                      Zone ${idx + 1}: ${poi.low} - ${poi.high}<br>
+                      <span style="color: #888; font-size: 11px;">Reason: ${poi.reason || 'unspecified'}</span>
+                    </div>
+                  `).join("") : '<div style="color: #888; margin-top: 6px;">❌ None extracted</div>'}
+                </div>
+              </div>
+            </div>
+            
+            ${lesson.chart_path ? `
+              <div style="margin-bottom: 20px;">
+                <h4 style="color: #ffd700; margin-bottom: 10px;">Chart</h4>
+                <div style="background: #1a1a1a; padding: 12px; border-radius: 6px;">
+                  <img src="http://127.0.0.1:8765/charts/${lesson.chart_path.split(/[/\\]/).pop()}" 
+                       alt="Chart" 
+                       style="max-width: 100%; border-radius: 4px; cursor: pointer;"
+                       onclick="if(window.openChartPopup) window.openChartPopup(this.src)">
+                  <div style="color: #888; font-size: 11px; margin-top: 8px;">Click to view full-size</div>
+                </div>
+              </div>
+            ` : ''}
+            
+            <div style="text-align: center; margin-top: 20px;">
+              <button class="vtc-btn-secondary" onclick="this.closest('.vtc-modal').remove()">Close</button>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      document.body.appendChild(detailModal);
+      
+      // Make it a global function so onclick can access it
+      window.viewLessonDetails = viewLessonDetails;
+    }
+  } catch (error) {
+    console.error("[LESSONS] Error loading lesson details:", error);
+    showNotification(`Error loading lesson: ${error.message}`, "error");
+  }
+}
+
 // Phase 5C: Generate preview overlay
 async function generatePreview() {
   try {
@@ -2200,11 +2687,21 @@ async function generatePreview() {
     if (data.status === "ok" && data.overlay_url) {
       // Update chart preview with overlay
       const chartImg = document.getElementById("vtc-teach-chart-img");
-      if (chartImg) {
-        chartImg.src = `http://127.0.0.1:8765${data.overlay_url}`;
+      const chartContainer = document.getElementById("vtc-teach-chart-container");
+      if (chartImg && chartContainer) {
+        // Build full URL
+        const overlayUrl = data.overlay_url.startsWith('http') 
+          ? data.overlay_url 
+          : `http://127.0.0.1:8765${data.overlay_url}`;
+        chartImg.src = overlayUrl;
         chartImg.style.display = "block";
-        document.getElementById("vtc-teach-chart-container").style.display = "none";
+        chartContainer.style.display = "none";
+        console.log("[PREVIEW] Overlay loaded:", overlayUrl);
+      } else {
+        console.warn("[PREVIEW] Chart elements not found");
       }
+    } else {
+      console.warn("[PREVIEW] Preview failed:", data);
     }
     
     return data;
@@ -2779,15 +3276,51 @@ async function handleSystemCommand(userInput) {
     lower.includes('clear memory') ||
     lower.includes('open teach copilot') ||
     lower.includes('start teaching') ||
+    lower.includes('show chart') ||
+    lower.includes('show image') ||
+    lower.includes('show its chart') ||
+    lower.includes('show the chart') ||
+    lower.includes('open chart') ||
+    lower.includes('open image') ||
+    lower.includes('open the chart') ||
+    lower.includes('pull up chart') ||
+    lower.includes('pull up image') ||
+    lower.includes('pull up the chart') ||
+    lower.includes('display chart') ||
+    lower.includes('display image') ||
+    lower.includes('can you show') ||
     lower === 'help' || lower.includes('commands')
   );
   if (!looksLikeCommand) return null;
   try {
+    // Phase 5C: Include conversation history for trade detection in show_chart command
+    // Format messages properly for trade detection
+    const formattedHistory = chatHistory.slice(-20).map(msg => {
+      const role = msg.role || (msg.sender === "user" ? "user" : "assistant");
+      const content = msg.content || msg.text || msg.message || "";
+      return { role, content };
+    });
+    
+    const context = {
+      current_model: selectedModel,
+      all_sessions: formattedHistory,
+      current_session_id: currentSession?.sessionId
+    };
+    
+    console.log("[SYSTEM_CMD] Sending command:", userInput);
+    console.log("[SYSTEM_CMD] Context:", {
+      model: context.current_model,
+      history_count: context.all_sessions.length,
+      session_id: context.current_session_id
+    });
+    
     const res = await fetch('http://127.0.0.1:8765/memory/system/command', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command: userInput, context: { current_model: selectedModel } })
+      body: JSON.stringify({ command: userInput, context: context })
     }).then(r=>r.json());
+    
+    console.log("[SYSTEM_CMD] Response:", res);
     
     if (res && res.success) {
       // Handle frontend_action if present (e.g., open_teach_copilot, close_teach_copilot)
@@ -2819,9 +3352,118 @@ async function handleSystemCommand(userInput) {
         }
       } else if (res.frontend_action === "show_chart_popup") {
         // Phase 5C: Show chart popup in normal mode
-        if (res.chart_url && window.openChartPopup) {
-          const chartUrl = `http://127.0.0.1:8765${res.chart_url}`;
+        console.log("[SHOW_CHART] Received show_chart_popup action:", res);
+        
+        if (!res.chart_url) {
+          console.error("[SHOW_CHART] No chart_url in response:", res);
+          showNotification("❌ Chart URL not found. Chart may not be available for this trade.", "error");
+          return res.message || "Error: No chart URL provided";
+        }
+        
+        if (!window.openChartPopup) {
+          console.error("[SHOW_CHART] openChartPopup function not available!");
+          showNotification("❌ Chart popup function not loaded. Please refresh the page.", "error");
+          return res.message || "Error: Chart popup function not loaded";
+        }
+        
+        const chartUrl = res.chart_url.startsWith('http') 
+          ? res.chart_url 
+          : `http://127.0.0.1:8765${res.chart_url}`;
+        
+        console.log("[SHOW_CHART] Opening chart popup:", chartUrl);
+        console.log("[SHOW_CHART] Debug info:", res.debug || "none");
+        
+        try {
           window.openChartPopup(chartUrl);
+          console.log("[SHOW_CHART] Popup opened successfully");
+          showNotification(`📊 Opening chart for ${res.symbol || 'trade'} ${res.trade_id}...`, "success");
+        } catch (error) {
+          console.error("[SHOW_CHART] Error opening popup:", error);
+          showNotification(`❌ Failed to open chart: ${error.message}`, "error");
+        }
+      } else if (res.frontend_action === "close_chat") {
+        const closeBtn = document.getElementById("closeChat");
+        if (closeBtn) closeBtn.click();
+      } else if (res.frontend_action === "open_chat") {
+        ensureChatUI();
+        if (chatContainer) {
+          chatContainer.classList.add("vtc-visible");
+          chatContainer.style.display = "flex";
+        }
+      } else if (res.frontend_action === "minimize_chat") {
+        const minimizeBtn = document.getElementById("minimizeChat");
+        if (minimizeBtn) minimizeBtn.click();
+      } else if (res.frontend_action === "resize_chat") {
+        const sizeHint = res.data?.size_hint;
+        if (chatContainer) {
+          if (sizeHint === "bigger") {
+            chatContainer.style.width = Math.min(parseInt(chatContainer.style.width || "400") + 100, 1200) + "px";
+          } else if (sizeHint === "smaller") {
+            chatContainer.style.width = Math.max(parseInt(chatContainer.style.width || "400") - 100, 300) + "px";
+          }
+        }
+      } else if (res.frontend_action === "reset_chat_size") {
+        resetChatSize();
+      } else if (res.frontend_action === "show_session_manager") {
+        showSessionManager();
+      } else if (res.frontend_action === "view_lessons") {
+        // Open Teach Copilot and show lessons viewer
+        showTeachCopilotModal();
+        setTimeout(() => {
+          const viewLessonsBtn = document.getElementById("vtc-teach-view-lessons");
+          if (viewLessonsBtn) viewLessonsBtn.click();
+        }, 500);
+      } else if (res.frontend_action === "view_lesson_details") {
+        // Open Teach Copilot, show lessons, and open specific lesson
+        showTeachCopilotModal();
+        setTimeout(() => {
+          const viewLessonsBtn = document.getElementById("vtc-teach-view-lessons");
+          if (viewLessonsBtn) viewLessonsBtn.click();
+          setTimeout(() => {
+            if (window.viewLessonDetails && res.data?.lesson_id) {
+              window.viewLessonDetails(res.data.lesson_id);
+            }
+          }, 500);
+        }, 500);
+      } else if (res.frontend_action === "edit_lesson") {
+        // Open Teach Copilot, show lessons, and open edit for specific lesson
+        showTeachCopilotModal();
+        setTimeout(() => {
+          const viewLessonsBtn = document.getElementById("vtc-teach-view-lessons");
+          if (viewLessonsBtn) viewLessonsBtn.click();
+          setTimeout(() => {
+            // Try to find and click the lesson in the list, or open detail modal for editing
+            if (window.viewLessonDetails && res.data?.lesson_id) {
+              window.viewLessonDetails(res.data.lesson_id);
+              // Note: Edit functionality would need to be added to the detail modal
+            }
+          }, 500);
+        }, 500);
+      } else if (res.frontend_action === "open_chat") {
+        if (chatContainer) {
+          chatContainer.style.display = "flex";
+          chatContainer.style.opacity = "1";
+          chatContainer.style.pointerEvents = "all";
+        }
+      } else if (res.frontend_action === "close_chart") {
+        const chartPanel = document.getElementById("vtc-chart-side-panel");
+        if (chartPanel) {
+          chartPanel.style.display = "none";
+        }
+        setTimeout(() => {
+          const viewLessonsBtn = document.getElementById("vtc-teach-view-lessons");
+          if (viewLessonsBtn) viewLessonsBtn.click();
+          setTimeout(() => {
+            if (window.viewLessonDetails && res.data?.lesson_id) {
+              window.viewLessonDetails(res.data.lesson_id);
+              // TODO: Add edit mode UI
+            }
+          }, 500);
+        }, 500);
+      } else if (res.frontend_action === "close_chart_popup") {
+        const chartPanel = document.getElementById("vtc-chart-side-panel");
+        if (chartPanel) {
+          chartPanel.style.display = "none";
         }
       }
       return res.message;

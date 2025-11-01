@@ -130,37 +130,66 @@ def detect_trade_reference(message: str, all_trades: List[Dict[str, Any]] = None
     if conversation_history and all_trades:
         # Look for phrases that reference a previously mentioned trade
         reference_phrases = ['its image', 'that trade', 'this trade', 'the trade', 
-                           'can you see', 'show me', 'pull up', 'that chart',
+                           'can you see', 'show me', 'pull up', 'that chart', 'show its chart',
+                           'show chart', 'show the chart', 'show it', 'open chart', 'open image', 
+                           'open the chart', 'pull up chart', 'pull up image', 'pull up the chart',
+                           'display chart', 'display image', 'can you show',
                            'redo this', 'redo', 'do this', 'this one', 'do it again',
                            'lets redo', 'review this', 'teach me about this', 'open teaching for this']
         if any(phrase in message_lower for phrase in reference_phrases):
-            # Search backwards through conversation history for trade mentions
-            for msg in reversed(conversation_history[-10:]):  # Check last 10 messages
-                if msg.get('role') == 'assistant':
-                    content = msg.get('content', '')
-                    
-                    # Extract trade ID from AI message
-                    trade_id = extract_trade_id_from_text(content)
-                    if trade_id:
-                        trade = next((t for t in all_trades if (t.get('id') == trade_id or 
-                                                               t.get('trade_id') == trade_id or
-                                                               str(t.get('id')) == str(trade_id))), None)
-                        if trade:
-                            print(f"[TRADE_DETECTOR] Found trade {trade_id} from conversation history")
-                            return trade
-                    
-                    # Try symbol extraction (e.g., "SILZ5 | loss")
-                    symbol_match = re.search(r'\b([A-Z0-9]{3,6})\s*\|', content.upper())
+            # Search backwards through conversation history for trade mentions (most recent first)
+            # Check both user and assistant messages for trade context
+            for msg in reversed(conversation_history[-15:]):  # Check last 15 messages
+                content = str(msg.get('content', '')).upper()
+                role = msg.get('role', '')
+                
+                # Priority 1: Look for explicit symbol mentions (e.g., "MNQZ5", "first trade: MNQZ5")
+                # Check for symbol patterns - especially in context like "first trade: MNQZ5"
+                symbol_patterns = [
+                    r'\b([A-Z]{2,6}\d{1})\s*\|\s*(?:win|loss|breakeven)',  # "MNQZ5 | win"
+                    r'(?:first|second|third|last|next)\s+(?:trade|one)[\s:]*([A-Z]{2,6}\d{1})',  # "first trade: MNQZ5"
+                    r'✅\s*[^:]*:\s*([A-Z]{2,6}\d{1})',  # "✅ First trade: MNQZ5"
+                    r'\b([A-Z]{2,6}\d{1})\s+win|\b([A-Z]{2,6}\d{1})\s+loss',  # "MNQZ5 win" or "MNQZ5 loss"
+                ]
+                
+                for pattern in symbol_patterns:
+                    matches = re.findall(pattern, content)
+                    for match in matches:
+                        symbol = match if isinstance(match, str) else (match[0] if match[0] else match[1] if len(match) > 1 else None)
+                        if symbol:
+                            # Find most recent trade with this symbol
+                            matching = [t for t in all_trades if t.get('symbol', '').upper() == symbol.upper()]
+                            if matching:
+                                # Return most recent
+                                sorted_matches = sorted(matching,
+                                                       key=lambda t: t.get('timestamp') or t.get('entry_time') or '',
+                                                       reverse=True)
+                                print(f"[TRADE_DETECTOR] Found trade {symbol} from conversation context: '{content[:100]}'")
+                                return sorted_matches[0]
+                
+                # Priority 2: Extract trade ID from message
+                trade_id = extract_trade_id_from_text(content)
+                if trade_id:
+                    trade = next((t for t in all_trades if (t.get('id') == trade_id or 
+                                                           t.get('trade_id') == trade_id or
+                                                           str(t.get('id')) == str(trade_id))), None)
+                    if trade:
+                        print(f"[TRADE_DETECTOR] Found trade {trade_id} from conversation history")
+                        return trade
+                
+                # Priority 3: Try symbol extraction (e.g., "SILZ5 | loss") - fallback
+                if role == 'assistant':
+                    symbol_match = re.search(r'\b([A-Z0-9]{3,6})\s*\|', content)
                     if symbol_match:
                         symbol = symbol_match.group(1)
                         # Find most recent trade with this symbol
-                        matching = [t for t in all_trades if t.get('symbol', '').upper() == symbol]
+                        matching = [t for t in all_trades if t.get('symbol', '').upper() == symbol.upper()]
                         if matching:
                             # Return most recent
                             sorted_matches = sorted(matching,
                                                    key=lambda t: t.get('timestamp') or t.get('entry_time') or '',
                                                    reverse=True)
-                            print(f"[TRADE_DETECTOR] Found trade {symbol} from conversation history")
+                            print(f"[TRADE_DETECTOR] Found trade {symbol} from assistant message")
                             return sorted_matches[0]
     
     # Method 5: Recent trade context (most recent trade if message is vague)

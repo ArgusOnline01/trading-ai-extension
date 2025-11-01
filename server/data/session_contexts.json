@@ -1,4 +1,23 @@
 {
   "teaching_active": false,
-  "current_trade_index": 0
+  "current_trade_index": 0,
+  "session_start": "2025-11-01T13:48:59.355479",
+  "partial_lesson": {
+    "bias": "bullish",
+    "confidence_hint": 0.9,
+    "lesson_text": "This was a bullish trade on MNQ This trade was bullish This was a bullish trade on MNQ BOS from 25100 to 25150 POI at 25080-25090 because of fair value gap Entry at 25085, exit at 25120 This trade was bullish This was a bullish trade on MNQ BOS from 25100 to 25150 POI at 25080-25090 because of fair value gap Entry at 25085, exit at 25120 This trade was bullish This was a bullish trade on MNQ BOS from 25100 to 25150 POI at 25080-25090 because of fair value gap Entry at 25085, exit at 25120 This trade was bullish",
+    "bos": {
+      "start": 25100.0,
+      "end": 25150.0
+    },
+    "poi": [
+      {
+        "low": 25080.0,
+        "high": 25090.0,
+        "reason": "fair value gap / imbalance"
+      }
+    ]
+  },
+  "session_end": "2025-11-01T13:49:04.408679",
+  "last_session_duration_seconds": 5
 }

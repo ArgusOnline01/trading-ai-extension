@@ -545,11 +545,18 @@ Phase 5C will transform Teach Copilot from a manual save flow (5B) into a live, 
 
 **Note:** "Previous trade" navigation is not yet implemented, but can be added in a future update.
 
-**Phase 5C Implementation Notes:**
-- Phase 5B provides a solid foundation: session management, BOS/POI extraction, and data storage are all in place
-- Main additions needed: incremental parsing, visual overlays, and conversational clarification flow
-- The existing GPT extraction can be adapted for incremental use
-- Chart reconstruction tools from Phase 4D.1 can be leveraged for overlay rendering
+**✅ Phase 5C Implementation Status:**
+- ✅ **COMPLETE** - All features implemented (December 2024)
+- ✅ Incremental parser (`teach_parser.py`) - Real-time BOS/POI extraction
+- ✅ Visual overlay drawer (`overlay_drawer.py`) - Chart annotations
+- ✅ Live UI feedback - Dynamic chips and status band
+- ✅ Streaming endpoint (`/teach/stream`) - Real-time lesson updates
+- ✅ Preview endpoint (`/teach/preview`) - Visual overlay generation
+- ✅ Skip functionality (`/teach/skip`) - Trade navigation
+- ✅ Number normalization - Verbal to numeric conversion
+- ✅ Confidence heuristics - Incremental confidence scoring
+- ✅ Clarifying questions - Context-aware prompts for missing fields
+- See [Phase 5C section](#phase-5c-interactive-teaching-mode-conversational--visual) below for full implementation details
 
 ---
 

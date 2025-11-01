@@ -5,39 +5,41 @@ Manages all persistent backend storage
 
 import json
 import os
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
-# Data directory paths
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "server", "data")
-PROFILE_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "user_profile.json")
-SESSION_CONTEXTS_PATH = os.path.join(DATA_DIR, "session_contexts.json")
-CONVERSATION_LOG_PATH = os.path.join(DATA_DIR, "conversation_log.json")
+# Data directory paths - Use unified path like all other modules
+DATA_DIR = Path(__file__).parent.parent / "data"
+PROFILE_PATH = DATA_DIR / "user_profile.json"
+SESSION_CONTEXTS_PATH = DATA_DIR / "session_contexts.json"
+CONVERSATION_LOG_PATH = DATA_DIR / "conversation_log.json"
 
 
 def ensure_data_directory():
     """Create data directory if it doesn't exist"""
-    os.makedirs(DATA_DIR, exist_ok=True)
-    os.makedirs(os.path.dirname(PROFILE_PATH), exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     print(f"[MEMORY] Data directory ensured: {DATA_DIR}")
 
 
-def load_json(path: str, default: Any = None) -> Any:
+def load_json(path, default: Any = None) -> Any:
     """Load JSON file with error handling"""
-    if not os.path.exists(path):
+    path_obj = Path(path) if not isinstance(path, Path) else path
+    if not path_obj.exists():
         return default if default is not None else {}
     
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path_obj, "r", encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, FileNotFoundError):
         return default if default is not None else {}
 
 
-def save_json(path: str, data: Any):
+def save_json(path, data: Any):
     """Save data to JSON file with proper formatting"""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
+    path_obj = Path(path) if not isinstance(path, Path) else path
+    path_obj.parent.mkdir(parents=True, exist_ok=True)
+    with open(path_obj, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
@@ -52,10 +54,11 @@ def initialize_default_files():
     
     created_count = 0
     for path, default_data in defaults.items():
-        if not os.path.exists(path):
-            save_json(path, default_data)
+        path_obj = Path(path) if not isinstance(path, Path) else path
+        if not path_obj.exists():
+            save_json(path_obj, default_data)
             created_count += 1
-            print(f"[MEMORY] Created default: {os.path.basename(path)}")
+            print(f"[MEMORY] Created default: {path_obj.name}")
     
     if created_count > 0:
         print(f"[MEMORY] Initialized {created_count} default file(s)")

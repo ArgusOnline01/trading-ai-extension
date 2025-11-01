@@ -388,6 +388,163 @@
 
 ---
 
+### Phase 5B: Conversational Teaching Engine
+**Version:** v5.2.0  
+**Status:** ✅ Complete  
+**Date:** November 1, 2025
+
+**Achievements:**
+- **Backend API Endpoints** - Complete `/teach/*` endpoint suite for teaching workflow
+- **GPT-Powered BOS/POI Extraction** - Automatic structured data extraction from natural language lessons
+- **Teaching Session Management** - Start/end sessions, track progress, flag invalid trades
+- **Intelligent Lesson Processing** - GPT-4o-mini extracts BOS (Break of Structure) and POI (Price of Interest) zones
+- **Progress Tracking** - Real-time teaching statistics (examples_total, avg_confidence)
+- **Dataset Auto-Compilation** - Master training dataset automatically recompiles after each lesson
+- **Full Frontend Integration** - Teach Copilot UI now saves lessons directly to backend with extraction feedback
+
+**User Capabilities:**
+- **Save Lessons with Intelligence** - Type or voice-dictate lessons; system extracts BOS/POI automatically
+- **View Extraction Results** - See confidence scores, BOS extraction status, POI zone counts in real-time
+- **Manage Teaching Sessions** - Start organized teaching sessions, track progress through multiple trades
+- **Filter Training Data** - Mark trades as invalid for training (undisciplined entries, mistakes)
+- **Complete Data Pipeline** - Lessons → GPT Extraction → JSON Storage → Dataset Compilation → AI Learning
+
+**API Endpoints:**
+- `POST /teach/start` - Activate teaching session, reset trade index
+- `POST /teach/next` - Increment to next trade in session
+- `POST /teach/record` - Save lesson + extract BOS/POI via GPT
+- `POST /teach/flag-invalid` - Mark trade as invalid for training
+- `POST /teach/end` - End teaching session, save duration
+- `GET /teach/status` - Get current session status and progress
+
+**Technical Implementation:**
+- **BOS/POI Extraction:**
+  - Primary: GPT-4o-mini with structured JSON prompt
+  - Fallback: Regex pattern matching for common phrases
+  - Returns: `{bos: {start, end}, poi: [{low, high, reason}], confidence: 0.0-1.0}`
+- **Data Flow:**
+  - Frontend → `/teach/record` → `extract_bos_poi()` → Save to `amn_training_examples/{id}.json`
+  - Update `user_profile.json` teaching_progress
+  - Recompile `training_dataset.json` master file
+- **OpenAI SDK Compatibility:** Uses `openai==0.28.1` style API (`openai.ChatCompletion.create`)
+- **Error Handling:** Graceful fallbacks, user-friendly error messages
+
+**Key Files:**
+- `server/routers/teach_router.py` (293 lines) - All teaching endpoints
+  - `start_teaching()` - Initialize session
+  - `record_lesson()` - Process lesson with GPT extraction
+  - `flag_invalid()` - Mark trades as invalid
+  - `end_teaching()` - Close session
+- `server/utils/gpt_client.py` (145 lines) - GPT extraction logic
+  - `extract_bos_poi()` - Main extraction function
+  - `_regex_extract_bos_poi()` - Fallback regex patterns
+- `server/utils/file_ops.py` (52 lines) - JSON file helpers
+  - `load_json()`, `save_json()`, `append_json()`
+- `visual-trade-extension/content/content.js` - Frontend integration
+  - `saveTeachLesson()` - Calls `/teach/record` with FormData
+  - Real-time status updates with extraction results
+
+**Testing Results:**
+- ✅ All 6 endpoints tested and working
+- ✅ GPT extraction tested with sample lesson (confidence: 0.9, BOS: true, POI: 1 zone)
+- ✅ Example files created correctly in `amn_training_examples/`
+- ✅ Dataset compilation verified (31 examples → training_dataset.json)
+- ✅ Frontend-backend integration confirmed
+
+**Integration Points:**
+- **Frontend:** `content.js` → `POST /teach/record` (FormData)
+- **Backend:** `teach_router.py` → `gpt_client.extract_bos_poi()` → File storage
+- **Data Storage:** `server/data/amn_training_examples/{example_id}.json`
+- **Progress Tracking:** `server/data/user_profile.json` (teaching_progress)
+- **Master Dataset:** `server/data/training_dataset.json` (auto-compiled)
+
+**What This Enables:**
+- Users can now teach the AI their AMN trading strategy through natural language
+- Each lesson automatically extracts structured trading concepts (BOS/POI)
+- All lessons compile into a master dataset ready for AI fine-tuning
+- Foundation for Phase 5C (AI learning from user's strategy patterns)
+
+---
+
+### Phase 5C Preparation: Interactive Teaching Mode (Preview)
+
+**Version:** Planned for v5.3.0  
+**Status:** 🔄 Foundation Complete, Enhanced Features Pending  
+**Date:** November 1, 2025
+
+**Overview:**
+Phase 5C will transform Teach Copilot from a manual save flow (5B) into a live, conversational teacher that listens to messages incrementally, extracts BOS/POI as the user speaks/types, asks clarifying questions, and provides visual preview overlays.
+
+**What's Already Done (Phase 5B Implementation):**
+
+✅ **Core Infrastructure:**
+- Start/Stop triggers via commands ("start teaching mode", "open teach copilot", "pause teaching", "end teaching")
+- Navigation: `POST /teach/next` - Move to next trade
+- Skip/Invalid: `POST /teach/flag-invalid` - Mark trades as invalid for training
+- Session state management: `teaching_active`, `current_trade_index`, `session_start`
+- Progress tracking: Examples count, confidence averages, understood flags
+
+✅ **Backend Endpoints:**
+- `POST /teach/start` - Activate teaching session ✅
+- `POST /teach/next` - Navigate to next trade ✅
+- `POST /teach/record` - Save lesson + extract BOS/POI ✅ (Note: Currently final save, not incremental)
+- `POST /teach/flag-invalid` - Mark trade as invalid ✅
+- `POST /teach/end` - End teaching session ✅
+- `GET /teach/status` - Get session status ✅
+
+✅ **Teaching Parser:**
+- BOS/POI extraction via GPT-4o-mini ✅
+- Fallback regex patterns ✅
+- Confidence scoring (from GPT) ✅
+- Trade context loading (symbol, outcome, chart_path) ✅
+
+✅ **Data Storage:**
+- Individual lesson files in `amn_training_examples/{id}.json` ✅
+- Teaching progress in `user_profile.json` ✅
+- Master dataset compilation (`training_dataset.json`) ✅
+
+✅ **Frontend Integration:**
+- Teach Copilot modal with trade selection ✅
+- Chart preview display ✅
+- Save Lesson button with backend API integration ✅
+- Status messages with extraction feedback ✅
+
+**What's Missing for Full Phase 5C (To Be Implemented):**
+
+❌ **Incremental Conversation Flow:**
+- `POST /teach/stream` - Live incremental parsing (currently extracts only on final save)
+- Partial lesson building in session context (`partial_lesson` state)
+- Incremental field updates as user types/speaks
+
+❌ **Interactive Features:**
+- `POST /teach/preview` - Overlay rendering (mf tool integration)
+- Clarifying questions (Socratic prompts when fields missing)
+- Live status band showing missing fields
+- Live chips showing captured fields (BOS, POI, Bias) as recognized
+
+❌ **Visual Enhancements:**
+- Overlay drawer using mf tool (BOS lines, POI zones with colors)
+- Draft overlay preview in modal/chat
+- Real-time preview updates as fields are captured
+
+❌ **Navigation Enhancements:**
+- `POST /teach/skip` - Dedicated skip endpoint (currently use flag-invalid)
+- "previous trade" navigation (currently only forward)
+- Enhanced navigation state machine
+
+❌ **Advanced Parsing:**
+- Number normalization ("one fourteen fifty" → 1.1450)
+- Confidence heuristics (beyond GPT confidence)
+- Multi-turn clarification loops
+
+**Phase 5C Implementation Notes:**
+- Phase 5B provides a solid foundation: session management, BOS/POI extraction, and data storage are all in place
+- Main additions needed: incremental parsing, visual overlays, and conversational clarification flow
+- The existing GPT extraction can be adapted for incremental use
+- Chart reconstruction tools from Phase 4D.1 can be leveraged for overlay rendering
+
+---
+
 ## 📁 Current Status
 
 ### ✅ Production Ready Features
@@ -524,6 +681,7 @@ trading-ai-extension/
 | Phase 4D.2 | v4.9.0 | Interactive merge | ✅ Complete |
 | Phase 4D.3 | v5.0.0 | Performance context sync | ✅ Complete |
 | Phase 5A | v5.1.0 | Teach Copilot UI + Voice Support | ✅ Complete |
+| Phase 5B | v5.2.0 | Conversational Teaching Engine | ✅ Complete |
 
 ---
 
@@ -537,7 +695,7 @@ trading-ai-extension/
 - **Total Repository:** ~20,000+ lines
 
 **Feature Count:**
-- **API Endpoints:** 30+ endpoints
+- **API Endpoints:** 36+ endpoints (added 6 new `/teach/*` endpoints)
 - **Chrome Extension:** 10+ major features
 - **AI Integrations:** 5+ models supported
 - **Data Storage:** 8+ JSON data files
@@ -545,7 +703,7 @@ trading-ai-extension/
 
 **Development Time:**
 - **Total:** ~100+ hours across multiple sessions
-- **Phases Completed:** 14 major phases
+- **Phases Completed:** 15 major phases
 - **Bug Fixes:** 50+ critical issues resolved
 - **Documentation:** Comprehensive coverage
 

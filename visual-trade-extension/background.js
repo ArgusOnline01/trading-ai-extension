@@ -32,6 +32,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         
         // Phase 3B.2: Get model from message or use default
         const model = message.model || "balanced";
+        const reasonedCommands = !!message.reasonedCommands;
         
         // Phase 3C: Auto-route to /hybrid for text-only models with images
         // Note: "balanced" (GPT-5 Search) uses hybrid with caching
@@ -116,8 +117,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } catch (e) {
           console.warn("Failed to fetch recent trades for context:", e);
         }
+        
+        // Phase 4D.4: Ensure sessions data is preserved (from content.js getChatHistory)
+        // all_sessions should already be in sessionContext from content.js, but ensure it exists
 
-        // Add session context (Phase 3B + 4D.3)
+        // Phase 4D.3.2: If reasoned commands are enabled, execute commands BEFORE AI call
+        let commandResult = null;
+        if (reasonedCommands) {
+          try {
+            // Execute command (or detect if no command) - include session context
+            const cmdContext = {
+              current_model: model,
+              all_sessions: sessionContext?.all_sessions || [],
+              current_session_id: sessionContext?.current_session_id
+            };
+            const cmdRes = await fetch('http://127.0.0.1:8765/memory/system/command', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ command: question, context: cmdContext })
+            }).then(r=>r.json());
+            
+            // If a command was detected and executed, inject result into context
+            if (cmdRes && cmdRes.detected_command) {
+              commandResult = cmdRes;
+              // Inject command result into session context so AI knows what happened
+              sessionContext = sessionContext || {};
+              sessionContext.last_command_result = {
+                command: cmdRes.command,
+                success: cmdRes.success,
+                message: cmdRes.message,
+                data: cmdRes.data
+              };
+              console.log(`[COMMAND] Executed: ${cmdRes.command}, success: ${cmdRes.success}`);
+            }
+          } catch (e) {
+            console.warn('Reasoned command execution failed:', e);
+          }
+        }
+
+        // Add session context (Phase 3B + 4D.3 + command result)
         if (Object.keys(sessionContext).length > 0) {
           formData.append("context", JSON.stringify(sessionContext));
         }
@@ -140,7 +178,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           throw new Error(`Server returned ${apiResponse.status}`);
         }
         
-        const data = await apiResponse.json();
+        let data = await apiResponse.json();
+
+        // Phase 4D.3.2: If command was executed, append result to AI response
+        if (commandResult && commandResult.success && commandResult.message) {
+          const joined = (data.answer || data.response || '') + "\n\n" + commandResult.message;
+          if (data.answer !== undefined) data.answer = joined; else data.response = joined;
+        }
         
         // Phase 3C: Include hybrid mode info in response
         if (useHybrid) {

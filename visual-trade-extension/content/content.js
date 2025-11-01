@@ -40,6 +40,7 @@ let chatContainer = null;
 let currentSession = null;
 let sessionManagerModal = null;
 let selectedModel = "fast"; // Phase 4A.1: Default GPT-5 Chat (native vision)
+let reasonedCommandsEnabled = (localStorage.getItem('vtc-reasoned-commands') === 'true');
 
 // ========== Session Management ==========
 
@@ -133,6 +134,11 @@ async function createNewSession() {
     const session = await window.IDB.createSession(symbol.trim());
     await switchSession(session.sessionId);
     showNotification(`✅ Created ${session.symbol} session`, "success");
+    
+    // Refresh session manager if open
+    if (sessionManagerModal && sessionManagerModal.classList.contains("vtc-modal-visible")) {
+      await renderSessionManager();
+    }
   } catch (error) {
     console.error("Failed to create session:", error);
     showNotification("Error creating session", "error");
@@ -431,6 +437,11 @@ async function renameSession() {
       // Update UI
       updateSessionStatus();
       
+      // Refresh session manager if open
+      if (sessionManagerModal && sessionManagerModal.classList.contains("vtc-modal-visible")) {
+        await renderSessionManager();
+      }
+      
       showNotification(`Renamed to "${newTitle.trim()}"`, "success");
     } catch (error) {
       console.error("Failed to rename session:", error);
@@ -491,6 +502,7 @@ function ensureChatUI() {
           <button id="sessionManager" title="Session Manager" class="vtc-control-btn">🗂️</button>
           <button id="exportChat" title="Export Session" class="vtc-control-btn">💾</button>
           <button id="clearChat" title="Clear Messages" class="vtc-control-btn">🗑️</button>
+          <button id="toggleReasoned" title="Reasoned Commands (AI decides)" class="vtc-control-btn">🧠</button>
           <button id="resetSize" title="Reset Size" class="vtc-control-btn">⬜</button>
           <button id="minimizeChat" title="Minimize" class="vtc-control-btn">➖</button>
           <button id="closeChat" title="Close" class="vtc-control-btn">✖️</button>
@@ -617,6 +629,24 @@ function ensureChatUI() {
     document.getElementById("exportChat").onclick = exportCurrentSession;
     document.getElementById("resetSize").onclick = resetChatSize;
     document.getElementById("minimizeChat").onclick = toggleMinimize;
+    // Initialize Reasoned Commands toggle visual state
+    const toggleBtn = document.getElementById("toggleReasoned");
+    const syncToggleVisual = () => {
+      if (reasonedCommandsEnabled) {
+        toggleBtn.classList.add('active');
+        toggleBtn.title = "Reasoned Commands: ON (LLM routes + executes)";
+      } else {
+        toggleBtn.classList.remove('active');
+        toggleBtn.title = "Reasoned Commands: OFF (fast local commands)";
+      }
+    };
+    syncToggleVisual();
+    toggleBtn.onclick = () => {
+      reasonedCommandsEnabled = !reasonedCommandsEnabled;
+      localStorage.setItem('vtc-reasoned-commands', String(reasonedCommandsEnabled));
+      syncToggleVisual();
+      showNotification(`Reasoned Commands ${reasonedCommandsEnabled ? 'ON' : 'OFF'}`, 'success');
+    };
     document.getElementById("closeChat").onclick = () => {
       chatContainer.classList.add("vtc-closing");
       setTimeout(() => {
@@ -662,6 +692,35 @@ function ensureChatUI() {
         return;
       }
       
+      // NEW: System command intercept - "list sessions" always handled locally (IndexedDB)
+      const lower = question.toLowerCase();
+      if (lower.includes('list sessions') || lower.includes('show sessions')) {
+        const sysReply = await handleSystemCommand(question);
+        if (sysReply) {
+          await window.IDB.saveMessage(currentSession.sessionId, "user", question);
+          await window.IDB.saveMessage(currentSession.sessionId, "assistant", sysReply);
+          chatHistory = await window.IDB.loadMessages(currentSession.sessionId);
+          renderMessages();
+          input.value = "";
+          showNotification("Listed sessions from IndexedDB", "success");
+          return;
+        }
+      }
+      
+      // NEW: System command intercept (delete last trade, show stats, etc.) - only when Reasoned Commands OFF
+      if (!reasonedCommandsEnabled) {
+        const sysReply = await handleSystemCommand(question);
+        if (sysReply) {
+          await window.IDB.saveMessage(currentSession.sessionId, "user", question);
+          await window.IDB.saveMessage(currentSession.sessionId, "assistant", sysReply);
+          chatHistory = await window.IDB.loadMessages(currentSession.sessionId);
+          renderMessages();
+          input.value = "";
+          showNotification("Executed system command", "success");
+          return;
+        }
+      }
+      
       // Disable both buttons and show loading
       sendTextBtn.disabled = true;
       sendImageBtn.disabled = true;
@@ -691,6 +750,7 @@ function ensureChatUI() {
           includeImage: includeImage,  // Phase 3B.1: text-only mode flag
           model: selectedModel,  // Phase 3B.2: Send selected model
           context: contextToSend,
+          reasonedCommands: reasonedCommandsEnabled,
           uploadedImage: uploadedImageData  // Phase 4A.1: Pre-uploaded image data
         });
         
@@ -1736,6 +1796,45 @@ async function handleCopilotIntent(userInput) {
     const list = res.examples.map((e,i)=>`#${i+1} ${e.symbol} (${e.outcome||'unlabeled'}) – ${e.chart_path}`).join("\n");
     return `🧾 Here are your last ${limit} teaching examples:\n${list}`;
   }
+  // Generic: "what trades I've took/ taken", "list my trades", etc. -> fall back to performance/all
+  const asksListTrades = /\b(what|which|list|show|see)\b[\s\S]*\b(trades|entries)\b/i.test(userInput) ||
+                         lower.includes("what trades i've") || lower.includes("what trades i have") || lower.includes("what trades i took");
+  if (asksListTrades) {
+    const limit = 10;
+    const arr = await fetch(`http://127.0.0.1:8765/performance/all?limit=${limit}`).then(r=>r.json());
+    if (Array.isArray(arr) && arr.length) {
+      const items = arr.slice(-limit).map((t,i)=>{
+        const outcome = t.outcome || (typeof t.pnl === 'number' ? (t.pnl>0?'win':(t.pnl<0?'loss':'breakeven')) : 'pending');
+        const rr = t.r_multiple ?? '-';
+        const when = (t.timestamp||t.entry_time||'').toString().slice(0,19);
+        return `#${i+1} ${t.symbol||'UNK'} ${outcome} R:${rr} ${when}`;
+      }).join("\n");
+      return `📋 Last ${Math.min(limit, arr.length)} trades (from performance logs):\n${items}`;
+    }
+  }
+  // "first trade" (various phrasings) -> show earliest chronologically
+  if (/\bfirst\s+trade\b/i.test(userInput)) {
+    const arr = await fetch(`http://127.0.0.1:8765/performance/all?limit=200`).then(r=>r.json());
+    if (Array.isArray(arr) && arr.length) {
+      const sorted = arr.slice().sort((a,b)=>{
+        const ta = new Date(a.timestamp || a.entry_time || 0).getTime();
+        const tb = new Date(b.timestamp || b.entry_time || 0).getTime();
+        return ta - tb;
+      });
+      const t = sorted[0];
+      const outcome = t.outcome || (typeof t.pnl === 'number' ? (t.pnl>0?'win':(t.pnl<0?'loss':'breakeven')) : 'pending');
+      const rr = t.r_multiple ?? '-';
+      const when = (t.timestamp||t.entry_time||'').toString().slice(0,19);
+      return `📈 First trade: ${t.symbol||'UNK'} ${outcome} R:${rr} ${when}`;
+    }
+  }
+  // "how many can you see" → count
+  if (/how\s+many[\s\S]*can\s+you\s+see/i.test(userInput)) {
+    const arr = await fetch(`http://127.0.0.1:8765/performance/all?limit=1000`).then(r=>r.json());
+    if (Array.isArray(arr)) {
+      return `I can see ${arr.length} trades from the backend logs.`;
+    }
+  }
   const tradeIdMatch = userInput.match(/trade\s*(\d+)/i) || userInput.match(/#?(\d{6,})/);
   if (lower.includes('what was trade') || tradeIdMatch) {
     const id = tradeIdMatch ? tradeIdMatch[1] || tradeIdMatch[0] : lower.match(/\d+/)[0];
@@ -1743,6 +1842,77 @@ async function handleCopilotIntent(userInput) {
     if (!res.success) return res.message;
     const e = res.example;
     return `📈 Trade ${id}: ${e.symbol} (${e.direction}) → ${e.outcome||'unlabeled'}  \nPOI: ${e.poi_range||'N/A'}  BOS: ${e.bos_range||'N/A'}  \nExplanation: ${e.explanation||'Not set yet.'}`;
+  }
+  return null;
+}
+
+// System command bridge: routes natural-language commands to backend executor
+async function handleSystemCommand(userInput) {
+  const lower = userInput.toLowerCase();
+  
+  // Handle UI commands locally (no backend needed)
+  if (lower.includes('close chat') || lower.includes('hide chat') || lower.includes('minimize chat')) {
+    const closeBtn = document.getElementById("closeChat");
+    if (closeBtn) {
+      closeBtn.click();
+      return "✅ Chat closed";
+    }
+    return "⚠️ Could not close chat";
+  }
+  
+  if (lower.includes('open session manager') || lower.includes('show session manager') || lower.includes('session manager')) {
+    showSessionManager();
+    return "✅ Opened Session Manager";
+  }
+  
+  // Handle "list sessions" locally - query IndexedDB directly
+  if (lower.includes('list sessions') || lower.includes('show sessions')) {
+    try {
+      const sessions = await window.IDB.getAllSessions();
+      if (!sessions || sessions.length === 0) {
+        return "📂 **No Sessions Found**\n\nYou haven't created any sessions yet. Click '➕ New Session' to create one!";
+      }
+      
+      let message = `📂 **Active Sessions** (${sessions.length})\n\n`;
+      sessions.slice(0, 10).forEach((session, i) => {
+        const isActive = currentSession && currentSession.sessionId === session.sessionId ? ' 🔵 Active' : '';
+        const date = new Date(session.last_updated || session.created_at);
+        const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        message += `${i + 1}. **${session.title || session.symbol}** (${session.symbol})${isActive}\n`;
+        message += `   Updated: ${dateStr}\n`;
+      });
+      
+      if (sessions.length > 10) {
+        message += `\n... and ${sessions.length - 10} more session${sessions.length - 10 > 1 ? 's' : ''}`;
+      }
+      
+      return message;
+    } catch (error) {
+      console.error('List sessions error:', error);
+      return `⚠️ Error listing sessions: ${error.message}`;
+    }
+  }
+  
+  const looksLikeCommand = (
+    lower.includes('delete last trade') ||
+    lower.includes('remove last trade') ||
+    lower.includes('show my stats') ||
+    lower.includes('my performance') ||
+    lower.includes('what model') ||
+    lower.includes('clear memory') ||
+    lower === 'help' || lower.includes('commands')
+  );
+  if (!looksLikeCommand) return null;
+  try {
+    const res = await fetch('http://127.0.0.1:8765/memory/system/command', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: userInput, context: { current_model: selectedModel } })
+    }).then(r=>r.json());
+    if (res && res.success) return res.message;
+    if (res && res.message) return res.message;
+  } catch (e) {
+    console.error('System command error', e);
   }
   return null;
 }
@@ -1843,10 +2013,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         
         console.log("📤 Sending chat history:", formattedHistory.length, "messages");
         
+        // Include all IndexedDB sessions in context so AI knows the actual system state
+        let allSessions = [];
+        try {
+          allSessions = await window.IDB.getAllSessions();
+        } catch (e) {
+          console.warn("Failed to load sessions for context:", e);
+        }
+        
         sendResponse({ 
           history: formattedHistory,
           sessionId: currentSession.sessionId,
-          context: currentSession.context
+          context: {
+            ...currentSession.context,
+            // Add system-wide session data
+            all_sessions: allSessions.map(s => ({
+              sessionId: s.sessionId,
+              title: s.title || s.symbol,
+              symbol: s.symbol,
+              isActive: s.sessionId === currentSession.sessionId,
+              last_updated: s.last_updated || s.created_at
+            })),
+            current_session_id: currentSession.sessionId
+          }
         });
       } catch (error) {
         console.error("Get history error:", error);

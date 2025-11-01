@@ -30,6 +30,10 @@ async def dashboard_data():
     wins, losses, breakeven = 0, 0, 0
     setup_perf = {}  # {setup_type: [r_multiples]}
     
+    # Establish baseline from median absolute loss for R approximation
+    neg = [abs(t.get("pnl", 0)) for t in logs if isinstance(t.get("pnl"), (int, float)) and t.get("pnl", 0) < 0]
+    base = statistics.median(neg) if neg else None
+
     # Calculate rolling win rate and aggregate setup performance
     for i, trade in enumerate(logs_sorted, start=1):
         outcome = trade.get("outcome")
@@ -61,9 +65,12 @@ async def dashboard_data():
         if setup not in setup_perf:
             setup_perf[setup] = []
         
-        # Only include completed trades with R multiple
-        if trade.get("r_multiple") is not None:
-            setup_perf[setup].append(trade["r_multiple"])
+        # Include R multiple, approximated if needed
+        r = trade.get("r_multiple")
+        if r is None and base and isinstance(trade.get("pnl"), (int, float)):
+            r = round(trade["pnl"] / base, 2)
+        if r is not None:
+            setup_perf[setup].append(r)
     
     # Calculate average R per setup
     avg_r_by_setup = {}

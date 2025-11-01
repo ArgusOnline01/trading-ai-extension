@@ -92,7 +92,49 @@ When the user references previous messages (e.g., "the setup I showed earlier", 
                     notes = session_context["notes"]
                     if notes:
                         context_str += f"Notes: {', '.join(notes[:3])}\n"  # Show first 3 notes
-                
+
+                # Phase 4D.3: Include recent trades if provided by the extension background
+                recent = session_context.get("recent_trades")
+                if isinstance(recent, list) and recent:
+                    # Build a compact, token-light list of last up to 10 trades
+                    compact = []
+                    for t in recent[-10:]:
+                        sym = t.get('symbol', 'UNK')
+                        outcome = t.get('outcome')
+                        if outcome is None and isinstance(t.get('pnl'), (int, float)):
+                            outcome = 'win' if t['pnl'] > 0 else ('loss' if t['pnl'] < 0 else 'breakeven')
+                        rr = t.get('r_multiple')
+                        if rr is None and isinstance(t.get('pnl'), (int, float)):
+                            rr = t['pnl']  # as-is; server computes better approximations when needed
+                        compact.append(f"{sym} | {outcome or 'pending'} | R:{rr if rr is not None else '-'}")
+                    context_str += "Recent Trades (last 10):\n" + "\n".join(compact) + "\n"
+
+                # Phase 4D.3.2: Include command execution result if available
+                cmd_result = session_context.get("last_command_result")
+                if cmd_result and isinstance(cmd_result, dict):
+                    context_str += "\n[COMMAND EXECUTED]:\n"
+                    context_str += f"Command: {cmd_result.get('command', 'unknown')}\n"
+                    context_str += f"Status: {'Success' if cmd_result.get('success') else 'Failed'}\n"
+                    if cmd_result.get('message'):
+                        context_str += f"Result: {cmd_result['message']}\n"
+                    context_str += "\nIMPORTANT: A system command was just executed. Reference this result in your response. Say 'I've done it' or 'Here's what happened' - NOT 'I can't' or 'simulated'.\n"
+
+                # Phase 4D.4: Include actual system sessions from IndexedDB
+                all_sessions = session_context.get("all_sessions")
+                current_session_id = session_context.get("current_session_id")
+                if isinstance(all_sessions, list) and all_sessions:
+                    context_str += "\n[SYSTEM SESSIONS - ACTUAL STATE]:\n"
+                    context_str += f"Total sessions in system: {len(all_sessions)}\n"
+                    context_str += f"Current active session ID: {current_session_id}\n\n"
+                    for i, sess in enumerate(all_sessions[:10], 1):
+                        active_marker = " 🔵 ACTIVE" if sess.get("isActive") or sess.get("sessionId") == current_session_id else ""
+                        title = sess.get("title", sess.get("symbol", "Unknown"))
+                        symbol = sess.get("symbol", "?")
+                        context_str += f"{i}. {title} ({symbol}){active_marker} - ID: {sess.get('sessionId', '?')[:20]}...\n"
+                    if len(all_sessions) > 10:
+                        context_str += f"... and {len(all_sessions) - 10} more sessions\n"
+                    context_str += "\nIMPORTANT: These are the ACTUAL sessions stored in IndexedDB. When users ask about sessions, reference this real data.\n"
+
                 system_prompt += context_str
             
             # Phase 4C: Inject learning profile for adaptive advice
@@ -122,17 +164,35 @@ Your capabilities:
 - All memory persists in backend JSON files (survives browser restarts)
 - You have access to {} trades, {} sessions, {} conversation messages
 - Current win rate: {:.1f}%, Avg R: {:+.2f}
-- You can execute system commands
+- You CAN execute system commands — the backend handles them automatically
 
-Available commands (recognize natural language):
-- "show my stats" / "how am i doing" -> Display performance summary
-- "delete last trade" -> Remove most recent trade entry
-- "what model are you using" -> Show current AI model
-- "list sessions" -> Show active chat sessions  
-- "clear memory" -> Reset temporary data
-- "help" -> Show all commands
+Available commands you can execute (recognize natural language, including question phrasings):
 
-When users ask these questions, provide helpful formatted responses.
+**Performance:**
+- "show my stats" / "how am i doing" → Display actual performance summary
+- "delete last trade" → Remove most recent trade entry
+- "restore last trade" / "add it back" → Restore last deleted trade
+
+**Sessions:**
+- "list sessions" / "show sessions" → List ALL sessions (you have access to the actual IndexedDB data)
+- "create session [symbol]" / "new session" → Create a new trading session
+- "switch session" / "change session" → Switch to a different session
+- "rename session [name]" → Rename the current session
+- "delete session" → Delete a session
+
+**System:**
+- "what model are you using" → Show current AI model
+- "clear memory" → Reset temporary data
+- "help" / "what can you do" → Show all available commands
+
+**UI:**
+- You can request UI actions like "close chat", "open session manager", etc. (these are handled by the frontend)
+
+COMMAND RECOGNITION:
+- Commands work whether phrased as questions ("can you...", "how about...") or statements
+- When users ask "what can you do" or "show me commands", you MUST list these capabilities confidently
+- When users request these actions, respond confidently. Say "I've done it" or "Here's what I found" — NOT "I can't" or "simulated." The backend executes these commands for real.
+
 For chart analysis, use your SMC expertise combined with their trading history.
 
 [Copilot Bridge]

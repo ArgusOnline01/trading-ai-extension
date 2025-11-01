@@ -1,0 +1,18 @@
+{
+  "id": 1454625013,
+  "symbol": "SILZ5",
+  "entry_time": "10/10/2025 10:38:57 -05:00",
+  "exit_time": "10/10/2025 10:40:22 -05:00",
+  "entry_price": 48.005,
+  "exit_price": 47.845,
+  "direction": "short",
+  "pnl": -160.0,
+  "contracts": 1.0,
+  "fees": 2.04,
+  "trade_day": "10/10/2025 00:00:00 -05:00",
+  "duration": "00:01:24.4562910",
+  "source": "topstep",
+  "merged": true,
+  "label": "loss",
+  "chart_path": "C:\\Users\\alfre\\.cursor-tutor\\trading-ai-extension\\server\\data\\charts\\SILZ5_5m_1454625013.png"
+}

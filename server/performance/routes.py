@@ -10,6 +10,7 @@ from .utils import (
     get_trade_by_session,
     delete_trade
 )
+from .learning import generate_learning_profile
 
 
 router = APIRouter(prefix="/performance", tags=["performance"])
@@ -23,15 +24,9 @@ async def log_trade(trade: TradeRecord):
     """
     result = save_trade(trade)
     
-    # Phase 4C: Auto-update learning profile every 5 trades
+    # Phase 4D.3: Always update learning profile after logging
     try:
-        from .learning import generate_learning_profile
-        from .utils import read_logs
-        
-        logs = read_logs()
-        if len(logs) % 5 == 0:
-            print(f"[LEARNING] 🎓 Milestone reached: {len(logs)} trades logged. Updating learning profile...")
-            generate_learning_profile()
+        generate_learning_profile()
     except Exception as e:
         print(f"[LEARNING] Could not auto-update profile: {e}")
     
@@ -95,11 +90,19 @@ async def get_trades(
 # Phase 4D.3: Return raw merged trades directly from performance_logs.json
 @router.get("/all")
 async def get_all(limit: int = Query(100, ge=1, le=1000)):
-    """Return the last N saved trades (raw list) from performance_logs.json"""
+    """Return the last N saved trades with r_multiple approximated when missing."""
     from .utils import read_logs
+    import statistics
     logs = read_logs()
-    # Return the last N entries (keeps original order of those entries)
-    return logs[-limit:]
+    slice_logs = logs[-limit:]
+    # Compute baseline absolute loss for R approximation
+    neg = [abs(t.get("pnl", 0)) for t in logs if isinstance(t.get("pnl"), (int, float)) and t.get("pnl", 0) < 0]
+    base = statistics.median(neg) if neg else None
+    if base:
+        for t in slice_logs:
+            if t.get("r_multiple") is None and isinstance(t.get("pnl"), (int, float)):
+                t["r_multiple"] = round(t["pnl"] / base, 2)
+    return slice_logs
 
 
 @router.get("/trades/{session_id}")
@@ -126,6 +129,10 @@ async def delete_trade_route(session_id: str):
     success = delete_trade(session_id)
     
     if success:
+        try:
+            generate_learning_profile()
+        except Exception:
+            pass
         return {
             "status": "deleted",
             "session_id": session_id

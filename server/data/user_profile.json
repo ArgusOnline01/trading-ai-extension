@@ -1,22 +1,22 @@
 {
-  "total_trades": 5,
-  "completed_trades": 5,
-  "win_rate": 1.0,
-  "best_setup": "Demand",
-  "worst_setup": "Supply",
-  "avg_rr": 4.81,
+  "total_trades": 28,
+  "completed_trades": 26,
+  "win_rate": 0.231,
+  "best_setup": "Unknown",
+  "worst_setup": "Unknown",
+  "avg_rr": -0.26,
   "setup_performance": {
-    "Demand": 5.35,
-    "Supply": 4.45
+    "Unknown": -0.26
   },
   "bias_performance": {
-    "bullish": 5.35,
-    "bearish": 4.45
+    "Bullish": -0.26
   },
-  "common_mistakes": [],
+  "common_mistakes": [
+    "Unknown (-0.26R avg)"
+  ],
   "recent_trend": {
-    "win_rate_change": 100.0,
-    "rr_change": 4.81
+    "win_rate_change": -28.9,
+    "rr_change": 0.0
   },
-  "last_updated": "2025-10-30T06:32:41.696768"
+  "last_updated": "2025-11-01T06:06:52.588499"
 }

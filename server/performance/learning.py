@@ -7,14 +7,14 @@ from fastapi import APIRouter
 from datetime import datetime
 import json
 import os
+from pathlib import Path
 import statistics
 from typing import Dict, Any, List
 
-# Navigate to server/server/data directory (where performance_logs.json actually is)
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "server", "data")
-LOG_PATH = os.path.join(DATA_DIR, "performance_logs.json")
-# But keep profile at server/data level for easier access
-PROFILE_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "user_profile.json")
+# Phase 4D.3: Unify paths to server/data and reuse normalized logs from performance.utils
+DATA_DIR = Path(__file__).parent.parent / "data"
+LOG_PATH = str(DATA_DIR / "performance_logs.json")
+PROFILE_PATH = str(DATA_DIR / "user_profile.json")
 
 learning_router = APIRouter(prefix="/learning", tags=["Learning"])
 
@@ -23,7 +23,6 @@ def _load_json(path: str) -> List[Dict[str, Any]]:
     """Load JSON file with error handling"""
     if not os.path.exists(path):
         return []
-    
     try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -43,7 +42,12 @@ def generate_learning_profile() -> Dict[str, Any]:
     Analyze performance logs and generate an adaptive learning profile.
     This profile is injected into the AI's system prompt to personalize advice.
     """
-    logs = _load_json(LOG_PATH)
+    # Use the normalized reader from performance.utils to ensure outcomes/R are present
+    try:
+        from .utils import read_logs
+        logs = read_logs()
+    except Exception:
+        logs = _load_json(LOG_PATH)
     total = len(logs)
     
     # Initialize empty profile
@@ -69,8 +73,15 @@ def generate_learning_profile() -> Dict[str, Any]:
     completed = len(wins) + len(losses)
     win_rate = (len(wins) / completed) if completed > 0 else 0.0
     
-    # Calculate average R:R
-    r_values = [t.get("r_multiple", 0) for t in logs if t.get("r_multiple") is not None]
+    # Calculate average R:R (approximate if missing using median absolute loss baseline)
+    neg = [abs(t.get("pnl", 0)) for t in logs if isinstance(t.get("pnl"), (int, float)) and t.get("pnl", 0) < 0]
+    base = statistics.median(neg) if neg else None
+    def derive_r(t):
+        r = t.get("r_multiple")
+        if r is None and base and isinstance(t.get("pnl"), (int, float)):
+            r = round(t["pnl"] / base, 2)
+        return r
+    r_values = [derive_r(t) for t in logs if derive_r(t) is not None]
     avg_rr = statistics.mean(r_values) if r_values else 0.0
     
     # Group by setup type
@@ -79,8 +90,9 @@ def generate_learning_profile() -> Dict[str, Any]:
         setup = t.get("setup_type", "Unknown")
         if setup not in setups:
             setups[setup] = []
-        if t.get("r_multiple") is not None:
-            setups[setup].append(t["r_multiple"])
+        r = derive_r(t)
+        if r is not None:
+            setups[setup].append(r)
     
     # Calculate average R per setup
     setup_perf = {}
@@ -94,8 +106,9 @@ def generate_learning_profile() -> Dict[str, Any]:
         b = t.get("bias", "Bullish")
         if b not in bias:
             bias[b] = []
-        if t.get("r_multiple") is not None:
-            bias[b].append(t["r_multiple"])
+        r = derive_r(t)
+        if r is not None:
+            bias[b].append(r)
     
     bias_perf = {}
     for b, values in bias.items():

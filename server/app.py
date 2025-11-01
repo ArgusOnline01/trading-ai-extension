@@ -19,6 +19,7 @@ from chart_reconstruction.routes import router as chart_reconstruction_router
 from trades_merge.routes import router as trades_merge_router
 from amn_teaching.routes import router as amn_teaching_router
 from copilot_bridge.routes import router as copilot_router
+from performance.learning import generate_learning_profile
 
 # Try to import PIL, but make it optional for now
 try:
@@ -114,6 +115,13 @@ async def startup_event():
     except Exception as e:
         print(f"[SYSTEM] Warning: Could not sync model aliases: {e}")
         print("[SYSTEM] Continuing with default aliases...")
+    
+    # Phase 4D.3: Regenerate learning profile from unified logs on startup
+    try:
+        print("[LEARNING] Regenerating performance profile...")
+        generate_learning_profile()
+    except Exception as e:
+        print(f"[LEARNING] Warning: Could not regenerate profile: {e}")
     
     print("[SYSTEM] Awareness layer initialized")
     print("[SYSTEM] Commands registered: stats, delete, clear, model, sessions, help")

@@ -1,6 +1,8 @@
 import json
 import os
 from pathlib import Path
+from datetime import datetime
+import statistics
 import statistics
 from datetime import datetime
 from typing import List, Optional, Dict, Any
@@ -25,7 +27,8 @@ def read_logs() -> List[Dict[str, Any]]:
     ensure_data_dir()
     try:
         with open(LOG_FILE, 'r') as f:
-            return json.load(f)
+            raw = json.load(f)
+            return [normalize_trade(trade) for trade in raw]
     except (FileNotFoundError, json.JSONDecodeError):
         return []
 
@@ -35,6 +38,63 @@ def write_logs(logs: List[Dict[str, Any]]):
     ensure_data_dir()
     with open(LOG_FILE, 'w') as f:
         json.dump(logs, f, indent=2)
+
+
+def _parse_timestamp(entry_time: str) -> str:
+    """Parse entry_time like '10/29/2025 02:34:55 -05:00' to ISO string; fallback to original."""
+    if not entry_time:
+        return None
+    try:
+        dt = datetime.strptime(entry_time, "%m/%d/%Y %H:%M:%S %z")
+        return dt.isoformat()
+    except Exception:
+        try:
+            # Some strings may lack timezone
+            dt = datetime.strptime(entry_time, "%m/%d/%Y %H:%M:%S")
+            return dt.isoformat()
+        except Exception:
+            return entry_time
+
+
+def normalize_trade(trade: Dict[str, Any]) -> Dict[str, Any]:
+    """Ensure common fields exist: outcome, r_multiple (if available), timestamp.
+    Does not mutate file on disk; only normalizes the returned objects.
+    """
+    if not isinstance(trade, dict):
+        return trade
+    normalized = dict(trade)
+
+    # Outcome: prefer explicit outcome, otherwise derive from pnl or label
+    outcome = normalized.get("outcome")
+    if not outcome:
+        pnl = normalized.get("pnl")
+        label = str(normalized.get("label", "")).lower()
+        if isinstance(pnl, (int, float)):
+            if pnl > 0:
+                outcome = "win"
+            elif pnl < 0:
+                outcome = "loss"
+            else:
+                outcome = "breakeven"
+        elif label in ("win", "loss", "breakeven"):
+            outcome = label
+    if outcome:
+        normalized["outcome"] = outcome
+
+    # R multiple: map from rr/expected_r if present
+    if normalized.get("r_multiple") is None:
+        if normalized.get("rr") is not None:
+            normalized["r_multiple"] = normalized.get("rr")
+        elif normalized.get("expected_r") is not None:
+            normalized["r_multiple"] = normalized.get("expected_r")
+
+    # Timestamp: parse entry_time or use existing
+    if not normalized.get("timestamp"):
+        ts = _parse_timestamp(normalized.get("entry_time") or normalized.get("trade_day"))
+        if ts:
+            normalized["timestamp"] = ts
+
+    return normalized
 
 
 def save_trade(trade: TradeRecord) -> Dict[str, Any]:
@@ -120,10 +180,25 @@ def calculate_stats(symbol: Optional[str] = None, timeframe: Optional[str] = Non
     losses = [t for t in logs if t.get("outcome") == "loss"]
     breakevens = [t for t in logs if t.get("outcome") == "breakeven"]
     
-    # R multiples
-    r_values = [t["r_multiple"] for t in logs if t.get("r_multiple") is not None]
-    winning_r = [t["r_multiple"] for t in wins if t.get("r_multiple") is not None]
-    losing_r = [abs(t["r_multiple"]) for t in losses if t.get("r_multiple") is not None]
+    # Establish baseline risk from median absolute loss (if explicit R not provided)
+    def baseline_risk(trades):
+        neg = [abs(t.get("pnl", 0)) for t in trades if isinstance(t.get("pnl"), (int, float)) and t.get("pnl", 0) < 0]
+        return statistics.median(neg) if neg else None
+    base = baseline_risk(logs)
+
+    # R multiples (explicit or approximated)
+    def derive_r(trade):
+        r = trade.get("r_multiple")
+        if r is None and base and isinstance(trade.get("pnl"), (int, float)):
+            r = round(trade["pnl"] / base, 2)
+        return r
+
+    r_values = [derive_r(t) for t in logs]
+    r_values = [r for r in r_values if r is not None]
+    winning_r = [derive_r(t) for t in wins]
+    winning_r = [r for r in winning_r if r is not None and r >= 0]
+    losing_r = [abs(derive_r(t)) for t in losses]
+    losing_r = [r for r in losing_r if r is not None]
     
     # Calculate metrics
     total_trades = len(logs)

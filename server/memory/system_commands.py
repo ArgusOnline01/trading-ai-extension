@@ -7,37 +7,94 @@ import difflib
 from typing import Dict, Any, Optional, Tuple
 from .utils import get_memory_status, load_json, save_json
 from performance.learning import _load_json, LOG_PATH, PROFILE_PATH, generate_learning_profile
+import os
 
 
 # Command patterns (lowercase for fuzzy matching)
+# IMPORTANT: Order matters - more specific patterns should come first!
 COMMAND_PATTERNS = {
     "stats": ["show my stats", "show stats", "my performance", "how am i doing", "my results"],
-    "delete_last": ["delete last trade", "remove last trade", "undo last trade", "delete recent trade"],
+    "restore_last": ["restore last trade", "undo delete", "add it back", "re-add last trade", "undelete last trade", "put it back", "bring it back"],
+    "delete_last": ["delete last trade", "remove last trade", "delete recent trade"],
+    "switch_session": ["switch session", "change session", "load session", "open session", "go to session"],
+    "create_session": ["create session", "new session", "start session", "add session", "make session"],
+    "delete_session": ["delete session", "remove session"],
+    "rename_session": ["rename session", "change session name", "edit session title"],
     "clear_memory": ["clear memory", "reset memory", "delete all data", "wipe memory"],
     "model_info": ["what model", "which model", "current model", "what ai", "which gpt"],
     "list_sessions": ["list sessions", "show sessions", "my sessions", "active sessions"],
-    "help": ["help", "commands", "what can you do", "available commands"]
+    "help": ["help", "commands", "what can you do", "available commands", "show me commands", "what commands", "list commands", "what can i ask", "how can you help"]
 }
+
+
+def normalize_input(text: str) -> str:
+    """
+    Normalize user input by removing question words and polite phrases
+    Examples: "can you restore" -> "restore", "how about deleting" -> "deleting"
+    """
+    import re
+    # Remove common question/polite prefixes
+    prefixes = [
+        r"^(can you|could you|would you|please|can we|could we|will you|would you mind) +",
+        r"^(how about|what about|let's|let us) +",
+        r"^(i want to|i need to|i'd like to|i wish to) +",
+        r"^(maybe|perhaps|do you think you can) +",
+    ]
+    
+    normalized = text.lower().strip()
+    for prefix_pattern in prefixes:
+        normalized = re.sub(prefix_pattern, "", normalized, flags=re.IGNORECASE)
+    
+    # Remove trailing question marks and extra whitespace
+    normalized = normalized.rstrip("?.,! ").strip()
+    
+    return normalized
 
 
 def detect_command(user_input: str) -> Optional[str]:
     """
     Detect if user input is a system command using fuzzy matching
+    Handles both direct commands and question phrasings
     Returns command key if detected, None otherwise
     """
     user_lower = user_input.lower().strip()
     
-    # Direct pattern matching first
+    # Normalize input to handle question phrasings
+    normalized = normalize_input(user_lower)
+    
+    # Try exact matches first (highest priority) - both original and normalized
     for cmd_key, patterns in COMMAND_PATTERNS.items():
         for pattern in patterns:
-            # Use difflib for fuzzy matching (80% similarity)
-            similarity = difflib.SequenceMatcher(None, user_lower, pattern).ratio()
-            if similarity > 0.8:
+            if user_lower == pattern or normalized == pattern:
                 return cmd_key
-            
-            # Also check if pattern is contained in user input
-            if pattern in user_lower and len(pattern) > 5:
-                return cmd_key
+    
+    # Then try fuzzy matching with reasonable threshold
+    best_match = None
+    best_score = 0.0
+    
+    # Check both original and normalized input
+    inputs_to_check = [user_lower, normalized] if normalized != user_lower else [user_lower]
+    
+    for check_input in inputs_to_check:
+        for cmd_key, patterns in COMMAND_PATTERNS.items():
+            for pattern in patterns:
+                # Use difflib for fuzzy matching (75% similarity to catch question phrasings)
+                similarity = difflib.SequenceMatcher(None, check_input, pattern).ratio()
+                if similarity > best_score and similarity > 0.75:
+                    best_score = similarity
+                    best_match = cmd_key
+    
+    if best_match:
+        return best_match
+    
+    # Finally, try substring matching - check if pattern is contained in input
+    # This catches "can you restore last trade" -> "restore last trade"
+    for cmd_key, patterns in COMMAND_PATTERNS.items():
+        for pattern in patterns:
+            # Check if pattern appears in original or normalized input
+            if len(pattern) > 6:
+                if pattern in user_lower or pattern in normalized:
+                    return cmd_key
     
     return None
 
@@ -55,6 +112,21 @@ def execute_command(command: str, context: Dict[str, Any] = None) -> Dict[str, A
     elif command == "delete_last":
         return execute_delete_last_command()
     
+    elif command == "restore_last":
+        return execute_restore_last_command()
+    
+    elif command == "switch_session":
+        return execute_switch_session_command(context)
+    
+    elif command == "create_session":
+        return execute_create_session_command(context)
+    
+    elif command == "delete_session":
+        return execute_delete_session_command(context)
+    
+    elif command == "rename_session":
+        return execute_rename_session_command(context)
+    
     elif command == "clear_memory":
         return execute_clear_memory_command()
     
@@ -62,7 +134,7 @@ def execute_command(command: str, context: Dict[str, Any] = None) -> Dict[str, A
         return execute_model_info_command(context)
     
     elif command == "list_sessions":
-        return execute_list_sessions_command()
+        return execute_list_sessions_command(context)
     
     elif command == "help":
         return execute_help_command()
@@ -138,8 +210,10 @@ def execute_delete_last_command() -> Dict[str, Any]:
         
         last_trade = logs.pop()
         
-        # Save updated logs
+        # Save updated logs and keep last deleted for potential restore
         save_json(LOG_PATH, logs)
+        last_deleted_path = os.path.join(os.path.dirname(LOG_PATH), "last_deleted_trade.json")
+        save_json(last_deleted_path, last_trade)
         
         # Regenerate learning profile
         generate_learning_profile()
@@ -164,6 +238,41 @@ def execute_delete_last_command() -> Dict[str, Any]:
             "success": False,
             "command": "delete_last",
             "message": f"⚠️ Error deleting trade: {str(e)}"
+        }
+
+
+def execute_restore_last_command() -> Dict[str, Any]:
+    """Execute 'restore last trade' (undo last deletion)"""
+    try:
+        last_deleted_path = os.path.join(os.path.dirname(LOG_PATH), "last_deleted_trade.json")
+        last_trade = load_json(last_deleted_path, {})
+        if not last_trade or not isinstance(last_trade, dict):
+            return {
+                "success": False,
+                "command": "restore_last",
+                "message": "📭 No recently deleted trade to restore"
+            }
+        logs = _load_json(LOG_PATH)
+        logs.append(last_trade)
+        save_json(LOG_PATH, logs)
+        # Clear stored last deleted
+        save_json(last_deleted_path, {})
+        # Regenerate learning profile
+        generate_learning_profile()
+        symbol = last_trade.get("symbol", "Unknown")
+        outcome = last_trade.get("outcome", "pending")
+        message = f"♻️ **Trade Restored**\n\n• Symbol: {symbol}\n• Outcome: {outcome}\n• Total trades: {len(logs)}"
+        return {
+            "success": True,
+            "command": "restore_last",
+            "message": message,
+            "data": {"restored_trade": last_trade, "total": len(logs)}
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "command": "restore_last",
+            "message": f"⚠️ Error restoring trade: {str(e)}"
         }
 
 
@@ -228,37 +337,38 @@ def execute_model_info_command(context: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-def execute_list_sessions_command() -> Dict[str, Any]:
-    """Execute 'list sessions' command"""
+def execute_list_sessions_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Execute 'list sessions' command - now uses IndexedDB data from context"""
     try:
-        from .utils import SESSION_CONTEXTS_PATH, load_json
+        # Get sessions from context (injected from frontend IndexedDB)
+        all_sessions = context.get("all_sessions") if context else []
+        current_session_id = context.get("current_session_id") if context else None
         
-        sessions = load_json(SESSION_CONTEXTS_PATH, [])
-        
-        if not sessions:
+        if not all_sessions:
             return {
                 "success": True,
                 "command": "list_sessions",
-                "message": "📂 No active sessions found",
+                "message": "📂 No sessions found. Create one with 'create session' or use the ➕ New Session button.",
                 "data": []
             }
         
-        message = f"📂 **Active Sessions** ({len(sessions)})\n\n"
+        message = f"📂 **Active Sessions** ({len(all_sessions)})\n\n"
         
-        for i, session in enumerate(sessions[:5], 1):  # Show first 5
-            symbol = session.get("symbol", "Unknown")
-            title = session.get("title", "Untitled")
-            updated = session.get("last_updated", "Unknown")[:10]
-            message += f"{i}. {title} - {symbol} (updated: {updated})\n"
+        for i, session in enumerate(all_sessions[:10], 1):
+            title = session.get("title", session.get("symbol", "Unknown"))
+            symbol = session.get("symbol", "?")
+            is_active = session.get("isActive") or session.get("sessionId") == current_session_id
+            active_marker = " 🔵 Active" if is_active else ""
+            message += f"{i}. **{title}** ({symbol}){active_marker}\n"
         
-        if len(sessions) > 5:
-            message += f"\n... and {len(sessions) - 5} more"
+        if len(all_sessions) > 10:
+            message += f"\n... and {len(all_sessions) - 10} more session(s)"
         
         return {
             "success": True,
             "command": "list_sessions",
             "message": message,
-            "data": sessions
+            "data": all_sessions
         }
     
     except Exception as e:
@@ -268,16 +378,93 @@ def execute_list_sessions_command() -> Dict[str, Any]:
             "message": f"⚠️ Error listing sessions: {str(e)}"
         }
 
+def execute_switch_session_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Execute 'switch session' command - requires frontend action"""
+    # Extract session identifier from context if available
+    all_sessions = context.get("all_sessions", []) if context else []
+    
+    if not all_sessions:
+        return {
+            "success": False,
+            "command": "switch_session",
+            "message": "⚠️ No sessions available to switch to",
+            "frontend_action": "show_session_manager"  # Fallback to showing manager
+        }
+    
+    # Return instruction for frontend to handle
+    return {
+        "success": True,
+        "command": "switch_session",
+        "message": "📂 **Switch Session**\n\nUse the Session Manager (🗂️ button) or say 'switch to [session name]' with the exact name.\n\nAvailable sessions:\n" + 
+                   "\n".join([f"• {s.get('title', s.get('symbol'))} ({s.get('symbol')})" for s in all_sessions[:5]]),
+        "frontend_action": "show_session_manager",
+        "data": {"available_sessions": all_sessions}
+    }
+
+def execute_create_session_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Execute 'create session' command - requires frontend action"""
+    return {
+        "success": True,
+        "command": "create_session",
+        "message": "➕ **Create Session**\n\nI can help you create a new session. Click the ➕ New Session button in the Session Manager (🗂️), or tell me the symbol (e.g., 'create session ES').",
+        "frontend_action": "create_session_prompt",
+        "data": {}
+    }
+
+def execute_delete_session_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Execute 'delete session' command - requires frontend action"""
+    all_sessions = context.get("all_sessions", []) if context else []
+    
+    if not all_sessions:
+        return {
+            "success": False,
+            "command": "delete_session",
+            "message": "⚠️ No sessions available to delete"
+        }
+    
+    return {
+        "success": True,
+        "command": "delete_session",
+        "message": "🗑️ **Delete Session**\n\nUse the Session Manager (🗂️ button) to delete sessions, or tell me which session to delete by name.",
+        "frontend_action": "show_session_manager",
+        "data": {"available_sessions": all_sessions}
+    }
+
+def execute_rename_session_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Execute 'rename session' command - requires frontend action"""
+    current_session_id = context.get("current_session_id") if context else None
+    
+    if not current_session_id:
+        return {
+            "success": False,
+            "command": "rename_session",
+            "message": "⚠️ No active session to rename"
+        }
+    
+    return {
+        "success": True,
+        "command": "rename_session",
+        "message": f"✏️ **Rename Session**\n\nClick the session name in the chat header (🧠) to rename the current session, or tell me the new name (e.g., 'rename session to My Trading Session').",
+        "frontend_action": "rename_session",
+        "data": {"current_session_id": current_session_id}
+    }
+
 
 def execute_help_command() -> Dict[str, Any]:
     """Execute 'help' command - show available commands"""
     message = "🤖 **Visual Trade Copilot - System Commands**\n\n"
     message += "**Performance:**\n"
     message += "• `show my stats` - View trading performance\n"
-    message += "• `delete last trade` - Remove most recent trade\n\n"
+    message += "• `delete last trade` - Remove most recent trade\n"
+    message += "• `restore last trade` - Undo the last deletion\n\n"
+    message += "**Sessions:**\n"
+    message += "• `list sessions` - Show all active sessions\n"
+    message += "• `create session [symbol]` - Create a new trading session\n"
+    message += "• `switch session` - Switch to a different session\n"
+    message += "• `rename session [name]` - Rename current session\n"
+    message += "• `delete session` - Delete a session\n\n"
     message += "**System:**\n"
     message += "• `what model are you using` - View current AI model\n"
-    message += "• `list sessions` - Show active chat sessions\n"
     message += "• `clear memory` - Reset all temporary data\n\n"
     message += "**Analysis:**\n"
     message += "• Upload chart + ask questions\n"

@@ -1,12 +1,15 @@
 import json
 import os
+from pathlib import Path
 import statistics
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from .models import TradeRecord
 
 
-LOG_FILE = "server/data/performance_logs.json"
+# Phase 4D.3: Use absolute path anchored to this module to avoid CWD issues
+DATA_DIR = Path(__file__).parent.parent / "data"
+LOG_FILE = str(DATA_DIR / "performance_logs.json")
 
 
 def ensure_data_dir():

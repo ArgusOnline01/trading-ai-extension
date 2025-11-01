@@ -106,7 +106,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           console.log("⚠️ No chat history found - first message in session");
         }
         
-        // Add session context (Phase 3B)
+        // Phase 4D.3: Attach last 10 trades from backend to system context
+        try {
+          const recentTrades = await fetch(`http://127.0.0.1:8765/performance/all?limit=10`).then(r => r.json());
+          if (recentTrades && Array.isArray(recentTrades)) {
+            sessionContext = sessionContext || {};
+            sessionContext.recent_trades = recentTrades;
+          }
+        } catch (e) {
+          console.warn("Failed to fetch recent trades for context:", e);
+        }
+
+        // Add session context (Phase 3B + 4D.3)
         if (Object.keys(sessionContext).length > 0) {
           formData.append("context", JSON.stringify(sessionContext));
         }

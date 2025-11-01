@@ -255,20 +255,19 @@ viewPerformanceBtn.addEventListener("click", async () => {
     performancePanel.classList.remove("hidden");
     statsContent.innerHTML = '<div class="loading">Loading performance stats...</div>';
     
-    // Fetch stats and trades from backend
-    const [statsRes, tradesRes] = await Promise.all([
+    // Fetch stats and all trades from backend (Phase 4D.3)
+    const [statsRes, allTradesRes] = await Promise.all([
       fetch(`${API_BASE_URL}/performance/stats`),
-      fetch(`${API_BASE_URL}/performance/trades`)
+      fetch(`${API_BASE_URL}/performance/all?limit=200`)
     ]);
     
     if (!statsRes.ok) throw new Error("Failed to fetch stats");
     
     const stats = await statsRes.json();
     let trades = [];
-    
-    if (tradesRes.ok) {
-      const tradesData = await tradesRes.json();
-      trades = tradesData.trades || tradesData || [];
+    if (allTradesRes.ok) {
+      const arr = await allTradesRes.json();
+      trades = Array.isArray(arr) ? arr : [];
     }
     
     // Render stats with trade details
@@ -434,10 +433,9 @@ async function deleteTrade(sessionId) {
       const statsResponse = await fetch(`${API_BASE_URL}/performance/stats`);
       const stats = await statsResponse.json();
       
-      const tradesResponse = await fetch(`${API_BASE_URL}/performance/trades`);
-      const tradesData = await tradesResponse.json();
-      
-      renderPerformanceStats(stats, tradesData.trades || []);
+      const tradesResponse = await fetch(`${API_BASE_URL}/performance/all?limit=200`);
+      const arr = await tradesResponse.json();
+      renderPerformanceStats(stats, Array.isArray(arr) ? arr : []);
       
       alert('✅ Trade deleted successfully!');
     } else {

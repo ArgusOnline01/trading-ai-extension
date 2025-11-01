@@ -92,6 +92,16 @@ async def get_trades(
     }
 
 
+# Phase 4D.3: Return raw merged trades directly from performance_logs.json
+@router.get("/all")
+async def get_all(limit: int = Query(100, ge=1, le=1000)):
+    """Return the last N saved trades (raw list) from performance_logs.json"""
+    from .utils import read_logs
+    logs = read_logs()
+    # Return the last N entries (keeps original order of those entries)
+    return logs[-limit:]
+
+
 @router.get("/trades/{session_id}")
 async def get_trade(session_id: str):
     """

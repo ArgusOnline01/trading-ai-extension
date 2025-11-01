@@ -162,6 +162,19 @@ async def system_command(request: CommandRequest):
                 request.context['detected_trade'] = detected_trade
                 print(f"[SYSTEM_COMMAND] Detected trade {detected_trade.get('id')} for teach copilot")
         
+        # Phase 5C: If showing chart, try to detect trade from conversation context
+        if detected == "show_chart" and request.context:
+            from utils.trade_detector import detect_trade_reference
+            from performance.utils import read_logs
+            
+            all_trades = read_logs()
+            conversation_history = request.context.get('all_sessions') or []
+            request.context['command_text'] = request.command
+            detected_trade = detect_trade_reference(request.command, all_trades, conversation_history)
+            if detected_trade:
+                request.context['detected_trade'] = detected_trade
+                print(f"[SYSTEM_COMMAND] Detected trade {detected_trade.get('id')} for show chart")
+        
         # Execute command
         result = execute_command(detected, request.context)
         

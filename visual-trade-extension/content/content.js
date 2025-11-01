@@ -1700,10 +1700,10 @@ async function showTeachCopilotModal() {
           </div>
           <div>
             <label style="display: block; margin-bottom: 8px; color: #ffd700;">Chart Preview:</label>
-            <div id="vtc-teach-chart-container" style="border: 1px solid #333; border-radius: 6px; min-height: 200px; background: #1a1a1a; display: flex; align-items: center; justify-content: center; color: #666;">
+            <div id="vtc-teach-chart-container" style="border: 1px solid #333; border-radius: 6px; min-height: 200px; background: #1a1a1a; display: flex; align-items: center; justify-content: center; color: #666; cursor: pointer;" title="Click to view full-size chart">
               <span>Select a trade to view chart</span>
             </div>
-            <img id="vtc-teach-chart-img" src="" alt="Chart" style="width: 100%; display: none; border-radius: 6px; margin-top: 8px;">
+            <img id="vtc-teach-chart-img" src="" alt="Chart" style="width: 100%; display: none; border-radius: 6px; margin-top: 8px; cursor: pointer;" title="Click to view full-size chart">
           </div>
         </div>
         <div>
@@ -1753,6 +1753,57 @@ async function showTeachCopilotModal() {
   document.getElementById("vtc-teach-trade-select").addEventListener("change", onTeachTradeSelected);
   document.getElementById("vtc-teach-save").onclick = saveTeachLesson;
   document.getElementById("vtc-teach-preview").onclick = generatePreview;
+  
+  // Phase 5C: Define openChartPopup function for chart popups
+  window.openChartPopup = function(src) {
+    if (!src) return;
+    
+    // Remove existing popup if any
+    const existing = document.getElementById("vtc-chart-popup-modal");
+    if (existing) existing.remove();
+    
+    // Create full-size chart pop-up modal
+    const chartModal = document.createElement('div');
+    chartModal.id = 'vtc-chart-popup-modal';
+    chartModal.className = 'vtc-modal';
+    chartModal.style.display = 'flex';
+    chartModal.style.zIndex = '10001'; // Above Teach Copilot modal
+    
+    chartModal.innerHTML = `
+      <div class="vtc-modal-content" style="max-width: 95vw; max-height: 95vh; padding: 20px;">
+        <div class="vtc-modal-header" style="margin-bottom: 15px;">
+          <h3 style="margin: 0; color: #ffd700;">📊 Chart View</h3>
+          <button class="vtc-close-modal" id="vtc-close-chart-popup" style="background: transparent; border: none; color: #fff; font-size: 24px; cursor: pointer; padding: 0 10px;">✕</button>
+        </div>
+        <div style="text-align: center; background: #1a1a1a; border-radius: 8px; padding: 20px; overflow: auto; max-height: 85vh;">
+          <img src="${src}" alt="Full-size chart" style="max-width: 100%; max-height: 85vh; border-radius: 6px; cursor: zoom-out;">
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(chartModal);
+    
+    document.getElementById("vtc-close-chart-popup").onclick = () => {
+      chartModal.remove();
+    };
+    
+    // Close on background click
+    chartModal.onclick = (e) => {
+      if (e.target === chartModal) {
+        chartModal.remove();
+      }
+    };
+    
+    // Close on Escape key
+    const escapeHandler = (e) => {
+      if (e.key === 'Escape') {
+        chartModal.remove();
+        document.removeEventListener('keydown', escapeHandler);
+      }
+    };
+    document.addEventListener('keydown', escapeHandler);
+  };
+  
   document.getElementById("vtc-teach-skip").onclick = async () => {
     try {
       const res = await fetch("http://127.0.0.1:8765/teach/skip", { method: "POST" });
@@ -1879,7 +1930,11 @@ async function onTeachTradeSelected(event) {
   const index = parseInt(event.target.value);
   if (isNaN(index) || !teachCopilotTrades[index]) {
     document.getElementById("vtc-teach-trade-info").style.display = "none";
-    document.getElementById("vtc-teach-chart-img").style.display = "none";
+    const chartImg = document.getElementById("vtc-teach-chart-img");
+    if (chartImg) {
+      chartImg.style.display = "none";
+      chartImg.dataset.popupShown = "false"; // Reset popup flag
+    }
     document.getElementById("vtc-teach-chart-container").style.display = "flex";
     selectedTeachCopilotTrade = null; // Clear selection
     return;
@@ -1888,6 +1943,13 @@ async function onTeachTradeSelected(event) {
   const trade = teachCopilotTrades[index];
   selectedTeachCopilotTrade = trade; // Phase 5B.1: Store selected trade
   displayTeachTradeInfo(trade);
+  
+  // Reset popup flag for new trade selection
+  const chartImg = document.getElementById("vtc-teach-chart-img");
+  if (chartImg) {
+    chartImg.dataset.popupShown = "false";
+  }
+  
   await loadTeachChart(trade);
 }
 
@@ -1932,6 +1994,17 @@ async function loadTeachChart(trade) {
     chartImg.onload = () => {
       chartContainer.style.display = "none";
       chartImg.style.display = "block";
+      
+      // Phase 5C Enhancement: Auto-open full-size chart popup in teaching mode
+      // Only auto-open once per trade selection (not on every load)
+      if (!chartImg.dataset.popupShown) {
+        chartImg.dataset.popupShown = "true";
+        setTimeout(() => {
+          if (window.openChartPopup) {
+            window.openChartPopup(chartImg.src);
+          }
+        }, 500); // Small delay to ensure image is fully loaded
+      }
     };
     chartImg.onerror = () => {
       chartContainer.innerHTML = '<span style="color: #ff453a;">Chart not found</span>';
@@ -1986,6 +2059,17 @@ function tryPatternMatchChart(symbol, tradeId, chartImg, chartContainer) {
     chartImg.onload = () => {
       chartContainer.style.display = "none";
       chartImg.style.display = "block";
+      
+      // Phase 5C Enhancement: Auto-open full-size chart popup in teaching mode
+      // Only auto-open once per trade selection (not on every load)
+      if (!chartImg.dataset.popupShown) {
+        chartImg.dataset.popupShown = "true";
+        setTimeout(() => {
+          if (window.openChartPopup) {
+            window.openChartPopup(chartImg.src);
+          }
+        }, 500); // Small delay to ensure image is fully loaded
+      }
     };
     chartImg.onerror = () => {
       patternIndex++;
@@ -2732,6 +2816,12 @@ async function handleSystemCommand(userInput) {
       } else if (res.frontend_action === "close_teach_copilot") {
         if (teachCopilotModal) {
           teachCopilotModal.style.display = "none";
+        }
+      } else if (res.frontend_action === "show_chart_popup") {
+        // Phase 5C: Show chart popup in normal mode
+        if (res.chart_url && window.openChartPopup) {
+          const chartUrl = `http://127.0.0.1:8765${res.chart_url}`;
+          window.openChartPopup(chartUrl);
         }
       }
       return res.message;

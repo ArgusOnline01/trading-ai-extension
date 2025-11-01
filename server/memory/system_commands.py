@@ -25,6 +25,7 @@ COMMAND_PATTERNS = {
     "list_sessions": ["list sessions", "show sessions", "my sessions", "active sessions"],
     "open_teach_copilot": ["open teach copilot", "start teaching", "teach copilot", "open teaching", "show teach copilot", "launch teaching mode", "begin teaching", "review trades one by one", "lets review the trades", "teach me", "let's teach", "redo this in teach mode", "lets redo this", "redo in teach mode", "do this in teaching", "open teaching for this trade", "teach me about this", "review this trade", "lets review this"],
     "close_teach_copilot": ["close teach copilot", "pause teaching", "pause teaching mode", "close teaching", "exit teaching mode", "stop teaching", "discard teaching lesson", "cancel teaching"],
+    "show_chart": ["show chart", "show image", "show the chart", "display chart", "pull up chart", "show me the chart", "open chart", "view chart", "can you show the chart", "show that chart", "show this chart", "chart please"],
     "help": ["help", "commands", "what can you do", "available commands", "show me commands", "what commands", "list commands", "what can i ask", "how can you help"]
 }
 
@@ -153,6 +154,9 @@ def execute_command(command: str, context: Dict[str, Any] = None) -> Dict[str, A
     
     elif command == "close_teach_copilot":
         return execute_close_teach_copilot_command()
+    
+    elif command == "show_chart":
+        return execute_show_chart_command(context)
     
     elif command == "help":
         return execute_help_command()
@@ -512,6 +516,76 @@ def execute_close_teach_copilot_command() -> Dict[str, Any]:
     }
 
 
+def execute_show_chart_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """
+    Execute 'show chart' command - opens chart popup for detected trade
+    """
+    context = context or {}
+    
+    # Try to detect trade from context
+    detected_trade = context.get('detected_trade')
+    if not detected_trade and context:
+        # Try to detect from conversation history
+        from utils.trade_detector import detect_trade_reference, extract_trade_id_from_text
+        from performance.utils import read_logs
+        
+        all_trades = read_logs()
+        command_text = context.get('command_text', '')
+        conversation_history = context.get('all_sessions') or []
+        
+        detected_trade = detect_trade_reference(command_text or '', all_trades, conversation_history)
+    
+    if not detected_trade:
+        return {
+            "success": False,
+            "command": "show_chart",
+            "message": "❓ Could not find which trade's chart to show. Please mention a trade ID, symbol, or say 'that trade' after discussing it.",
+            "frontend_action": None
+        }
+    
+    trade_id = detected_trade.get('id') or detected_trade.get('trade_id')
+    symbol = detected_trade.get('symbol', 'Unknown')
+    
+    # Find chart path
+    chart_path = detected_trade.get('chart_path')
+    if not chart_path:
+        # Try to find via metadata
+        try:
+            from pathlib import Path
+            charts_dir = Path(__file__).parent.parent / "data" / "charts"
+            if trade_id and symbol:
+                patterns = [f"{symbol}_5m_{trade_id}.png", f"{symbol}_5m_{trade_id}*.png"]
+                for pattern in patterns:
+                    matches = list(charts_dir.glob(pattern))
+                    if matches:
+                        chart_path = str(matches[0])
+                        break
+        except:
+            pass
+    
+    if not chart_path:
+        return {
+            "success": False,
+            "command": "show_chart",
+            "message": f"❌ Chart not found for {symbol} trade {trade_id}. The chart may not have been generated yet.",
+            "frontend_action": None
+        }
+    
+    # Extract filename for URL
+    import os
+    filename = os.path.basename(chart_path)
+    
+    return {
+        "success": True,
+        "command": "show_chart",
+        "message": f"📊 Opening chart for {symbol} trade {trade_id}...",
+        "frontend_action": "show_chart_popup",
+        "trade_id": trade_id,
+        "chart_url": f"/charts/{filename}",
+        "symbol": symbol
+    }
+
+
 def execute_help_command() -> Dict[str, Any]:
     """Execute 'help' command - show available commands"""
     message = "🤖 **Visual Trade Copilot - System Commands**\n\n"
@@ -522,7 +596,8 @@ def execute_help_command() -> Dict[str, Any]:
     message += "**Teaching:**\n"
     message += "• `open teach copilot` / `start teaching` - Open teaching mode UI to review trades and teach AI\n"
     message += "• `close teach copilot` / `pause teaching` - Close teaching mode UI\n"
-    message += "• `review trades one by one` - Begin teaching session\n\n"
+    message += "• `review trades one by one` - Begin teaching session\n"
+    message += "• `show chart` / `show image` - Display chart for current trade\n\n"
     message += "**Sessions:**\n"
     message += "• `list sessions` - Show all active sessions\n"
     message += "• `create session [symbol]` - Create a new trading session\n"

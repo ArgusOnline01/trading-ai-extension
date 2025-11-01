@@ -1,17 +1,27 @@
 // Visual Trade Copilot - Popup Script (Phase 3B.1: Redesigned UI)
 // Handles quick actions and model selection
 
-const API_BASE_URL = "http://127.0.0.1:8765";
+// API_BASE_URL is set by teach_panel.js (which loads first)
+// Just ensure it exists, then use window.API_BASE_URL directly throughout
+if (typeof window.API_BASE_URL === 'undefined') {
+  window.API_BASE_URL = "http://127.0.0.1:8765";
+}
+// Create a local reference function to avoid redeclaring const
+// We'll replace all API_BASE_URL references with window.API_BASE_URL
 
 // DOM Elements
 const newConversationBtn = document.getElementById("newConversation");
 const toggleChatBtn = document.getElementById("toggleChat");
 const viewSessionsBtn = document.getElementById("viewSessions");
 const viewPerformanceBtn = document.getElementById("viewPerformance");
+const teachCopilotBtn = document.getElementById("teachCopilot");
 const quickAnalyzeBtn = document.getElementById("quickAnalyze");
 const performancePanel = document.getElementById("performancePanel");
 const closePerformanceBtn = document.getElementById("closePerformance");
 const statsContent = document.getElementById("statsContent");
+const teachPanel = document.getElementById("teachPanel");
+const closeTeachBtn = document.getElementById("closeTeach");
+const teachContent = document.getElementById("teachContent");
 const statusDiv = document.getElementById("status");
 const serverIndicator = document.getElementById("server-indicator");
 const serverText = document.getElementById("server-text");
@@ -20,8 +30,112 @@ const modelOptions = document.querySelectorAll(".model-option");
 // Selected model state
 let selectedModel = "fast"; // GPT-5 Chat (native vision)
 
-// Check server status on popup open
-checkServerStatus();
+// Immediate initialization check
+console.log("[Popup] Script loaded");
+console.log("[Popup] API_BASE_URL:", window.API_BASE_URL);
+console.log("[Popup] Initial DOM state:", {
+  readyState: document.readyState,
+  serverIndicator: !!serverIndicator,
+  serverText: !!serverText
+});
+
+// Check server status - multiple strategies to ensure it runs
+function initializeServerCheck() {
+  console.log("[Popup] initializeServerCheck called");
+  
+  // Re-query DOM elements in case they weren't available initially
+  const indicator = document.getElementById("server-indicator");
+  const text = document.getElementById("server-text");
+  
+  if (!indicator || !text) {
+    console.error("[Popup] Server status elements still not found after delay!");
+    console.error("[Popup] Available elements:", {
+      indicator: !!indicator,
+      text: !!text,
+      allIds: Array.from(document.querySelectorAll('[id]')).map(el => el.id)
+    });
+    return;
+  }
+  
+  console.log("[Popup] DOM elements confirmed, calling checkServerStatus");
+  checkServerStatus();
+}
+
+// Strategy 1: If DOM is ready, check immediately
+if (document.readyState === 'complete') {
+  console.log("[Popup] Document already complete");
+  setTimeout(initializeServerCheck, 100);
+} else if (document.readyState === 'interactive') {
+  console.log("[Popup] Document interactive");
+  setTimeout(initializeServerCheck, 150);
+} else {
+  console.log("[Popup] Document loading, waiting for DOMContentLoaded");
+  document.addEventListener('DOMContentLoaded', () => {
+    console.log("[Popup] DOMContentLoaded event fired");
+    setTimeout(initializeServerCheck, 100);
+  });
+}
+
+// Strategy 2: Also use window load as backup
+window.addEventListener('load', () => {
+  console.log("[Popup] Window load event fired");
+  setTimeout(() => {
+    const text = document.getElementById("server-text");
+    if (text && text.textContent === "Checking server...") {
+      // Still checking, let it finish
+      console.log("[Popup] Server check already in progress");
+    } else {
+      console.log("[Popup] Window load backup: initializing server check");
+      initializeServerCheck();
+    }
+  }, 300);
+});
+
+// Retry server check if it fails
+let serverCheckRetries = 0;
+const MAX_RETRIES = 3;
+
+// Diagnostic function to test server connection
+window.testServerConnection = async function() {
+  console.log("=== SERVER CONNECTION DIAGNOSTIC ===");
+  console.log("API Base URL:", window.API_BASE_URL);
+  console.log("Testing basic fetch...");
+  
+  try {
+    // Test 1: Simple fetch
+    console.log("Test 1: Fetching root endpoint...");
+    const response = await fetch(`${window.API_BASE_URL}/`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      mode: "cors"
+    });
+    console.log("Response status:", response.status);
+    console.log("Response headers:", [...response.headers.entries()]);
+    const data = await response.json();
+    console.log("Response data:", data);
+    console.log("✅ Test 1 PASSED");
+    
+    // Test 2: Performance endpoint
+    console.log("\nTest 2: Fetching /performance/all...");
+    const perfResponse = await fetch(`${window.API_BASE_URL}/performance/all?limit=5`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      mode: "cors"
+    });
+    console.log("Response status:", perfResponse.status);
+    const perfData = await perfResponse.json();
+    console.log("Response data length:", Array.isArray(perfData) ? perfData.length : "not an array");
+    console.log("✅ Test 2 PASSED");
+    
+    return { success: true, message: "All tests passed" };
+  } catch (error) {
+    console.error("❌ Test FAILED:", error);
+    console.error("Error name:", error.name);
+    console.error("Error message:", error.message);
+    console.error("Error stack:", error.stack);
+    return { success: false, error: error.message };
+  }
+};
 
 // Model selection handler (for grid buttons)
 modelOptions.forEach(option => {
@@ -214,23 +328,118 @@ quickAnalyzeBtn.addEventListener("click", async () => {
 
 // Server status check
 async function checkServerStatus() {
+  // Verify DOM elements exist
+  if (!serverText || !serverIndicator) {
+    console.error("[Popup] Server status elements not found!", {
+      serverText: !!serverText,
+      serverIndicator: !!serverIndicator
+    });
+    return false;
+  }
+  
   try {
-    const response = await fetch(`${API_BASE_URL}/`, {
-      method: "GET",
-      signal: AbortSignal.timeout(3000)
+    serverText.textContent = "Checking server...";
+    serverIndicator.classList.remove("online", "offline");
+    
+    console.log(`[Popup] Checking server at: ${window.API_BASE_URL}/`);
+    console.log(`[Popup] DOM elements found:`, {
+      serverText: !!serverText,
+      serverIndicator: !!serverIndicator
     });
     
+    // Use a timeout wrapper instead of AbortSignal.timeout (not widely supported)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      console.log("[Popup] Fetch timeout triggered, aborting...");
+      controller.abort();
+    }, 5000); // Increased to 5 seconds
+    
+    let response;
+    try {
+      console.log("[Popup] Attempting fetch with options:", {
+        url: `${window.API_BASE_URL}/`,
+        method: "GET",
+        mode: "cors",
+        credentials: "omit"
+      });
+      
+      response = await fetch(`${window.API_BASE_URL}/`, {
+        method: "GET",
+        headers: { 
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        mode: "cors",
+        credentials: "omit",
+        signal: controller.signal,
+        cache: "no-cache"
+      });
+      clearTimeout(timeoutId);
+      console.log("[Popup] Fetch completed successfully");
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      console.error("[Popup] Fetch exception caught:", fetchError);
+      console.error("[Popup] Fetch error type:", typeof fetchError);
+      console.error("[Popup] Fetch error constructor:", fetchError.constructor.name);
+      throw fetchError;
+    }
+    
+    console.log(`[Popup] Server response: ${response.status} ${response.statusText}`);
+    
     if (response.ok) {
-      serverIndicator.classList.add("online");
-      serverIndicator.classList.remove("offline");
-      serverText.textContent = "Server online";
+      const data = await response.json();
+      console.log("[Popup] Server is online:", data);
+      if (serverIndicator) {
+        serverIndicator.classList.add("online");
+        serverIndicator.classList.remove("offline");
+      }
+      if (serverText) {
+        serverText.textContent = "Server online";
+      }
+      serverCheckRetries = 0; // Reset retry counter on success
+      return true;
     } else {
-      throw new Error("Server not responding");
+      throw new Error(`Server returned ${response.status}`);
     }
   } catch (error) {
-    serverIndicator.classList.add("offline");
-    serverIndicator.classList.remove("online");
-    serverText.textContent = "Server offline";
+    console.error("[Popup] Server check failed:", error);
+    console.error("[Popup] Error details:", {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      toString: String(error)
+    });
+    
+    if (serverIndicator) {
+      serverIndicator.classList.add("offline");
+      serverIndicator.classList.remove("online");
+    }
+    
+    let errorMsg = "Server offline";
+    if (error.name === "AbortError" || error.message.includes("timeout") || error.message.includes("aborted")) {
+      errorMsg = "Server timeout (5s)";
+    } else if (error.message.includes("Failed to fetch") || error.message.includes("network") || error.message.includes("ERR_") || error.message.includes("Load failed")) {
+      errorMsg = "Cannot connect - server may be offline";
+    } else if (error.message.includes("CORS") || error.message.includes("cross-origin")) {
+      errorMsg = "CORS error";
+    } else {
+      errorMsg = `Error: ${error.message.substring(0, 30)}`;
+    }
+    
+    if (serverText) {
+      serverText.textContent = errorMsg;
+    }
+    
+    // Retry if we haven't exceeded max retries
+    if (serverCheckRetries < MAX_RETRIES) {
+      serverCheckRetries++;
+      console.log(`[Popup] Retrying server check (${serverCheckRetries}/${MAX_RETRIES})...`);
+      setTimeout(() => checkServerStatus(), 2000);
+    } else {
+      console.log("[Popup] Max retries reached, stopping");
+    }
+    
+    return false;
   }
 }
 
@@ -249,32 +458,30 @@ function setStatus(type, message) {
 
 // ========== Phase 4A: Performance Tracking ==========
 
-// View Performance button handler
+// View Performance button handler - now opens as overlay modal (like Log Trade)
 viewPerformanceBtn.addEventListener("click", async () => {
   try {
-    performancePanel.classList.remove("hidden");
-    statsContent.innerHTML = '<div class="loading">Loading performance stats...</div>';
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) throw new Error("No active tab found");
     
-    // Fetch stats and all trades from backend (Phase 4D.3)
-    const [statsRes, allTradesRes] = await Promise.all([
-      fetch(`${API_BASE_URL}/performance/stats`),
-      fetch(`${API_BASE_URL}/performance/all?limit=200`)
-    ]);
+    const contentScriptReady = await ensureContentScript(tab.id);
+    if (!contentScriptReady) throw new Error("Failed to initialize");
     
-    if (!statsRes.ok) throw new Error("Failed to fetch stats");
+    await new Promise(resolve => setTimeout(resolve, 300));
     
-    const stats = await statsRes.json();
-    let trades = [];
-    if (allTradesRes.ok) {
-      const arr = await allTradesRes.json();
-      trades = Array.isArray(arr) ? arr : [];
+    try {
+      await chrome.tabs.sendMessage(tab.id, {
+        action: "openPerformanceTab"
+      });
+    } catch (msgError) {
+      console.log("Message sent (channel closed)");
     }
     
-    // Render stats with trade details
-    renderPerformanceStats(stats, trades);
+    setStatus("success", "Performance tab opened!");
+    setTimeout(() => window.close(), 800);
   } catch (error) {
-    console.error("Performance stats error:", error);
-    statsContent.innerHTML = `<div class="error">Error loading stats: ${error.message}</div>`;
+    console.error("Performance tab error:", error);
+    setStatus("error", `Error: ${error.message}`);
   }
 });
 
@@ -283,10 +490,122 @@ document.getElementById("openDashboard").addEventListener("click", () => {
   chrome.tabs.create({ url: "http://127.0.0.1:8765/static/dashboard.html" });
 });
 
+// Phase 5A: Open Teach Copilot as overlay modal (like Log Trade)
+teachCopilotBtn.addEventListener("click", async () => {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) throw new Error("No active tab found");
+    
+    const contentScriptReady = await ensureContentScript(tab.id);
+    if (!contentScriptReady) throw new Error("Failed to initialize");
+    
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    try {
+      await chrome.tabs.sendMessage(tab.id, {
+        action: "openTeachCopilot"
+      });
+    } catch (msgError) {
+      console.log("Message sent (channel closed)");
+    }
+    
+    setStatus("success", "Teach Copilot opened!");
+    setTimeout(() => window.close(), 800);
+  } catch (error) {
+    console.error("Teach Copilot error:", error);
+    setStatus("error", `Error: ${error.message}`);
+  }
+});
+
 // Close Performance panel
 closePerformanceBtn.addEventListener("click", () => {
   performancePanel.classList.add("hidden");
 });
+
+// Close Teach panel
+closeTeachBtn.addEventListener("click", () => {
+  teachPanel.classList.add("hidden");
+});
+
+/**
+ * Render Teach Copilot panel UI (Phase 5A)
+ */
+async function renderTeachPanel() {
+  console.log("[Popup] Rendering Teach Copilot panel...");
+  
+  teachContent.innerHTML = `
+    <div id="teach-ui">
+      <section id="trade-selection-section">
+        <label for="teach-tradeSelect">Select Trade to Teach:</label>
+        <select id="teach-tradeSelect">
+          <option value="">-- Loading trades... --</option>
+        </select>
+        <div id="teach-tradeInfo" class="hidden"></div>
+      </section>
+
+      <section id="chart-section-teach">
+        <div class="chart-label">📊 Chart Preview</div>
+        <img id="teach-chartPreview" src="" alt="Chart Preview" style="width:100%; border:1px solid #333; border-radius:4px; display:none;">
+      </section>
+
+      <section id="lesson-section-teach">
+        <textarea id="teach-lessonInput" placeholder="Explain the BOS and POI here..." style="width:100%; height:100px; margin-top:8px; background:#1e1e1e; color:#fff; border:1px solid #333; padding:8px; border-radius:4px; font-family:inherit;"></textarea>
+        <div id="teach-controls" style="display:flex; gap:6px; margin-top:8px;">
+          <button id="teach-voiceToggle" style="flex:1; background:#00b0ff; border:none; padding:8px; border-radius:4px; color:white; cursor:pointer;">🎙️ Voice</button>
+          <button id="teach-saveLesson" style="flex:1; background:#00b0ff; border:none; padding:8px; border-radius:4px; color:white; cursor:pointer;">💾 Save Lesson</button>
+          <button id="teach-getFeedback" style="flex:1; background:#00b0ff; border:none; padding:8px; border-radius:4px; color:white; cursor:pointer;">🧠 Get Feedback</button>
+        </div>
+      </section>
+
+      <section id="teach-status" style="margin-top:8px; font-size:0.9em; color:#aaa; min-height:20px;">Initializing...</section>
+    </div>
+  `;
+  
+  // Wait for DOM to be ready
+  await new Promise(resolve => {
+    if (document.getElementById("teach-tradeSelect")) {
+      resolve();
+    } else {
+      setTimeout(() => {
+        const check = setInterval(() => {
+          if (document.getElementById("teach-tradeSelect")) {
+            clearInterval(check);
+            resolve();
+          }
+        }, 50);
+        setTimeout(() => clearInterval(check), 1000); // Max 1s wait
+      }, 100);
+    }
+  });
+  
+  // Initialize Teach Copilot functionality
+  console.log("[Popup] DOM ready, initializing Teach Copilot...");
+  
+  // Try both local and window scope
+  const initFn = typeof initTeachCopilot !== 'undefined' ? initTeachCopilot : (typeof window !== 'undefined' && window.initTeachCopilot);
+  console.log("[Popup] initTeachCopilot function available:", typeof initFn);
+  
+  if (!initFn) {
+    console.error("[Popup] initTeachCopilot is not defined! teach_panel.js may not have loaded.");
+    const statusEl = document.getElementById("teach-status");
+    if (statusEl) {
+      statusEl.textContent = "Error: Teach Copilot module not loaded. Please reload extension.";
+      statusEl.className = "error";
+    }
+    return;
+  }
+  
+  try {
+    await initFn();
+  } catch (error) {
+    console.error("[Popup] Failed to initialize Teach Copilot:", error);
+    const statusEl = document.getElementById("teach-status");
+    if (statusEl) {
+      statusEl.textContent = `Error: ${error.message}`;
+      statusEl.className = "error";
+    }
+  }
+}
 
 // Render performance statistics with trade details
 function renderPerformanceStats(stats, trades = []) {
@@ -420,7 +739,7 @@ async function deleteTrade(sessionId) {
   
   try {
     console.log('🗑️ Sending DELETE request...');
-    const response = await fetch(`${API_BASE_URL}/performance/trades/${sessionId}`, {
+    const response = await fetch(`${window.API_BASE_URL}/performance/trades/${sessionId}`, {
       method: 'DELETE'
     });
     
@@ -430,10 +749,10 @@ async function deleteTrade(sessionId) {
       console.log('🗑️ Trade deleted successfully, reloading stats...');
       
       // Fetch and display updated stats
-      const statsResponse = await fetch(`${API_BASE_URL}/performance/stats`);
+      const statsResponse = await fetch(`${window.API_BASE_URL}/performance/stats`);
       const stats = await statsResponse.json();
       
-      const tradesResponse = await fetch(`${API_BASE_URL}/performance/all?limit=200`);
+      const tradesResponse = await fetch(`${window.API_BASE_URL}/performance/all?limit=200`);
       const arr = await tradesResponse.json();
       renderPerformanceStats(stats, Array.isArray(arr) ? arr : []);
       

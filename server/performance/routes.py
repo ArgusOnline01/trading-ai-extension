@@ -90,11 +90,47 @@ async def get_trades(
 # Phase 4D.3: Return raw merged trades directly from performance_logs.json
 @router.get("/all")
 async def get_all(limit: int = Query(100, ge=1, le=1000)):
-    """Return the last N saved trades with r_multiple approximated when missing."""
+    """Return all trades sorted by date (newest first) with r_multiple approximated when missing."""
     from .utils import read_logs
     import statistics
+    from datetime import datetime
     logs = read_logs()
-    slice_logs = logs[-limit:]
+    
+    # Sort by date (newest first) - use timestamp or entry_time
+    def get_trade_date(t):
+        date_str = t.get("timestamp") or t.get("entry_time") or t.get("trade_day")
+        if not date_str:
+            return 0
+        try:
+            # Parse date string - handle "MM/DD/YYYY HH:MM:SS -HH:MM" format
+            if isinstance(date_str, str) and "/" in date_str:
+                # Format: "10/29/2025 02:34:55 -05:00" or "10/29/2025 00:00:00 -05:00"
+                parts = date_str.split()
+                if len(parts) >= 2:
+                    date_part = parts[0]  # "10/29/2025"
+                    time_part = parts[1] if len(parts) > 1 else "00:00:00"
+                    # Parse MM/DD/YYYY
+                    month, day, year = date_part.split("/")
+                    # Parse HH:MM:SS
+                    time_parts = time_part.split(":")
+                    hour = int(time_parts[0]) if len(time_parts) > 0 else 0
+                    minute = int(time_parts[1]) if len(time_parts) > 1 else 0
+                    second = int(time_parts[2].split(".")[0]) if len(time_parts) > 2 else 0
+                    parsed = datetime(int(year), int(month), int(day), hour, minute, second)
+                    return parsed.timestamp()
+            # Fallback: try ISO format or return 0
+            try:
+                return datetime.fromisoformat(date_str.replace("Z", "+00:00")).timestamp()
+            except:
+                return 0
+        except Exception:
+            return 0
+    
+    logs_sorted = sorted(logs, key=get_trade_date, reverse=True)
+    
+    # Take first N (newest)
+    slice_logs = logs_sorted[:limit]
+    
     # Compute baseline absolute loss for R approximation
     neg = [abs(t.get("pnl", 0)) for t in logs if isinstance(t.get("pnl"), (int, float)) and t.get("pnl", 0) < 0]
     base = statistics.median(neg) if neg else None

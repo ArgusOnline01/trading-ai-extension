@@ -1656,6 +1656,504 @@ async function detectAndLogTrade(userMessage, aiResponse, sessionContext) {
   return false;
 }
 
+// ========== Phase 5A.2: Teach Copilot Modal ==========
+
+let teachCopilotModal = null;
+
+/**
+ * Show Teach Copilot modal (overlay popup like Log Trade)
+ */
+async function showTeachCopilotModal() {
+  if (teachCopilotModal) {
+    teachCopilotModal.style.display = "flex";
+    teachCopilotModal.style.opacity = "1";
+    teachCopilotModal.style.pointerEvents = "all";
+    await loadTeachCopilotTrades();
+    return;
+  }
+  
+  // Create modal
+  teachCopilotModal = document.createElement('div');
+  teachCopilotModal.id = 'vtc-teach-copilot-modal';
+  teachCopilotModal.className = 'vtc-modal';
+  teachCopilotModal.style.display = 'none';
+  
+  teachCopilotModal.innerHTML = `
+    <div class="vtc-modal-content" style="max-width: 900px; max-height: 90vh;">
+      <div class="vtc-modal-header">
+        <h3>🎓 Teach Copilot</h3>
+        <button class="vtc-close-modal" id="vtc-close-teach-copilot">✕</button>
+      </div>
+      <div class="vtc-modal-body">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+          <div>
+            <label style="display: block; margin-bottom: 8px; color: #ffd700;">Select Trade:</label>
+            <select id="vtc-teach-trade-select" style="width: 100%; padding: 10px; background: #1a1a1a; color: #fff; border: 1px solid #333; border-radius: 6px;">
+              <option value="">-- Loading trades... --</option>
+            </select>
+            <div id="vtc-teach-trade-info" style="margin-top: 12px; padding: 12px; background: rgba(255, 215, 0, 0.05); border: 1px solid rgba(255, 215, 0, 0.2); border-radius: 8px; display: none;">
+              <div id="vtc-teach-trade-details"></div>
+            </div>
+          </div>
+          <div>
+            <label style="display: block; margin-bottom: 8px; color: #ffd700;">Chart Preview:</label>
+            <div id="vtc-teach-chart-container" style="border: 1px solid #333; border-radius: 6px; min-height: 200px; background: #1a1a1a; display: flex; align-items: center; justify-content: center; color: #666;">
+              <span>Select a trade to view chart</span>
+            </div>
+            <img id="vtc-teach-chart-img" src="" alt="Chart" style="width: 100%; display: none; border-radius: 6px; margin-top: 8px;">
+          </div>
+        </div>
+        <div>
+          <label style="display: block; margin-bottom: 8px; color: #ffd700;">Lesson Input:</label>
+          <textarea id="vtc-teach-lesson-input" placeholder="Explain the BOS and POI here..." style="width: 100%; min-height: 120px; padding: 12px; background: #1a1a1a; color: #fff; border: 1px solid #333; border-radius: 6px; font-family: inherit; resize: vertical;"></textarea>
+          <div style="display: flex; gap: 10px; margin-top: 12px;">
+            <button id="vtc-teach-voice" class="vtc-btn-secondary" style="flex: 1;">🎙️ Voice</button>
+            <button id="vtc-teach-save" class="vtc-btn-primary" style="flex: 1;">💾 Save Lesson</button>
+            <button id="vtc-teach-feedback" class="vtc-btn-secondary" style="flex: 1;">🧠 Get Feedback</button>
+          </div>
+          <div id="vtc-teach-status" style="margin-top: 12px; padding: 8px; border-radius: 6px; min-height: 20px; font-size: 0.9em;"></div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(teachCopilotModal);
+  
+  // Event listeners
+  document.getElementById("vtc-close-teach-copilot").onclick = () => {
+    teachCopilotModal.style.display = "none";
+  };
+  
+  document.getElementById("vtc-teach-trade-select").addEventListener("change", onTeachTradeSelected);
+  document.getElementById("vtc-teach-save").onclick = saveTeachLesson;
+  document.getElementById("vtc-teach-feedback").onclick = () => {
+    document.getElementById("vtc-teach-status").textContent = "🧠 AI feedback feature coming soon in Phase 5B";
+    document.getElementById("vtc-teach-status").style.background = "rgba(33, 150, 243, 0.1)";
+    document.getElementById("vtc-teach-status").style.color = "#2196f3";
+  };
+  
+  // Show modal
+  teachCopilotModal.style.display = "flex";
+  teachCopilotModal.style.opacity = "1";
+  teachCopilotModal.style.pointerEvents = "all";
+  
+  // Load trades
+  await loadTeachCopilotTrades();
+}
+
+let teachCopilotTrades = [];
+
+async function loadTeachCopilotTrades() {
+  const selectEl = document.getElementById("vtc-teach-trade-select");
+  const statusEl = document.getElementById("vtc-teach-status");
+  
+  try {
+    statusEl.textContent = "Loading trades...";
+    statusEl.style.background = "rgba(33, 150, 243, 0.1)";
+    statusEl.style.color = "#2196f3";
+    selectEl.disabled = true;
+    
+    const response = await fetch(`http://127.0.0.1:8765/performance/all?limit=500`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    
+    const trades = await response.json();
+    teachCopilotTrades = Array.isArray(trades) ? trades : [];
+    
+    // Sort by date (newest first)
+    teachCopilotTrades.sort((a, b) => {
+      const dateA = new Date(a.timestamp || a.entry_time || 0);
+      const dateB = new Date(b.timestamp || b.entry_time || 0);
+      return dateB - dateA;
+    });
+    
+    selectEl.innerHTML = '<option value="">-- Select a trade --</option>';
+    
+    if (teachCopilotTrades.length === 0) {
+      selectEl.innerHTML = '<option value="">No trades found</option>';
+      statusEl.textContent = "No trades available";
+      statusEl.style.background = "rgba(255, 69, 58, 0.1)";
+      statusEl.style.color = "#ff453a";
+      return;
+    }
+    
+    teachCopilotTrades.forEach((trade, index) => {
+      const symbol = trade.symbol || "Unknown";
+      const outcome = trade.outcome || trade.label || (trade.pnl > 0 ? "win" : (trade.pnl < 0 ? "loss" : "breakeven"));
+      const rMultiple = trade.r_multiple || trade.rr || "?";
+      const pnl = trade.pnl || 0;
+      const date = trade.timestamp || trade.entry_time || "";
+      const dateStr = date ? new Date(date).toLocaleString() : `Trade ${index + 1}`;
+      
+      const tradeId = trade.id || trade.trade_id || trade.session_id || index.toString();
+      
+      const option = document.createElement("option");
+      option.value = index.toString();
+      option.textContent = `${dateStr} | ${symbol} | ${outcome.toUpperCase()} | ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} | ${rMultiple}R`;
+      selectEl.appendChild(option);
+    });
+    
+    selectEl.disabled = false;
+    statusEl.textContent = `Loaded ${teachCopilotTrades.length} trades (sorted by date)`;
+    statusEl.style.background = "rgba(48, 209, 88, 0.1)";
+    statusEl.style.color = "#30d158";
+    
+  } catch (error) {
+    console.error("[Teach] Failed to load trades:", error);
+    selectEl.innerHTML = '<option value="">Error loading trades</option>';
+    statusEl.textContent = `Error: ${error.message}`;
+    statusEl.style.background = "rgba(255, 69, 58, 0.1)";
+    statusEl.style.color = "#ff453a";
+  }
+}
+
+async function onTeachTradeSelected(event) {
+  const index = parseInt(event.target.value);
+  if (isNaN(index) || !teachCopilotTrades[index]) {
+    document.getElementById("vtc-teach-trade-info").style.display = "none";
+    document.getElementById("vtc-teach-chart-img").style.display = "none";
+    document.getElementById("vtc-teach-chart-container").style.display = "flex";
+    return;
+  }
+  
+  const trade = teachCopilotTrades[index];
+  displayTeachTradeInfo(trade);
+  await loadTeachChart(trade);
+}
+
+function displayTeachTradeInfo(trade) {
+  const symbol = trade.symbol || "Unknown";
+  const outcome = trade.outcome || trade.label || (trade.pnl > 0 ? "win" : (trade.pnl < 0 ? "loss" : "breakeven"));
+  const rMultiple = trade.r_multiple || trade.rr || "?";
+  const pnl = trade.pnl || 0;
+  const date = trade.timestamp || trade.entry_time || "";
+  const dateStr = date ? new Date(date).toLocaleString() : "Unknown date";
+  
+  const detailsEl = document.getElementById("vtc-teach-trade-details");
+  detailsEl.innerHTML = `
+    <h4 style="margin: 0 0 8px 0; color: #ffd700;">${symbol} ${outcome.toUpperCase()}</h4>
+    <div style="font-size: 0.9em; color: #bbb; line-height: 1.6;">
+      <strong>PnL:</strong> ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}<br>
+      <strong>R-Multiple:</strong> ${rMultiple}R<br>
+      <strong>Date:</strong> ${dateStr}<br>
+      ${trade.direction ? `<strong>Direction:</strong> ${trade.direction}<br>` : ''}
+      ${trade.entry_price ? `<strong>Entry:</strong> ${trade.entry_price}<br>` : ''}
+      ${trade.exit_price ? `<strong>Exit:</strong> ${trade.exit_price}` : ''}
+    </div>
+  `;
+  
+  document.getElementById("vtc-teach-trade-info").style.display = "block";
+}
+
+async function loadTeachChart(trade) {
+  const chartImg = document.getElementById("vtc-teach-chart-img");
+  const chartContainer = document.getElementById("vtc-teach-chart-container");
+  const tradeId = trade.id || trade.trade_id || trade.session_id;
+  const symbol = trade.symbol || "";
+  
+  chartContainer.style.display = "flex";
+  chartContainer.innerHTML = '<span style="color: #666;">Loading chart...</span>';
+  chartImg.style.display = "none";
+  
+  // Try chart_path if available
+  if (trade.chart_path) {
+    const fileName = trade.chart_path.split(/[/\\]/).pop();
+    chartImg.src = `http://127.0.0.1:8765/charts/${fileName}`;
+    chartImg.onload = () => {
+      chartContainer.style.display = "none";
+      chartImg.style.display = "block";
+    };
+    chartImg.onerror = () => {
+      chartContainer.innerHTML = '<span style="color: #ff453a;">Chart not found</span>';
+      tryPatternMatchChart(symbol, tradeId, chartImg, chartContainer);
+    };
+    return;
+  }
+  
+  // Try metadata lookup
+  try {
+    const metaResponse = await fetch(`http://127.0.0.1:8765/charts/chart/${tradeId}`);
+    if (metaResponse.ok) {
+      const meta = await metaResponse.json();
+      if (meta.chart_path) {
+        const fileName = meta.chart_path.split(/[/\\]/).pop();
+        chartImg.src = `http://127.0.0.1:8765/charts/${fileName}`;
+        chartImg.onload = () => {
+          chartContainer.style.display = "none";
+          chartImg.style.display = "block";
+        };
+        chartImg.onerror = () => {
+          chartContainer.innerHTML = '<span style="color: #ff453a;">Chart not found</span>';
+          tryPatternMatchChart(symbol, tradeId, chartImg, chartContainer);
+        };
+        return;
+      }
+    }
+  } catch (e) {
+    console.warn("[Teach] Metadata lookup failed:", e);
+  }
+  
+  tryPatternMatchChart(symbol, tradeId, chartImg, chartContainer);
+}
+
+function tryPatternMatchChart(symbol, tradeId, chartImg, chartContainer) {
+  const patterns = [
+    `${symbol}_5m_${tradeId}.png`,
+    `${symbol}_15m_${tradeId}.png`,
+    `${symbol}_1h_${tradeId}.png`,
+    `chart_${tradeId}.png`
+  ];
+  
+  let patternIndex = 0;
+  
+  function tryNext() {
+    if (patternIndex >= patterns.length) {
+      chartContainer.innerHTML = '<span style="color: #ff453a;">Chart not found</span>';
+      return;
+    }
+    
+    chartImg.src = `http://127.0.0.1:8765/charts/${patterns[patternIndex]}`;
+    chartImg.onload = () => {
+      chartContainer.style.display = "none";
+      chartImg.style.display = "block";
+    };
+    chartImg.onerror = () => {
+      patternIndex++;
+      tryNext();
+    };
+  }
+  
+  tryNext();
+}
+
+function saveTeachLesson() {
+  const selectEl = document.getElementById("vtc-teach-trade-select");
+  const lessonInput = document.getElementById("vtc-teach-lesson-input");
+  const statusEl = document.getElementById("vtc-teach-status");
+  
+  const index = parseInt(selectEl.value);
+  if (isNaN(index) || !teachCopilotTrades[index]) {
+    statusEl.textContent = "Please select a trade first";
+    statusEl.style.background = "rgba(255, 69, 58, 0.1)";
+    statusEl.style.color = "#ff453a";
+    return;
+  }
+  
+  const lesson = lessonInput.value.trim();
+  if (!lesson) {
+    statusEl.textContent = "Please enter a lesson explanation";
+    statusEl.style.background = "rgba(255, 69, 58, 0.1)";
+    statusEl.style.color = "#ff453a";
+    return;
+  }
+  
+  const trade = teachCopilotTrades[index];
+  if (!chrome || !chrome.storage || !chrome.storage.local) {
+    statusEl.textContent = "Chrome storage API not available";
+    statusEl.style.background = "rgba(255, 69, 58, 0.1)";
+    statusEl.style.color = "#ff453a";
+    return;
+  }
+  
+  const lessonData = {
+    trade_id: trade.session_id || trade.trade_id || trade.id,
+    symbol: trade.symbol,
+    outcome: trade.outcome,
+    explanation: lesson,
+    timestamp: new Date().toISOString()
+  };
+  
+  chrome.storage.local.set({
+    lastLesson: lessonData,
+    [`lesson_${lessonData.trade_id}`]: lessonData
+  }, () => {
+    statusEl.textContent = `✅ Lesson saved for ${trade.symbol}. (Backend integration in Phase 5B)`;
+    statusEl.style.background = "rgba(48, 209, 88, 0.1)";
+    statusEl.style.color = "#30d158";
+    lessonInput.value = "";
+  });
+}
+
+// ========== Phase 5A.3: Performance Tab Modal ==========
+
+let performanceTabModal = null;
+
+/**
+ * Show Performance Tab modal (overlay popup with all trades)
+ */
+async function showPerformanceTabModal() {
+  if (performanceTabModal) {
+    performanceTabModal.style.display = "flex";
+    performanceTabModal.style.opacity = "1";
+    performanceTabModal.style.pointerEvents = "all";
+    await loadPerformanceTabData();
+    return;
+  }
+  
+  // Create modal
+  performanceTabModal = document.createElement('div');
+  performanceTabModal.id = 'vtc-performance-tab-modal';
+  performanceTabModal.className = 'vtc-modal';
+  performanceTabModal.style.display = 'none';
+  
+  performanceTabModal.innerHTML = `
+    <div class="vtc-modal-content" style="max-width: 1200px; max-height: 90vh;">
+      <div class="vtc-modal-header">
+        <h3>📊 Performance Summary</h3>
+        <button class="vtc-close-modal" id="vtc-close-performance-tab">✕</button>
+      </div>
+      <div class="vtc-modal-body">
+        <div id="vtc-performance-stats" style="margin-bottom: 20px; padding: 16px; background: rgba(255, 215, 0, 0.05); border: 1px solid rgba(255, 215, 0, 0.2); border-radius: 8px;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+            <div><strong>Total Trades:</strong> <span id="vtc-stat-total">-</span></div>
+            <div><strong>Win Rate:</strong> <span id="vtc-stat-winrate">-</span></div>
+            <div><strong>Avg R:</strong> <span id="vtc-stat-avgr">-</span></div>
+            <div><strong>Total PnL:</strong> <span id="vtc-stat-totalpnl">-</span></div>
+          </div>
+        </div>
+        <div style="margin-bottom: 12px;">
+          <input type="text" id="vtc-performance-search" placeholder="🔍 Search trades..." style="width: 100%; padding: 10px; background: #1a1a1a; color: #fff; border: 1px solid #333; border-radius: 6px;">
+        </div>
+        <div style="max-height: 500px; overflow-y: auto;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="background: rgba(255, 215, 0, 0.1); border-bottom: 2px solid rgba(255, 215, 0, 0.3);">
+                <th style="padding: 10px; text-align: left; color: #ffd700;">Date</th>
+                <th style="padding: 10px; text-align: left; color: #ffd700;">Symbol</th>
+                <th style="padding: 10px; text-align: left; color: #ffd700;">Outcome</th>
+                <th style="padding: 10px; text-align: right; color: #ffd700;">PnL ($)</th>
+                <th style="padding: 10px; text-align: right; color: #ffd700;">R-Multiple</th>
+                <th style="padding: 10px; text-align: left; color: #ffd700;">Direction</th>
+              </tr>
+            </thead>
+            <tbody id="vtc-performance-trades-tbody">
+              <tr><td colspan="6" style="text-align: center; padding: 20px; color: #666;">Loading trades...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(performanceTabModal);
+  
+  // Event listeners
+  document.getElementById("vtc-close-performance-tab").onclick = () => {
+    performanceTabModal.style.display = "none";
+  };
+  
+  document.getElementById("vtc-performance-search").addEventListener("input", filterPerformanceTrades);
+  
+  // Show modal
+  performanceTabModal.style.display = "flex";
+  performanceTabModal.style.opacity = "1";
+  performanceTabModal.style.pointerEvents = "all";
+  
+  // Load data
+  await loadPerformanceTabData();
+}
+
+let allPerformanceTrades = [];
+let filteredPerformanceTrades = [];
+
+async function loadPerformanceTabData() {
+  try {
+    // Fetch stats
+    const statsRes = await fetch(`http://127.0.0.1:8765/performance/stats`);
+    if (statsRes.ok) {
+      const stats = await statsRes.json();
+      document.getElementById("vtc-stat-total").textContent = stats.total_trades || 0;
+      // Win rate is already a percentage in the API response (e.g., 19.4), not a decimal
+      const winRate = stats.win_rate !== null && stats.win_rate !== undefined 
+        ? (typeof stats.win_rate === 'number' && stats.win_rate <= 1 
+           ? (stats.win_rate * 100).toFixed(1)  // If decimal (0.194)
+           : stats.win_rate.toFixed(1))  // If already percentage (19.4)
+        : "-";
+      document.getElementById("vtc-stat-winrate").textContent = winRate !== "-" ? `${winRate}%` : "-";
+      document.getElementById("vtc-stat-avgr").textContent = stats.avg_r !== null && stats.avg_r !== undefined 
+        ? `${stats.avg_r.toFixed(2)}R` 
+        : "-";
+      
+      // Calculate total PnL from all trades (will be updated after trades load)
+      // Set placeholder for now
+      document.getElementById("vtc-stat-totalpnl").textContent = "Loading...";
+    }
+    
+    // Fetch all trades
+    const tradesRes = await fetch(`http://127.0.0.1:8765/performance/all?limit=500`);
+    if (!tradesRes.ok) throw new Error(`HTTP ${tradesRes.status}`);
+    
+    allPerformanceTrades = await tradesRes.json();
+    if (!Array.isArray(allPerformanceTrades)) allPerformanceTrades = [];
+    
+    // Sort by date (newest first)
+    allPerformanceTrades.sort((a, b) => {
+      const dateA = new Date(a.timestamp || a.entry_time || 0);
+      const dateB = new Date(b.timestamp || b.entry_time || 0);
+      return dateB - dateA;
+    });
+    
+    // Update total PnL with actual data
+    const totalPnL = allPerformanceTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+    document.getElementById("vtc-stat-totalpnl").textContent = `${totalPnL >= 0 ? '+' : ''}$${totalPnL.toFixed(2)}`;
+    
+    filteredPerformanceTrades = [...allPerformanceTrades];
+    renderPerformanceTradesTable();
+    
+  } catch (error) {
+    console.error("[Performance] Failed to load:", error);
+    document.getElementById("vtc-performance-trades-tbody").innerHTML = 
+      `<tr><td colspan="6" style="text-align: center; padding: 20px; color: #ff453a;">Error: ${error.message}</td></tr>`;
+  }
+}
+
+function renderPerformanceTradesTable() {
+  const tbody = document.getElementById("vtc-performance-trades-tbody");
+  
+  if (filteredPerformanceTrades.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 20px; color: #666;">No trades found</td></tr>`;
+    return;
+  }
+  
+  tbody.innerHTML = filteredPerformanceTrades.map(trade => {
+    const date = trade.timestamp || trade.entry_time || trade.trade_day || "";
+    const dateStr = date ? new Date(date).toLocaleDateString() + " " + new Date(date).toLocaleTimeString() : "?";
+    const symbol = trade.symbol || "?";
+    const outcome = trade.outcome || trade.label || (trade.pnl > 0 ? "win" : (trade.pnl < 0 ? "loss" : "breakeven"));
+    const pnl = trade.pnl || 0;
+    const rMultiple = trade.r_multiple || trade.rr || "?";
+    const direction = trade.direction || "-";
+    
+    const outcomeColor = outcome === "win" ? "#00ff88" : (outcome === "loss" ? "#ff4444" : "#aaa");
+    const pnlColor = pnl >= 0 ? "#00ff88" : "#ff4444";
+    
+    return `
+      <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.1);">
+        <td style="padding: 10px; color: #bbb;">${dateStr}</td>
+        <td style="padding: 10px; color: #fff;">${symbol}</td>
+        <td style="padding: 10px; color: ${outcomeColor}; font-weight: 600;">${outcome.toUpperCase()}</td>
+        <td style="padding: 10px; text-align: right; color: ${pnlColor}; font-weight: 600;">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}</td>
+        <td style="padding: 10px; text-align: right; color: #bbb;">${rMultiple}R</td>
+        <td style="padding: 10px; color: #bbb;">${direction}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function filterPerformanceTrades(event) {
+  const searchTerm = event.target.value.toLowerCase();
+  if (!searchTerm) {
+    filteredPerformanceTrades = [...allPerformanceTrades];
+  } else {
+    filteredPerformanceTrades = allPerformanceTrades.filter(trade => {
+      const symbol = (trade.symbol || "").toLowerCase();
+      const outcome = (trade.outcome || trade.label || "").toLowerCase();
+      const date = (trade.timestamp || trade.entry_time || "").toLowerCase();
+      return symbol.includes(searchTerm) || outcome.includes(searchTerm) || date.includes(searchTerm);
+    });
+  }
+  renderPerformanceTradesTable();
+}
+
 // ========== Phase 3B.1: Token Efficiency ==========
 
 /**
@@ -2098,6 +2596,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     })();
     return true;
+  }
+  
+  // Phase 5A.2: Open Teach Copilot modal
+  if (message.action === "openTeachCopilot") {
+    showTeachCopilotModal();
+    sendResponse({ status: "opened" });
+    return false;
+  }
+  
+  // Phase 5A.3: Open Performance Tab modal
+  if (message.action === "openPerformanceTab") {
+    showPerformanceTabModal();
+    sendResponse({ status: "opened" });
+    return false;
   }
 });
 

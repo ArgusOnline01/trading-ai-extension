@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎓 Teach Copilot - Visual Trade Copilot</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      background: linear-gradient(180deg, #1a1a2e 0%, #111 100%);
+      color: #e0e0e0;
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 20px;
+      min-height: 100vh;
+    }
+    
+    header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 10px;
+      color: #ffd700;
+      text-shadow: 0 2px 10px rgba(255, 215, 0, 0.3);
+    }
+    
+    .subtitle {
+      color: #999;
+      font-size: 1rem;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    
+    @media (max-width: 968px) {
+      .container {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    .section {
+      background: #2a2a2a;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 215, 0, 0.1);
+    }
+    
+    .section h2 {
+      font-size: 1.3rem;
+      margin-bottom: 15px;
+      color: #ffd700;
+    }
+    
+    .section.full-width {
+      grid-column: 1 / -1;
+    }
+    
+    label {
+      display: block;
+      font-size: 0.9rem;
+      color: #aaa;
+      margin-bottom: 8px;
+    }
+    
+    select, textarea {
+      width: 100%;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      color: #e0e0e0;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 14px;
+    }
+    
+    select:focus, textarea:focus {
+      outline: none;
+      border-color: #ffd700;
+    }
+    
+    textarea {
+      min-height: 150px;
+      resize: vertical;
+    }
+    
+    .trade-info {
+      background: rgba(255, 215, 0, 0.05);
+      border: 1px solid rgba(255, 215, 0, 0.2);
+      border-radius: 8px;
+      padding: 15px;
+      margin-top: 12px;
+      display: none;
+    }
+    
+    .trade-info.show {
+      display: block;
+    }
+    
+    .trade-info h3 {
+      font-size: 1.2rem;
+      color: #ffd700;
+      margin-bottom: 8px;
+    }
+    
+    .trade-info .outcome {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      margin-bottom: 8px;
+    }
+    
+    .trade-info .outcome.win {
+      background: rgba(0, 255, 136, 0.2);
+      color: #00ff88;
+    }
+    
+    .trade-info .outcome.loss {
+      background: rgba(255, 68, 68, 0.2);
+      color: #ff4444;
+    }
+    
+    .trade-info .outcome.breakeven {
+      background: rgba(255, 255, 255, 0.1);
+      color: #aaa;
+    }
+    
+    .trade-info .details {
+      font-size: 0.9rem;
+      color: #bbb;
+      line-height: 1.6;
+    }
+    
+    .chart-preview {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      margin-top: 12px;
+      display: none;
+    }
+    
+    .chart-preview.show {
+      display: block;
+    }
+    
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    
+    .btn {
+      flex: 1;
+      padding: 12px;
+      background: #00b0ff;
+      border: none;
+      border-radius: 6px;
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .btn:hover {
+      background: #0091cc;
+      transform: translateY(-1px);
+    }
+    
+    .btn:active {
+      transform: translateY(0);
+    }
+    
+    .btn.active {
+      background: #4fc3f7;
+    }
+    
+    .status {
+      margin-top: 12px;
+      padding: 8px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      min-height: 20px;
+    }
+    
+    .status.info {
+      color: #2196f3;
+      background: rgba(33, 150, 243, 0.1);
+    }
+    
+    .status.success {
+      color: #30d158;
+      background: rgba(48, 209, 88, 0.1);
+    }
+    
+    .status.error {
+      color: #ff453a;
+      background: rgba(255, 69, 58, 0.1);
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 20px;
+      color: #ffd700;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🎓 Teach Copilot</h1>
+    <p class="subtitle">Train AI with your trading setups</p>
+  </header>
+  
+  <div class="container">
+    <div class="section">
+      <h2>📊 Select Trade</h2>
+      <label for="tradeSelect">Select Trade to Teach:</label>
+      <select id="tradeSelect">
+        <option value="">-- Loading trades... --</option>
+      </select>
+      
+      <div id="tradeInfo" class="trade-info">
+        <h3 id="tradeSymbol"></h3>
+        <div id="tradeOutcome"></div>
+        <div class="details" id="tradeDetails"></div>
+      </div>
+    </div>
+    
+    <div class="section">
+      <h2>📈 Chart Preview</h2>
+      <img id="chartPreview" class="chart-preview" src="" alt="Chart Preview">
+      <div id="chartLoading" class="loading" style="display: none;">Loading chart...</div>
+    </div>
+    
+    <div class="section full-width">
+      <h2>📝 Lesson Input</h2>
+      <textarea id="lessonInput" placeholder="Explain the BOS (Break of Structure) and POI (Point of Interest) here. Describe your entry reasoning, setup conditions, and why this trade worked or didn't work..."></textarea>
+      
+      <div class="controls">
+        <button id="voiceToggle" class="btn">🎙️ Voice</button>
+        <button id="saveLesson" class="btn">💾 Save Lesson</button>
+        <button id="getFeedback" class="btn">🧠 Get Feedback</button>
+      </div>
+      
+      <div id="status" class="status"></div>
+    </div>
+  </div>
+  
+  <script>
+    const API_BASE_URL = "http://127.0.0.1:8765";
+    let availableTrades = [];
+    let selectedTrade = null;
+    let recognizing = false;
+    let recognition = null;
+    
+    // Initialize
+    document.addEventListener("DOMContentLoaded", () => {
+      loadTrades();
+      initEventListeners();
+      initSpeechRecognition();
+    });
+    
+    function initEventListeners() {
+      document.getElementById("tradeSelect").addEventListener("change", onTradeSelected);
+      document.getElementById("saveLesson").addEventListener("click", saveLesson);
+      document.getElementById("getFeedback").addEventListener("click", getFeedback);
+      document.getElementById("voiceToggle").addEventListener("click", toggleVoice);
+    }
+    
+    async function loadTrades() {
+      const selectEl = document.getElementById("tradeSelect");
+      const statusEl = document.getElementById("status");
+      
+      try {
+        updateStatus("Loading trades...", "info");
+        selectEl.disabled = true;
+        
+        const response = await fetch(`${API_BASE_URL}/performance/all?limit=200`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const trades = await response.json();
+        availableTrades = Array.isArray(trades) ? trades : [];
+        
+        // Sort by date (newest first)
+        availableTrades.sort((a, b) => {
+          const dateA = new Date(a.timestamp || a.entry_time || 0);
+          const dateB = new Date(b.timestamp || b.entry_time || 0);
+          return dateB - dateA; // Newest first
+        });
+        
+        selectEl.innerHTML = '<option value="">-- Select a trade --</option>';
+        
+        if (availableTrades.length === 0) {
+          selectEl.innerHTML = '<option value="">No trades found</option>';
+          updateStatus("No trades available. Log some trades first!", "error");
+          return;
+        }
+        
+        availableTrades.forEach((trade, index) => {
+          const symbol = trade.symbol || "Unknown";
+          const outcome = trade.outcome || trade.label || (trade.pnl > 0 ? "win" : (trade.pnl < 0 ? "loss" : "breakeven"));
+          const rMultiple = trade.r_multiple || trade.rr || "?";
+          const date = trade.timestamp || trade.entry_time || "";
+          const dateStr = date ? new Date(date).toLocaleDateString() + " " + new Date(date).toLocaleTimeString() : `Trade ${index + 1}`;
+          
+          const tradeId = trade.id || trade.trade_id || trade.session_id || index.toString();
+          
+          const option = document.createElement("option");
+          option.value = tradeId;
+          option.textContent = `${dateStr} | ${symbol} | ${outcome.toUpperCase()} | ${rMultiple}R`;
+          option.dataset.tradeIndex = index;
+          selectEl.appendChild(option);
+        });
+        
+        selectEl.disabled = false;
+        updateStatus(`Loaded ${availableTrades.length} trades (sorted by date)`, "success");
+        
+      } catch (error) {
+        console.error("[Teach] Failed to load trades:", error);
+        selectEl.innerHTML = '<option value="">Error loading trades</option>';
+        updateStatus(`Error: ${error.message}`, "error");
+      }
+    }
+    
+    async function onTradeSelected(event) {
+      const tradeId = event.target.value;
+      if (!tradeId) {
+        selectedTrade = null;
+        document.getElementById("tradeInfo").classList.remove("show");
+        document.getElementById("chartPreview").classList.remove("show");
+        return;
+      }
+      
+      const index = parseInt(event.target.options[event.target.selectedIndex].dataset.tradeIndex);
+      selectedTrade = availableTrades[index];
+      
+      if (!selectedTrade) {
+        updateStatus("Trade not found", "error");
+        return;
+      }
+      
+      displayTradeInfo(selectedTrade);
+      await loadChartForTrade(selectedTrade);
+    }
+    
+    function displayTradeInfo(trade) {
+      const symbol = trade.symbol || "Unknown";
+      const outcome = trade.outcome || trade.label || (trade.pnl > 0 ? "win" : (trade.pnl < 0 ? "loss" : "breakeven"));
+      const rMultiple = trade.r_multiple || trade.rr || "?";
+      const pnl = trade.pnl || 0;
+      const date = trade.timestamp || trade.entry_time || "";
+      const dateStr = date ? new Date(date).toLocaleString() : "Unknown date";
+      
+      document.getElementById("tradeSymbol").textContent = `${symbol} ${outcome.toUpperCase()}`;
+      
+      const outcomeEl = document.getElementById("tradeOutcome");
+      outcomeEl.className = `outcome ${outcome}`;
+      outcomeEl.textContent = outcome.toUpperCase();
+      
+      const details = document.getElementById("tradeDetails");
+      details.innerHTML = `
+        <strong>R-Multiple:</strong> ${rMultiple}R<br>
+        <strong>PnL:</strong> ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}<br>
+        <strong>Date:</strong> ${dateStr}<br>
+        ${trade.direction ? `<strong>Direction:</strong> ${trade.direction}<br>` : ''}
+        ${trade.entry_price ? `<strong>Entry:</strong> ${trade.entry_price}<br>` : ''}
+        ${trade.exit_price ? `<strong>Exit:</strong> ${trade.exit_price}` : ''}
+      `;
+      
+      document.getElementById("tradeInfo").classList.add("show");
+    }
+    
+    async function loadChartForTrade(trade) {
+      const previewEl = document.getElementById("chartPreview");
+      const loadingEl = document.getElementById("chartLoading");
+      const tradeId = trade.id || trade.trade_id || trade.session_id;
+      const symbol = trade.symbol || "";
+      
+      loadingEl.style.display = "block";
+      previewEl.classList.remove("show");
+      
+      // Try chart_path if available
+      if (trade.chart_path) {
+        const fileName = trade.chart_path.split(/[/\\]/).pop();
+        previewEl.src = `${API_BASE_URL}/charts/${fileName}`;
+        previewEl.onload = () => {
+          loadingEl.style.display = "none";
+          previewEl.classList.add("show");
+        };
+        previewEl.onerror = () => {
+          loadingEl.style.display = "none";
+          tryPatternMatch(previewEl, symbol, tradeId);
+        };
+        return;
+      }
+      
+      // Try metadata lookup
+      try {
+        const metaResponse = await fetch(`${API_BASE_URL}/charts/chart/${tradeId}`);
+        if (metaResponse.ok) {
+          const meta = await metaResponse.json();
+          if (meta.chart_path) {
+            const fileName = meta.chart_path.split(/[/\\]/).pop();
+            previewEl.src = `${API_BASE_URL}/charts/${fileName}`;
+            previewEl.onload = () => {
+              loadingEl.style.display = "none";
+              previewEl.classList.add("show");
+            };
+            previewEl.onerror = () => {
+              loadingEl.style.display = "none";
+              tryPatternMatch(previewEl, symbol, tradeId);
+            };
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("[Teach] Metadata lookup failed:", e);
+      }
+      
+      // Fallback: pattern match
+      tryPatternMatch(previewEl, symbol, tradeId);
+    }
+    
+    function tryPatternMatch(previewEl, symbol, tradeId) {
+      const loadingEl = document.getElementById("chartLoading");
+      const patterns = [
+        `${symbol}_5m_${tradeId}.png`,
+        `${symbol}_15m_${tradeId}.png`,
+        `${symbol}_1h_${tradeId}.png`,
+        `chart_${tradeId}.png`
+      ];
+      
+      let patternIndex = 0;
+      
+      function tryNext() {
+        if (patternIndex >= patterns.length) {
+          loadingEl.style.display = "none";
+          updateStatus("Chart not found for this trade", "info");
+          return;
+        }
+        
+        previewEl.src = `${API_BASE_URL}/charts/${patterns[patternIndex]}`;
+        previewEl.onload = () => {
+          loadingEl.style.display = "none";
+          previewEl.classList.add("show");
+        };
+        previewEl.onerror = () => {
+          patternIndex++;
+          tryNext();
+        };
+      }
+      
+      tryNext();
+    }
+    
+    function saveLesson() {
+      const lessonInput = document.getElementById("lessonInput");
+      const lesson = lessonInput.value.trim();
+      
+      if (!selectedTrade) {
+        updateStatus("Please select a trade first", "error");
+        return;
+      }
+      
+      if (!lesson) {
+        updateStatus("Please enter a lesson explanation", "error");
+        return;
+      }
+      
+      if (!chrome || !chrome.storage || !chrome.storage.local) {
+        updateStatus("Chrome storage API not available", "error");
+        return;
+      }
+      
+      const lessonData = {
+        trade_id: selectedTrade.session_id || selectedTrade.trade_id || selectedTrade.id,
+        symbol: selectedTrade.symbol,
+        outcome: selectedTrade.outcome,
+        explanation: lesson,
+        timestamp: new Date().toISOString()
+      };
+      
+      chrome.storage.local.set({
+        lastLesson: lessonData,
+        [`lesson_${lessonData.trade_id}`]: lessonData
+      }, () => {
+        updateStatus(`✅ Lesson saved for ${selectedTrade.symbol}. (Backend integration in Phase 5B)`, "success");
+        lessonInput.value = "";
+      });
+    }
+    
+    function getFeedback() {
+      if (!selectedTrade) {
+        updateStatus("Please select a trade first.", "error");
+        return;
+      }
+      
+      updateStatus("🧠 AI feedback feature coming soon in Phase 5B", "info");
+    }
+    
+    function initSpeechRecognition() {
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        console.warn("[Teach] Speech recognition not supported");
+        return;
+      }
+      
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+      
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        const lessonInput = document.getElementById("lessonInput");
+        lessonInput.value += (lessonInput.value ? " " : "") + transcript;
+      };
+      
+      recognition.onerror = (event) => {
+        console.error("[Teach] Speech recognition error:", event.error);
+        if (event.error === 'not-allowed') {
+          updateStatus("Microphone permission denied", "error");
+        }
+      };
+      
+      recognition.onend = () => {
+        recognizing = false;
+        document.getElementById("voiceToggle").classList.remove("active");
+        document.getElementById("voiceToggle").textContent = "🎙️ Voice";
+      };
+    }
+    
+    function toggleVoice() {
+      if (!recognition) {
+        updateStatus("Speech recognition not available", "error");
+        return;
+      }
+      
+      if (recognizing) {
+        recognition.stop();
+      } else {
+        recognition.start();
+        recognizing = true;
+        document.getElementById("voiceToggle").classList.add("active");
+        document.getElementById("voiceToggle").textContent = "🎙️ Stop";
+        updateStatus("🎙️ Listening...", "info");
+      }
+    }
+    
+    function updateStatus(msg, type = "info") {
+      const statusEl = document.getElementById("status");
+      statusEl.textContent = msg;
+      statusEl.className = `status ${type}`;
+    }
+  </script>
+</body>
+</html>
+

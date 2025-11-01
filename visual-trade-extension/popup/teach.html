@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teach Copilot</title>
+  <link rel="stylesheet" href="teach.css">
+</head>
+<body>
+  <div id="header">
+    <h2>🎓 Teach Copilot</h2>
+    <button id="close">×</button>
+  </div>
+
+  <section id="trade-selection">
+    <label for="tradeSelect">Select Trade to Teach:</label>
+    <select id="tradeSelect">
+      <option value="">-- Loading trades... --</option>
+    </select>
+    <div id="tradeInfo" class="trade-info hidden"></div>
+  </section>
+
+  <section id="chart-section">
+    <div class="chart-label">📊 Chart Preview</div>
+    <img id="chartPreview" src="" alt="Chart Preview">
+  </section>
+
+  <section id="lesson-section">
+    <textarea id="lessonInput" placeholder="Explain the BOS and POI here..."></textarea>
+    <div id="controls">
+      <button id="voiceToggle">🎙️ Voice</button>
+      <button id="saveLesson">💾 Save Lesson</button>
+      <button id="getFeedback">🧠 Get Feedback</button>
+    </div>
+  </section>
+
+  <section id="status"></section>
+
+  <script src="teach.js"></script>
+</body>
+</html>
+

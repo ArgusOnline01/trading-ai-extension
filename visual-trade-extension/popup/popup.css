@@ -409,6 +409,80 @@ body {
 
 .stats-content {
   min-height: 200px;
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+/* Teach Copilot Panel Styling */
+#teach-ui {
+  padding: 8px;
+}
+
+#trade-selection-section {
+  margin-bottom: 12px;
+}
+
+#trade-selection-section label {
+  display: block;
+  font-size: 12px;
+  color: #aaa;
+  margin-bottom: 6px;
+}
+
+#teach-tradeSelect {
+  width: 100%;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #e0e0e0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+#teach-tradeSelect:focus {
+  outline: none;
+  border-color: #ffd700;
+}
+
+#teach-tradeInfo {
+  margin-top: 8px;
+}
+
+.chart-label {
+  font-size: 11px;
+  color: #888;
+  margin-bottom: 6px;
+}
+
+#teach-chartPreview {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+#lesson-section-teach {
+  margin-top: 12px;
+}
+
+#teach-controls button:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+#teach-controls button.active {
+  background: #4fc3f7 !important;
+}
+
+#teach-status.success {
+  color: #30d158;
+}
+
+#teach-status.error {
+  color: #ff453a;
+}
+
+#teach-status.info {
+  color: #2196f3;
 }
 
 .loading {

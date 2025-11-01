@@ -80,6 +80,12 @@ app.include_router(amn_teaching_router)
 # Mount static files for dashboard (Phase 4B.1)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# Mount chart images (Phase 5A: Teach Copilot)
+from pathlib import Path
+charts_dir = Path(__file__).parent / "data" / "charts"
+if charts_dir.exists():
+    app.mount("/charts", StaticFiles(directory=str(charts_dir)), name="charts")
+
 # Mount copilot bridge router (Phase 4D.2.1)
 app.include_router(copilot_router)
 

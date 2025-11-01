@@ -58,6 +58,14 @@
           <span class="btn-desc">Visual performance charts</span>
         </div>
       </button>
+      
+      <button id="teachCopilot" class="action-btn secondary">
+        <span class="btn-icon">🎓</span>
+        <div class="btn-content">
+          <span class="btn-text">Teach Copilot</span>
+          <span class="btn-desc">Train AI with your setups</span>
+        </div>
+      </button>
     </div>
     
     <!-- Performance Panel (Phase 4A) -->
@@ -68,6 +76,17 @@
       </div>
       <div id="statsContent" class="stats-content">
         <div class="loading">Loading stats...</div>
+      </div>
+    </div>
+    
+    <!-- Teach Copilot Panel (Phase 5A) -->
+    <div id="teachPanel" class="performance-panel hidden">
+      <div class="panel-header">
+        <h3>🎓 Teach Copilot</h3>
+        <button id="closeTeach" class="close-btn">✖</button>
+      </div>
+      <div id="teachContent" class="stats-content">
+        <!-- Teach Copilot UI will be rendered here -->
       </div>
     </div>
     
@@ -128,6 +147,7 @@
     </div>
   </div>
   
+  <script src="teach_panel.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

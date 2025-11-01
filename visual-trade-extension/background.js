@@ -107,15 +107,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           console.log("⚠️ No chat history found - first message in session");
         }
         
-        // Phase 4D.3: Attach last 10 trades from backend to system context
+        // Phase 4D.3: Attach ALL trades from backend to system context (sorted by date, newest first)
         try {
-          const recentTrades = await fetch(`http://127.0.0.1:8765/performance/all?limit=10`).then(r => r.json());
-          if (recentTrades && Array.isArray(recentTrades)) {
+          const allTrades = await fetch(`http://127.0.0.1:8765/performance/all?limit=500`).then(r => r.json());
+          if (allTrades && Array.isArray(allTrades)) {
+            // Sort by date (newest first) - use timestamp or entry_time
+            allTrades.sort((a, b) => {
+              const dateA = new Date(a.timestamp || a.entry_time || 0);
+              const dateB = new Date(b.timestamp || b.entry_time || 0);
+              return dateB - dateA; // Newest first
+            });
+            
             sessionContext = sessionContext || {};
-            sessionContext.recent_trades = recentTrades;
+            // Send all trades, but also keep last 10 for compact display
+            sessionContext.recent_trades = allTrades.slice(0, 10); // Last 10 for compact
+            sessionContext.all_trades = allTrades; // All trades for full context
+            console.log(`[Background] Loaded ${allTrades.length} trades for context (sorted by date)`);
           }
         } catch (e) {
-          console.warn("Failed to fetch recent trades for context:", e);
+          console.warn("Failed to fetch trades for context:", e);
         }
         
         // Phase 4D.4: Ensure sessions data is preserved (from content.js getChatHistory)

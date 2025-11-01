@@ -93,21 +93,64 @@ When the user references previous messages (e.g., "the setup I showed earlier", 
                     if notes:
                         context_str += f"Notes: {', '.join(notes[:3])}\n"  # Show first 3 notes
 
-                # Phase 4D.3: Include recent trades if provided by the extension background
+                # Phase 4D.3: Include ALL trades if provided by the extension background
                 recent = session_context.get("recent_trades")
-                if isinstance(recent, list) and recent:
-                    # Build a compact, token-light list of last up to 10 trades
-                    compact = []
-                    for t in recent[-10:]:
+                all_trades = session_context.get("all_trades")  # Full list if available
+                trades_to_use = all_trades if (all_trades and isinstance(all_trades, list)) else (recent if isinstance(recent, list) else [])
+                
+                if isinstance(trades_to_use, list) and trades_to_use:
+                    total_trades = len(trades_to_use)
+                    
+                    # Build a compact summary of ALL trades showing PnL in DOLLARS
+                    # Group by outcome for quick reference
+                    wins = [t for t in trades_to_use if (t.get('outcome') == 'win' or (t.get('pnl', 0) > 0 and t.get('outcome') != 'loss'))]
+                    losses = [t for t in trades_to_use if (t.get('outcome') == 'loss' or (t.get('pnl', 0) < 0 and t.get('outcome') != 'win'))]
+                    breakevens = [t for t in trades_to_use if t.get('outcome') == 'breakeven' or (isinstance(t.get('pnl'), (int, float)) and t.get('pnl', 0) == 0)]
+                    
+                    context_str += f"\n[USER TRADE HISTORY - COMPLETE DATASET]\n"
+                    context_str += f"TOTAL TRADES: {total_trades}\n"
+                    context_str += f"Wins: {len(wins)}, Losses: {len(losses)}, Breakevens: {len(breakevens)}\n\n"
+                    
+                    # Show ALL winning trades with PnL in DOLLARS (sorted newest first)
+                    if wins:
+                        context_str += "WINNING TRADES (PnL in dollars, newest first):\n"
+                        for t in wins[:20]:  # Limit to 20 to save tokens, but user can ask for more
+                            sym = t.get('symbol', 'UNK')
+                            pnl_dollars = t.get('pnl')
+                            pnl_str = f"${pnl_dollars:+.2f}" if isinstance(pnl_dollars, (int, float)) else "N/A"
+                            rr = t.get('r_multiple') or t.get('rr')
+                            rr_str = f" ({rr}R)" if rr is not None else ""
+                            date = t.get('timestamp') or t.get('entry_time') or t.get('trade_day')
+                            date_str = date[:10] if date and len(date) >= 10 else (date if date else "?")
+                            context_str += f"  - {sym} | {pnl_str}{rr_str} | {date_str}\n"
+                        if len(wins) > 20:
+                            context_str += f"  ... and {len(wins) - 20} more wins\n"
+                    
+                    # Show recent trades summary (last 15 for context)
+                    context_str += f"\nRECENT TRADES (last 15, newest first):\n"
+                    for t in trades_to_use[:15]:
                         sym = t.get('symbol', 'UNK')
-                        outcome = t.get('outcome')
+                        outcome = t.get('outcome') or t.get('label')
                         if outcome is None and isinstance(t.get('pnl'), (int, float)):
                             outcome = 'win' if t['pnl'] > 0 else ('loss' if t['pnl'] < 0 else 'breakeven')
-                        rr = t.get('r_multiple')
-                        if rr is None and isinstance(t.get('pnl'), (int, float)):
-                            rr = t['pnl']  # as-is; server computes better approximations when needed
-                        compact.append(f"{sym} | {outcome or 'pending'} | R:{rr if rr is not None else '-'}")
-                    context_str += "Recent Trades (last 10):\n" + "\n".join(compact) + "\n"
+                        
+                        pnl_dollars = t.get('pnl')
+                        pnl_str = f"${pnl_dollars:+.2f}" if isinstance(pnl_dollars, (int, float)) else "N/A"
+                        
+                        rr = t.get('r_multiple') or t.get('rr')
+                        rr_str = f" ({rr}R)" if rr is not None else ""
+                        
+                        date = t.get('timestamp') or t.get('entry_time') or t.get('trade_day')
+                        date_str = date[:10] if date and len(date) >= 10 else (date[:20] if date else "?")
+                        
+                        context_str += f"  {sym} | {outcome or 'pending'} | {pnl_str}{rr_str} | {date_str}\n"
+                    
+                    context_str += f"\nIMPORTANT:\n"
+                    context_str += f"- You have access to ALL {total_trades} trades in the complete dataset.\n"
+                    context_str += f"- ALL PnL values shown above are in DOLLARS (e.g., $762.50, $-160.00).\n"
+                    context_str += f"- When users ask about specific trades, reference the dollar amounts directly from this data.\n"
+                    context_str += f"- When listing wins/losses, show PnL in dollars (${pnl_dollars:+.2f} format), NOT just R-multiples.\n"
+                    context_str += f"- If a user asks about a trade by date/symbol, search ALL {total_trades} trades, not just the recent 15 shown.\n"
 
                 # Phase 4D.3.2: Include command execution result if available
                 cmd_result = session_context.get("last_command_result")
@@ -200,7 +243,23 @@ You have direct API access to:
 - /copilot/performance → summarize trading performance
 - /copilot/teach/examples → list teaching examples
 - /copilot/teach/example/{id} → fetch specific teaching example
-When users ask about their stats, performance, teaching data, or specific trades, always reference these endpoints to ensure your responses are accurate and live.
+
+**IMPORTANT: You have access to ALL trade data via /performance/all**
+The system injects ALL trades from /performance/all into your context automatically.
+These trades contain COMPLETE information:
+- Symbol, outcome (win/loss/breakeven), R-multiple, PnL IN DOLLARS
+- Entry/exit prices, timestamps, direction
+- Chart images, setup types
+- All the same detailed data visible in the Performance tab and Teach Copilot
+
+When users ask about their trades, stats, or performance:
+- You have access to ALL trades in the complete dataset (not just last 10)
+- ALL PnL values are in DOLLARS (e.g., $762.50, $-160.00) - ALWAYS show dollar amounts when listing trades
+- When listing winning trades, show PnL in dollars (format: $+XXX.XX or $-XXX.XX), NOT just R-multiples
+- If a user asks about a specific trade by date/symbol, search through ALL trades in the dataset
+- You have the SAME data source as the Performance tab and Teach Copilot - all from /performance/all
+- Always use this unified data source for accurate, real-time responses
+- The context shows: (1) ALL winning trades list, (2) Recent 15 trades summary - but you have access to the FULL dataset
 """.format(
                     status.get('total_trades', 0),
                     status.get('active_sessions', 0),

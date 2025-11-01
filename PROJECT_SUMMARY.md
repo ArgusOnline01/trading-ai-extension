@@ -317,21 +317,74 @@
 
 ### Phase 5A: Teach Copilot UI + Voice Support
 **Version:** v5.1.0  
-**Status:** ✅ Complete
+**Status:** ✅ Complete  
+**Date:** November 1, 2025
 
 **Achievements:**
-- Teach Copilot overlay modal (like Log Trade)
-- Performance Tab overlay modal
-- Chrome Web Speech API integration for voice-to-text
-- Trade selection and chart preview
-- Lesson input and save functionality
-- Full-page overlay UI matching existing modals
+- **Teach Copilot Overlay Modal** - Full-page overlay matching Log Trade modal design
+- **Performance Tab Overlay Modal** - Comprehensive trade history viewer with stats
+- **Chrome Web Speech API Integration** - Native voice-to-text for lesson input
+- **Trade Selection System** - Dropdown populated from `/performance/all` (all 31 trades)
+- **Chart Preview** - Automatic chart loading with multiple fallback strategies
+- **Lesson Input & Save** - Textarea with local storage (Chrome storage API)
+- **Trade Information Display** - Detailed trade metadata (symbol, outcome, PnL, R-multiple, dates)
+- **Modal Architecture** - Consistent overlay system for all major features
+
+**UI Features:**
+- **Trade Selection:** Dropdown with all trades sorted by date (newest first)
+- **Trade Details Panel:** Shows symbol, outcome, PnL in dollars, R-multiple, entry/exit prices
+- **Chart Preview:** Displays reconstructed chart images from `/charts/` endpoint
+- **Voice Input Toggle:** 🎙️ Button for hands-free lesson dictation
+- **Save Lesson Button:** Stores lesson data locally (Phase 5B will add backend API)
+- **Get Feedback Button:** Placeholder for AI feedback feature (Phase 5B)
+- **Status Messages:** Real-time feedback with color-coded status indicators
+
+**Technical Implementation:**
+- Modal system uses same architecture as Log Trade modal
+- Chart loading with 3-tier fallback:
+  1. Direct `chart_path` from trade object
+  2. Metadata lookup via `/charts/chart/{trade_id}`
+  3. Pattern matching (`{symbol}_5m_{trade_id}.png`)
+- Voice recognition uses Web Speech API (Chrome native)
+- Server connection validation before loading trades
+- Error handling with user-friendly messages
 
 **Key Files:**
-- `visual-trade-extension/content/content.js` - Modal implementations
+- `visual-trade-extension/content/content.js` - Modal implementations (~400 lines)
+  - `showTeachCopilotModal()` - Creates and manages Teach Copilot overlay
+  - `showPerformanceTabModal()` - Creates and manages Performance Tab overlay
+  - `loadTeachCopilotTrades()` - Fetches trades from `/performance/all`
+  - `loadTeachChart()` - Chart loading with fallbacks
+  - `saveTeachLesson()` - Local storage integration
 - `visual-trade-extension/popup/popup.js` - Modal triggers
+  - Teach Copilot button → sends message to content script
+  - Performance Tab button → sends message to content script
+- `visual-trade-extension/popup/teach_panel.js` - Voice recognition logic
+  - `initTeachSpeechRecognition()` - Web Speech API setup
+  - `toggleTeachVoice()` - Voice input toggle
 
-**Documentation:** See consolidated details below
+**User Workflow:**
+1. User clicks "🎓 Teach Copilot" button in popup
+2. Modal opens as full-page overlay
+3. Trades load automatically from backend (sorted by date)
+4. User selects a trade from dropdown
+5. Trade details and chart preview appear automatically
+6. User enters lesson explanation (text or voice)
+7. User clicks "💾 Save Lesson" (saved to Chrome storage)
+8. Status message confirms save
+
+**Integration Points:**
+- **Backend:** `/performance/all` endpoint (all trades)
+- **Backend:** `/charts/` static endpoint (chart images)
+- **Backend:** `/charts/chart/{trade_id}` (chart metadata lookup)
+- **Frontend:** Chrome Web Speech API (voice input)
+- **Frontend:** `chrome.storage.local` (lesson persistence)
+
+**Future Enhancements (Phase 5B):**
+- Backend API for saving lessons to teaching dataset
+- AI feedback generation based on lesson content
+- Batch lesson creation workflow
+- Export lessons to training dataset
 
 ---
 
@@ -470,7 +523,7 @@ trading-ai-extension/
 | Phase 4D.1 | v4.8.0 | Chart reconstruction | ✅ Complete |
 | Phase 4D.2 | v4.9.0 | Interactive merge | ✅ Complete |
 | Phase 4D.3 | v5.0.0 | Performance context sync | ✅ Complete |
-| Phase 5A | v5.1.0 | Teach Copilot UI | ✅ Complete |
+| Phase 5A | v5.1.0 | Teach Copilot UI + Voice Support | ✅ Complete |
 
 ---
 

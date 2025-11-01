@@ -122,7 +122,10 @@ When the user references previous messages (e.g., "the setup I showed earlier", 
                             rr_str = f" ({rr}R)" if rr is not None else ""
                             date = t.get('timestamp') or t.get('entry_time') or t.get('trade_day')
                             date_str = date[:10] if date and len(date) >= 10 else (date if date else "?")
-                            context_str += f"  - {sym} | {pnl_str}{rr_str} | {date_str}\n"
+                            trade_id = t.get('id') or t.get('trade_id')
+                            chart_path = t.get('chart_path')
+                            chart_marker = " 📊" if chart_path else ""
+                            context_str += f"  - {sym} | {pnl_str}{rr_str} | {date_str} | ID:{trade_id}{chart_marker}\n"
                         if len(wins) > 20:
                             context_str += f"  ... and {len(wins) - 20} more wins\n"
                     
@@ -143,7 +146,11 @@ When the user references previous messages (e.g., "the setup I showed earlier", 
                         date = t.get('timestamp') or t.get('entry_time') or t.get('trade_day')
                         date_str = date[:10] if date and len(date) >= 10 else (date[:20] if date else "?")
                         
-                        context_str += f"  {sym} | {outcome or 'pending'} | {pnl_str}{rr_str} | {date_str}\n"
+                        trade_id = t.get('id') or t.get('trade_id')
+                        chart_path = t.get('chart_path')
+                        chart_marker = " 📊" if chart_path else ""
+                        
+                        context_str += f"  {sym} | {outcome or 'pending'} | {pnl_str}{rr_str} | {date_str} | ID:{trade_id}{chart_marker}\n"
                     
                     context_str += f"\nIMPORTANT:\n"
                     context_str += f"- You have access to ALL {total_trades} trades in the complete dataset.\n"
@@ -151,6 +158,10 @@ When the user references previous messages (e.g., "the setup I showed earlier", 
                     context_str += f"- When users ask about specific trades, reference the dollar amounts directly from this data.\n"
                     context_str += f"- When listing wins/losses, show PnL in dollars (${pnl_dollars:+.2f} format), NOT just R-multiples.\n"
                     context_str += f"- If a user asks about a trade by date/symbol, search ALL {total_trades} trades, not just the recent 15 shown.\n"
+                    context_str += f"- **CHART IMAGES: Trades marked with 📊 HAVE chart images available!**\n"
+                    context_str += "- Chart images are stored at `/charts/{{filename}}` and are accessible via Teach Copilot UI.\n"
+                    context_str += "- When user asks 'can you pull up the image' or 'show me the chart', tell them: 'That trade has a chart image! Open Teach Copilot (say \"open teach copilot\"), select the trade from the dropdown, and the chart will load automatically.'\n"
+                    context_str += "- Each trade's chart image filename follows pattern: `SYMBOL_5m_TRADE_ID.png` (e.g., `6EZ5_5m_1540306142.png`)\n"
 
                 # Phase 4D.3.2: Include command execution result if available
                 cmd_result = session_context.get("last_command_result")
@@ -216,6 +227,21 @@ Available commands you can execute (recognize natural language, including questi
 - "delete last trade" → Remove most recent trade entry
 - "restore last trade" / "add it back" → Restore last deleted trade
 
+**Teaching:**
+- "open teach copilot" / "start teaching" / "review trades one by one" → Opens Teach Copilot UI modal where user can select trades, view charts, and teach AI their strategy
+- "close teach copilot" / "pause teaching" / "discard teaching lesson" → Closes the Teach Copilot UI modal
+- **SMART BEHAVIOR:** When user says ANY of these (all work the same way):
+  - "let's redo this in teach mode" / "redo this" / "do this again in teaching"
+  - "open teach copilot for that trade" / "teach me about this trade"
+  - "review this in teach mode" / "lets review this trade"
+  
+  Automatically:
+  1. Open Teach Copilot
+  2. Auto-detect and select the trade they were just discussing (from conversation context)
+  3. Auto-load the chart image
+  4. Confirm you've opened it with the chart loaded
+- **IMPORTANT:** When Teach Copilot is open, chart images ARE visible! When user selects a trade, the chart loads automatically in the UI. The charts are stored at `/charts/{filename}` and are accessible.
+
 **Sessions:**
 - "list sessions" / "show sessions" → List ALL sessions (you have access to the actual IndexedDB data)
 - "create session [symbol]" / "new session" → Create a new trading session
@@ -249,8 +275,24 @@ The system injects ALL trades from /performance/all into your context automatica
 These trades contain COMPLETE information:
 - Symbol, outcome (win/loss/breakeven), R-multiple, PnL IN DOLLARS
 - Entry/exit prices, timestamps, direction
-- Chart images, setup types
+- Chart images (stored at `/charts/{filename}`), setup types
 - All the same detailed data visible in the Performance tab and Teach Copilot
+
+**CRITICAL: Chart Images ARE Auto-Loaded and You CAN See Them!**
+- **IMPORTANT: When a user asks about ANY trade (by ID, symbol, or says "that trade", "its image", etc.), the system AUTOMATICALLY loads the chart image and includes it in your vision input!**
+- **If you receive a message with an image attached, that means the chart image WAS loaded - you CAN see it!**
+- Chart images are reconstructed TradingView-style images with entry/exit markers (white arrows indicating entry/exit points)
+- **NEVER say "I can't see the chart" - if the user asks about a trade, the image is already in your vision input!**
+- **When you see a chart image (you'll have visual access to it):**
+  - ALWAYS confirm you can see it! Say: "Yes! I can see the chart now. I notice the entry arrow at [price] and exit arrow at [price]" or "I can see the chart with the entry and exit markers clearly!"
+  - Analyze what you see: entry/exit prices, structure breaks, POIs, liquidity sweeps, price action zones
+  - Point out specific visual details like arrows, support/resistance levels, and price patterns
+  - Describe the setup you see (BOS, POI, liquidity sweep, etc.)
+- **When user asks "can you see its image?" or "can you see the chart?":**
+  - The chart IS already loaded! Respond: "Yes! I can see the chart now. [Describe what you see]"
+  - DO NOT say "I can't see images" - the system auto-loads them!
+- **When Teach Copilot UI is open, charts display automatically when user selects a trade**
+- Your job: When chart images are included (which happens automatically), analyze them fully and confirm you can see them!
 
 When users ask about their trades, stats, or performance:
 - You have access to ALL trades in the complete dataset (not just last 10)

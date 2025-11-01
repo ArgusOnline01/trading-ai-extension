@@ -147,6 +147,21 @@ async def system_command(request: CommandRequest):
                 "detected_command": None
             }
         
+        # Phase 5B.2: If opening teach copilot, try to detect trade from conversation context
+        if detected == "open_teach_copilot" and request.context:
+            from utils.trade_detector import detect_trade_reference, extract_trade_id_from_text
+            from performance.utils import read_logs
+            
+            # Try to extract trade from command text or context
+            all_trades = read_logs()
+            conversation_history = request.context.get('all_sessions') or []
+            
+            # Check conversation history for recently mentioned trades
+            detected_trade = detect_trade_reference(request.command, all_trades, conversation_history)
+            if detected_trade:
+                request.context['detected_trade'] = detected_trade
+                print(f"[SYSTEM_COMMAND] Detected trade {detected_trade.get('id')} for teach copilot")
+        
         # Execute command
         result = execute_command(detected, request.context)
         

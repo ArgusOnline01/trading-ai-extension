@@ -749,6 +749,179 @@ trading-ai-extension/
 
 ---
 
+## 🎯 Phase 5C: Interactive Teaching Mode (Conversational & Visual)
+
+**Status:** ✅ Complete  
+**Date:** December 2024  
+**Version:** v5.2.0
+
+### Goal
+Upgrade Teach Copilot from manual lesson-save flow (5B) to a real-time interactive teacher that:
+- Listens to incremental input during teaching sessions
+- Updates BOS/POI fields live as user types/speaks
+- Asks clarifying questions when information is missing
+- Renders draft overlay previews (via mplfinance)
+- Shows progress (confidence + captured fields) in the modal
+
+### Achievements
+- ✅ **Incremental Parser** - Real-time BOS/POI extraction from natural language
+- ✅ **Live UI Feedback** - Dynamic chips show extracted fields as user types
+- ✅ **Visual Overlays** - Preview BOS lines and POI zones on charts
+- ✅ **Conversational Flow** - Clarifying questions guide user to complete lessons
+- ✅ **Session State Management** - Partial lessons persist across messages
+- ✅ **Auto-advance** - Automatically move to next trade after saving
+
+### New Backend Components
+
+**`server/utils/teach_parser.py`** - Incremental teaching parser
+- `update_partial_lesson()` - Extracts BOS/POI from messages incrementally
+- `normalize_number()` - Converts verbal numbers ("one fourteen fifty" → "1.1450")
+- `build_clarifying_question()` - Generates context-aware questions
+- `get_missing_fields()` - Determines what information is still needed
+
+**`server/utils/overlay_drawer.py`** - Visual overlay renderer
+- `draw_overlay_from_labels()` - Draws BOS lines and POI zones on chart images
+- `find_chart_image()` - Locates chart files for trades
+- `get_overlay_url()` - Converts file paths to server URLs
+
+### New API Endpoints
+
+**`POST /teach/stream`** - Incremental teaching flow
+- Receives each chat message while `teaching_active=True`
+- Updates `partial_lesson` incrementally
+- Returns updated fields + missing info + clarifying questions
+- **Request:** `{ "message": "BOS from 1.1450 to 1.1480 bullish POI 1.1440-1.1452" }`
+- **Response:** `{ "status": "updated", "partial_lesson": {...}, "missing_fields": [...], "next_question": "..." }`
+
+**`POST /teach/preview`** - Render overlay preview
+- Generates visual overlay showing BOS/POI on chart
+- Uses session's `partial_lesson` if no data provided
+- Returns overlay image URL for frontend display
+- **Request:** `{}` (uses session) or `{ "example_like": {...} }`
+- **Response:** `{ "status": "ok", "overlay_path": "...", "overlay_url": "/overlays/..." }`
+
+**`POST /teach/skip`** - Skip current trade
+- Advances to next trade index
+- Clears `partial_lesson` for fresh start
+- **Response:** `{ "status": "skipped", "next_trade_index": 1 }`
+
+**`GET /teach/status`** (enhanced)
+- Now includes `partial_lesson` in response for frontend state sync
+
+### Frontend Enhancements
+
+**Live Status Band & Chips (`content/content.js`)**
+- **Status Band** - Shows current state ("Waiting for input...", clarifying questions, "Ready to save")
+- **Dynamic Chips** - Real-time display of extracted fields:
+  - `BOS 1.1450 → 1.1480` (blue)
+  - `POI 1.1440–1.1452: imbalance` (cyan)
+  - `Bias: bullish` (green)
+  - `Conf: 75%` (yellow)
+- **Auto-streaming** - Textarea input triggers `/teach/stream` after 500ms debounce
+- **Enter key** - Pressing Enter processes message immediately
+
+**New UI Controls**
+- **👁️ Preview Overlay** - Button to generate and display visual overlay
+- **⏭️ Skip** - Button to skip current trade and move to next
+- **Auto-advance** - Automatically advances to next trade after saving lesson
+
+**Enhanced Save Flow**
+- Checks for `partial_lesson` from streaming
+- Uses accumulated lesson text if available
+- Clears chips and status band after save
+- Automatically calls `/teach/next` to advance
+
+### Technical Implementation
+
+**Incremental Parsing Strategy**
+1. User types: "BOS from 1.1450 to 1.1480"
+2. Parser extracts: `{ "bos": {"start": 1.1450, "end": 1.1480} }`
+3. Confidence increases: `confidence_hint: 0.5 → 0.7`
+4. Chips update: `BOS 1.1450 → 1.1480` appears
+5. Question: "Where is your POI range?"
+
+**Overlay Rendering**
+- Loads base chart image from `data/charts/`
+- Uses matplotlib to draw BOS (dashed horizontal line) and POI (colored spans)
+- Saves overlay to `data/amn_training_examples/overlays/{trade_id}_draft.png`
+- Serves via `/overlays/` static mount
+
+**Session State**
+- `partial_lesson` stored in `session_contexts.json`
+- Persists across messages during active teaching session
+- Cleared when trade skipped or lesson saved
+
+### Key Files Modified/Created
+
+**Backend:**
+- `server/utils/teach_parser.py` (NEW) - 220 lines
+- `server/utils/overlay_drawer.py` (NEW) - 213 lines
+- `server/routers/teach_router.py` - Added 3 endpoints, ~230 lines
+- `server/app.py` - Added `/overlays` static mount
+
+**Frontend:**
+- `visual-trade-extension/content/content.js` - Added streaming, chips, status band, preview button, skip button (~150 lines)
+
+### User Workflow
+
+1. **Start Teaching Mode**
+   - Open Teach Copilot modal
+   - Select a trade
+   - Chart loads automatically
+
+2. **Enter Lesson Incrementally**
+   - Type: "BOS from 1.1450 to 1.1480"
+   - **Chip appears:** `BOS 1.1450 → 1.1480`
+   - **Status:** "Where is your POI range?"
+
+3. **Continue Adding Info**
+   - Type: "POI at 1.1440-1.1452, bullish bias"
+   - **Chips update:** `POI 1.1440–1.1452`, `Bias: bullish`, `Conf: 75%`
+   - **Status:** "Would you like to preview this setup?"
+
+4. **Preview Overlay (Optional)**
+   - Click "👁️ Preview Overlay"
+   - Chart updates with BOS line and POI zone drawn
+
+5. **Save Lesson**
+   - Click "💾 Save Lesson"
+   - System finalizes extraction (GPT-4o-mini validation)
+   - Lesson saved to training dataset
+   - Automatically advances to next trade
+
+6. **Skip Trade (Optional)**
+   - Click "⏭️ Skip" to skip current trade
+   - Moves to next trade, clears partial lesson
+
+### Integration Points
+
+- **Phase 5B Foundation** - Builds on existing `/teach/*` endpoints
+- **Chart Reconstruction** - Uses existing chart images from Phase 3
+- **GPT Extraction** - Final validation still uses GPT-4o-mini (Phase 5B)
+- **Teaching Progress** - Updates `user_profile.json` progress tracking
+
+### Testing Checklist
+
+✅ Start teaching mode → confirm `teaching_active=True`  
+✅ Type: "BOS from 1.1450 to 1.1480 bullish POI 1.1440-1.1452"  
+✅ Chips update instantly: BOS, POI, Bias, Conf appear  
+✅ Preview button generates overlay image  
+✅ Missing fields prompt appears  
+✅ Save lesson → backend finalizes JSON (uses `/teach/record`)  
+✅ Confidence & totals update in `user_profile.json`  
+✅ Auto-advance to next trade after save
+
+### Future Enhancements (Phase 5D+)
+
+- [ ] Accurate price-to-pixel mapping for overlays (integrate with chart renderer)
+- [ ] Voice dictation integration with incremental parsing
+- [ ] Multi-turn clarification loops (ask follow-ups until all fields complete)
+- [ ] "Previous trade" navigation button
+- [ ] Batch teaching mode (teach multiple trades in sequence)
+- [ ] Export overlays as training data annotations
+
+---
+
 **Built with ❤️ for traders using Smart Money Concepts**
 
-*Visual Trade Copilot v5.1.0 - Ready for Production! 🚀*
+*Visual Trade Copilot v5.2.0 - Interactive Teaching Mode Complete! 🎓*

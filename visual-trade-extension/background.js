@@ -165,6 +165,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
         }
 
+        // Phase 5B.1: Auto-detect trade if Teach Copilot is open and trade is selected
+        let detectedTradeId = null;
+        try {
+          const teachState = await chrome.tabs.sendMessage(tabId, {
+            action: "getTeachCopilotState"
+          });
+          if (teachState && teachState.selectedTrade) {
+            detectedTradeId = teachState.selectedTrade.id || teachState.selectedTrade.trade_id || teachState.selectedTrade.session_id;
+            if (detectedTradeId) {
+              formData.append("trade_id", detectedTradeId.toString());
+              console.log(`[BACKGROUND] Auto-including trade_id ${detectedTradeId} from Teach Copilot`);
+            }
+          }
+        } catch (e) {
+          // Teach Copilot not open or no trade selected - that's fine
+        }
+        
         // Add session context (Phase 3B + 4D.3 + command result)
         if (Object.keys(sessionContext).length > 0) {
           formData.append("context", JSON.stringify(sessionContext));

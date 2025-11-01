@@ -23,6 +23,8 @@ COMMAND_PATTERNS = {
     "clear_memory": ["clear memory", "reset memory", "delete all data", "wipe memory"],
     "model_info": ["what model", "which model", "current model", "what ai", "which gpt"],
     "list_sessions": ["list sessions", "show sessions", "my sessions", "active sessions"],
+    "open_teach_copilot": ["open teach copilot", "start teaching", "teach copilot", "open teaching", "show teach copilot", "launch teaching mode", "begin teaching", "review trades one by one", "lets review the trades", "teach me", "let's teach", "redo this in teach mode", "lets redo this", "redo in teach mode", "do this in teaching", "open teaching for this trade", "teach me about this", "review this trade", "lets review this"],
+    "close_teach_copilot": ["close teach copilot", "pause teaching", "pause teaching mode", "close teaching", "exit teaching mode", "stop teaching", "discard teaching lesson", "cancel teaching"],
     "help": ["help", "commands", "what can you do", "available commands", "show me commands", "what commands", "list commands", "what can i ask", "how can you help"]
 }
 
@@ -135,6 +137,22 @@ def execute_command(command: str, context: Dict[str, Any] = None) -> Dict[str, A
     
     elif command == "list_sessions":
         return execute_list_sessions_command(context)
+    
+    elif command == "open_teach_copilot":
+        # Try to extract trade_id from context or command text
+        trade_id = None
+        if context:
+            # Check for detected trade
+            detected_trade = context.get('detected_trade')
+            if detected_trade:
+                trade_id = detected_trade.get('id') or detected_trade.get('trade_id')
+            elif context.get('trade_id'):
+                trade_id = context['trade_id']
+        
+        return execute_open_teach_copilot_command(context, trade_id)
+    
+    elif command == "close_teach_copilot":
+        return execute_close_teach_copilot_command()
     
     elif command == "help":
         return execute_help_command()
@@ -450,6 +468,50 @@ def execute_rename_session_command(context: Dict[str, Any] = None) -> Dict[str, 
     }
 
 
+def execute_open_teach_copilot_command(context: Dict[str, Any] = None, trade_id: int = None) -> Dict[str, Any]:
+    """
+    Execute 'open teach copilot' command - opens teaching mode UI
+    Optionally auto-selects a specific trade if trade_id is provided
+    """
+    # Try to extract trade_id from context if not provided
+    if not trade_id and context:
+        # Check if context has a detected trade or trade_id
+        if context.get('detected_trade'):
+            trade_id = context['detected_trade'].get('id') or context['detected_trade'].get('trade_id')
+        elif context.get('trade_id'):
+            trade_id = context['trade_id']
+    
+    message = "🎓 Opening Teach Copilot... You can now review trades one by one and teach the AI your strategy!\n\n"
+    
+    if trade_id:
+        message += f"**Trade {trade_id} will be automatically selected and its chart loaded.**\n\n"
+        return {
+            "success": True,
+            "command": "open_teach_copilot",
+            "message": message + "**How it works:**\n1. The chart image will load automatically\n2. Type or voice-dictate your lesson about that trade\n3. Click 'Save Lesson' to extract BOS/POI and save to training dataset",
+            "frontend_action": "open_teach_copilot",
+            "trade_id": int(trade_id)
+        }
+    else:
+        message += "**How it works:**\n1. Select any trade from the dropdown\n2. The chart image will load automatically (if available)\n3. Type or voice-dictate your lesson about that trade\n4. Click 'Save Lesson' to extract BOS/POI and save to training dataset"
+        return {
+            "success": True,
+            "command": "open_teach_copilot",
+            "message": message,
+            "frontend_action": "open_teach_copilot"
+        }
+
+
+def execute_close_teach_copilot_command() -> Dict[str, Any]:
+    """Execute 'close teach copilot' command - closes teaching mode UI"""
+    return {
+        "success": True,
+        "command": "close_teach_copilot",
+        "message": "✅ Teach Copilot closed. Teaching mode paused.",
+        "frontend_action": "close_teach_copilot"
+    }
+
+
 def execute_help_command() -> Dict[str, Any]:
     """Execute 'help' command - show available commands"""
     message = "🤖 **Visual Trade Copilot - System Commands**\n\n"
@@ -457,6 +519,10 @@ def execute_help_command() -> Dict[str, Any]:
     message += "• `show my stats` - View trading performance\n"
     message += "• `delete last trade` - Remove most recent trade\n"
     message += "• `restore last trade` - Undo the last deletion\n\n"
+    message += "**Teaching:**\n"
+    message += "• `open teach copilot` / `start teaching` - Open teaching mode UI to review trades and teach AI\n"
+    message += "• `close teach copilot` / `pause teaching` - Close teaching mode UI\n"
+    message += "• `review trades one by one` - Begin teaching session\n\n"
     message += "**Sessions:**\n"
     message += "• `list sessions` - Show all active sessions\n"
     message += "• `create session [symbol]` - Create a new trading session\n"

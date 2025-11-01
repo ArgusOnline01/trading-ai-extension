@@ -2,6 +2,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from typing import Optional
 import base64
 import io
 import json
@@ -19,6 +20,7 @@ from chart_reconstruction.routes import router as chart_reconstruction_router
 from trades_merge.routes import router as trades_merge_router
 from amn_teaching.routes import router as amn_teaching_router
 from copilot_bridge.routes import router as copilot_router
+from routers.teach_router import router as teach_router
 from performance.learning import generate_learning_profile
 
 # Try to import PIL, but make it optional for now
@@ -86,8 +88,16 @@ charts_dir = Path(__file__).parent / "data" / "charts"
 if charts_dir.exists():
     app.mount("/charts", StaticFiles(directory=str(charts_dir)), name="charts")
 
+# Phase 5C: Mount overlay images (serve from overlays directory)
+overlays_dir = Path(__file__).parent / "data" / "amn_training_examples" / "overlays"
+overlays_dir.mkdir(parents=True, exist_ok=True)  # Create if doesn't exist
+app.mount("/overlays", StaticFiles(directory=str(overlays_dir)), name="overlays")
+
 # Mount copilot bridge router (Phase 4D.2.1)
 app.include_router(copilot_router)
+
+# Mount teach router (Phase 5B: Conversational Teaching Engine)
+app.include_router(teach_router)
 
 # Phase 4C.1: Startup initialization with persistent memory
 @app.on_event("startup")
@@ -304,7 +314,8 @@ async def ask_about_chart(
     question: str = Form(...),
     model: str = Form(None),
     messages: str = Form(None),
-    context: str = Form(None)
+    context: str = Form(None),
+    trade_id: Optional[str] = Form(None)  # Phase 5B.1: Optional trade ID for auto-loading chart
 ):
     """
     Ask a natural language question about a trading chart (Phase 3B: With session context)
@@ -315,14 +326,87 @@ async def ask_about_chart(
         model: Optional model selection (aliases: "fast", "balanced", "advanced" or direct model names)
         messages: Optional JSON string of previous conversation messages for context
         context: Optional JSON string of session context (price, bias, POIs, etc.)
+        trade_id: Optional trade ID - if provided, automatically loads chart image for that trade
         
     Returns:
         AskResponse with model name and conversational answer
     """
     try:
         # Phase 3B.1: Handle optional image (text-only mode)
+        # Phase 5B.1: Auto-detect and load chart image if trade is referenced
         image_base64 = None
-        if image is not None:
+        detected_trade = None
+        
+        # If explicit trade_id provided, load chart
+        if trade_id:
+            from utils.trade_detector import load_chart_image_for_trade
+            from performance.utils import read_logs
+            
+            try:
+                # Convert trade_id to int if it's a string
+                try:
+                    trade_id_int = int(trade_id)
+                except (ValueError, TypeError):
+                    trade_id_int = None
+                
+                all_trades = read_logs()
+                trade = None
+                if trade_id_int:
+                    trade = next((t for t in all_trades if (t.get('id') == trade_id_int or 
+                                                           t.get('trade_id') == trade_id_int or
+                                                           str(t.get('id')) == str(trade_id_int))), None)
+                if trade:
+                    detected_trade = trade
+                    image_base64 = load_chart_image_for_trade(trade)
+                    if image_base64:
+                        print(f"[ASK] Auto-loaded chart for trade {trade_id} ({len(image_base64)} chars base64)")
+                    else:
+                        print(f"[ASK] Trade {trade_id} found but no chart image available")
+            except Exception as e:
+                print(f"[ASK] Failed to auto-load chart for trade_id {trade_id}: {e}")
+        
+        # If no explicit trade_id but image not provided, try auto-detection
+        if image is None and image_base64 is None:
+            from utils.trade_detector import detect_trade_reference, load_chart_image_for_trade
+            
+            try:
+                # Parse context to get all_trades if available
+                session_context = {}
+                if context:
+                    try:
+                        session_context = json.loads(context)
+                    except:
+                        pass
+                
+                all_trades = session_context.get('all_trades')
+                if not all_trades:
+                    # Fallback: fetch all trades
+                    from performance.utils import read_logs
+                    all_trades = read_logs()
+                
+                # Detect trade reference in question (also check conversation history)
+                conversation_history_for_detection = []
+                if messages:
+                    try:
+                        parsed_messages = json.loads(messages)
+                        conversation_history_for_detection = parsed_messages[-10:]  # Last 10 for trade detection
+                    except:
+                        pass
+                
+                detected_trade = detect_trade_reference(question, all_trades, conversation_history_for_detection)
+                if detected_trade:
+                    image_base64 = load_chart_image_for_trade(detected_trade)
+                    if image_base64:
+                        trade_id_val = detected_trade.get('id') or detected_trade.get('trade_id')
+                        print(f"[ASK] Auto-detected trade {trade_id_val} in question, loaded chart ({len(image_base64)} chars base64)")
+                    else:
+                        print(f"[ASK] Auto-detected trade but no chart image available")
+            except Exception as e:
+                print(f"[ASK] Trade auto-detection failed: {e}")
+        
+        # Process uploaded image if provided (takes precedence over auto-detected)
+        # Note: If image_base64 was auto-loaded, we skip this step
+        if image is not None and image_base64 is None:
             # Validate file type
             if not image.content_type or not image.content_type.startswith('image/'):
                 raise HTTPException(status_code=400, detail="File must be an image")
@@ -351,7 +435,9 @@ async def ask_about_chart(
                 # Fallback to raw data
                 image_base64 = base64.b64encode(image_data).decode('utf-8')
             
-            print(f"[INFO] Image mode: Image processed ({len(image_base64)} chars base64)")
+            print(f"[INFO] Image mode: Uploaded image processed ({len(image_base64)} chars base64)")
+        elif image_base64:
+            print(f"[INFO] Image mode: Auto-loaded chart image ({len(image_base64)} chars base64)")
         else:
             print("[INFO] Text-only mode: No image provided")
         

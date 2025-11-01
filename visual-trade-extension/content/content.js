@@ -1681,7 +1681,10 @@ async function showTeachCopilotModal() {
   teachCopilotModal.innerHTML = `
     <div class="vtc-modal-content" style="max-width: 900px; max-height: 90vh;">
       <div class="vtc-modal-header">
-        <h3>🎓 Teach Copilot</h3>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 24px;">🎓</span>
+          <h3 style="margin: 0;">Teach Copilot</h3>
+        </div>
         <button class="vtc-close-modal" id="vtc-close-teach-copilot">✕</button>
       </div>
       <div class="vtc-modal-body">
@@ -1708,16 +1711,39 @@ async function showTeachCopilotModal() {
           <textarea id="vtc-teach-lesson-input" placeholder="Explain the BOS and POI here..." style="width: 100%; min-height: 120px; padding: 12px; background: #1a1a1a; color: #fff; border: 1px solid #333; border-radius: 6px; font-family: inherit; resize: vertical;"></textarea>
           <div style="display: flex; gap: 10px; margin-top: 12px;">
             <button id="vtc-teach-voice" class="vtc-btn-secondary" style="flex: 1;">🎙️ Voice</button>
+            <button id="vtc-teach-preview" class="vtc-btn-secondary" style="flex: 1;">👁️ Preview Overlay</button>
             <button id="vtc-teach-save" class="vtc-btn-primary" style="flex: 1;">💾 Save Lesson</button>
-            <button id="vtc-teach-feedback" class="vtc-btn-secondary" style="flex: 1;">🧠 Get Feedback</button>
+            <button id="vtc-teach-skip" class="vtc-btn-secondary" style="flex: 1;">⏭️ Skip</button>
           </div>
           <div id="vtc-teach-status" style="margin-top: 12px; padding: 8px; border-radius: 6px; min-height: 20px; font-size: 0.9em;"></div>
         </div>
       </div>
+      <!-- Phase 5C: Live status band and chips -->
+      <div id="teach-status-band" style="background: #1e1e1e; color: #ddd; padding: 6px 10px; border-top: 1px solid #333; font-size: 13px;">Waiting for lesson input...</div>
+      <div id="lesson-chips" style="display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px; background: #1a1a1a; border-top: 1px solid #333;"></div>
     </div>
   `;
   
   document.body.appendChild(teachCopilotModal);
+  
+  // Phase 5C: Add styling for chips
+  const style = document.createElement('style');
+  style.textContent = `
+    .teach-chip {
+      background: #2b2b2b;
+      color: #ccc;
+      border-radius: 8px;
+      padding: 3px 8px;
+      font-size: 12px;
+      border: 1px solid #444;
+      font-weight: 500;
+    }
+    .teach-chip.bos { border-color: #00B0FF; color: #00B0FF; }
+    .teach-chip.poi { border-color: #4FC3F7; color: #4FC3F7; }
+    .teach-chip.bias { border-color: #9CCC65; color: #9CCC65; }
+    .teach-chip.conf { border-color: #FFCA28; color: #FFCA28; }
+  `;
+  document.head.appendChild(style);
   
   // Event listeners
   document.getElementById("vtc-close-teach-copilot").onclick = () => {
@@ -1726,11 +1752,54 @@ async function showTeachCopilotModal() {
   
   document.getElementById("vtc-teach-trade-select").addEventListener("change", onTeachTradeSelected);
   document.getElementById("vtc-teach-save").onclick = saveTeachLesson;
-  document.getElementById("vtc-teach-feedback").onclick = () => {
-    document.getElementById("vtc-teach-status").textContent = "🧠 AI feedback feature coming soon in Phase 5B";
-    document.getElementById("vtc-teach-status").style.background = "rgba(33, 150, 243, 0.1)";
-    document.getElementById("vtc-teach-status").style.color = "#2196f3";
+  document.getElementById("vtc-teach-preview").onclick = generatePreview;
+  document.getElementById("vtc-teach-skip").onclick = async () => {
+    try {
+      const res = await fetch("http://127.0.0.1:8765/teach/skip", { method: "POST" });
+      const data = await res.json();
+      if (data.status === "skipped") {
+        const statusEl = document.getElementById("vtc-teach-status");
+        statusEl.textContent = `⏭️ Trade skipped. Moved to index ${data.next_trade_index}`;
+        statusEl.style.background = "rgba(255, 193, 7, 0.1)";
+        statusEl.style.color = "#ffc107";
+        // Clear chips and input
+        const chipContainer = document.getElementById("lesson-chips");
+        if (chipContainer) chipContainer.innerHTML = "";
+        document.getElementById("vtc-teach-lesson-input").value = "";
+        showTeachStatus("Trade skipped. Ready for next trade...", "warning");
+        // Reload trades to update selection
+        await loadTeachCopilotTrades();
+      }
+    } catch (error) {
+      console.error("[TEACH] Skip error:", error);
+    }
   };
+  
+  // Phase 5C: Wire up incremental streaming for lesson input
+  const lessonInput = document.getElementById("vtc-teach-lesson-input");
+  let streamDebounceTimer = null;
+  
+  lessonInput.addEventListener("input", () => {
+    // Debounce streaming to avoid too many requests
+    clearTimeout(streamDebounceTimer);
+    streamDebounceTimer = setTimeout(async () => {
+      const text = lessonInput.value.trim();
+      if (text.length > 10) {  // Only stream if substantial input
+        await streamTeachMessage(text);
+      }
+    }, 500);  // Wait 500ms after user stops typing
+  });
+  
+  // Also trigger on Enter key (but don't submit)
+  lessonInput.addEventListener("keydown", async (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();  // Don't add newline
+      const text = lessonInput.value.trim();
+      if (text) {
+        await streamTeachMessage(text);
+      }
+    }
+  });
   
   // Show modal
   teachCopilotModal.style.display = "flex";
@@ -1812,10 +1881,12 @@ async function onTeachTradeSelected(event) {
     document.getElementById("vtc-teach-trade-info").style.display = "none";
     document.getElementById("vtc-teach-chart-img").style.display = "none";
     document.getElementById("vtc-teach-chart-container").style.display = "flex";
+    selectedTeachCopilotTrade = null; // Clear selection
     return;
   }
   
   const trade = teachCopilotTrades[index];
+  selectedTeachCopilotTrade = trade; // Phase 5B.1: Store selected trade
   displayTeachTradeInfo(trade);
   await loadTeachChart(trade);
 }
@@ -1925,7 +1996,141 @@ function tryPatternMatchChart(symbol, tradeId, chartImg, chartContainer) {
   tryNext();
 }
 
-function saveTeachLesson() {
+// Phase 5C: Incremental streaming function
+async function streamTeachMessage(message) {
+  try {
+    // Check if teaching mode is active
+    const statusRes = await fetch("http://127.0.0.1:8765/teach/status");
+    const status = await statusRes.json();
+    
+    if (!status.teaching_active) {
+      // Auto-start teaching mode if not active
+      await fetch("http://127.0.0.1:8765/teach/start", { method: "POST" });
+    }
+    
+    // Stream the message
+    const response = await fetch("http://127.0.0.1:8765/teach/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message })
+    });
+    
+    const data = await response.json();
+    
+    if (data.status === "updated") {
+      // Update chips
+      updateLessonChips(data.partial_lesson);
+      
+      // Show status/question
+      if (data.next_question) {
+        showTeachStatus(data.next_question, data.missing_fields && data.missing_fields.length > 0 ? "info" : "success");
+      }
+      
+      // Auto-generate preview if we have BOS and POI
+      if (data.partial_lesson.bos && data.partial_lesson.poi && data.partial_lesson.poi.length > 0) {
+        // Trigger preview generation (optional, can be done on demand)
+        // await generatePreview();
+      }
+    }
+    
+    return data;
+  } catch (error) {
+    console.error("[TEACH] Stream error:", error);
+    return null;
+  }
+}
+
+// Phase 5C: Update lesson chips dynamically
+function updateLessonChips(partialLesson) {
+  const chipContainer = document.getElementById("lesson-chips");
+  if (!chipContainer) return;
+  
+  chipContainer.innerHTML = "";
+  
+  if (!partialLesson || typeof partialLesson !== "object") return;
+  
+  // BOS chip
+  if (partialLesson.bos && partialLesson.bos.start && partialLesson.bos.end) {
+    const chip = document.createElement("span");
+    chip.className = "teach-chip bos";
+    chip.textContent = `BOS ${partialLesson.bos.start} → ${partialLesson.bos.end}`;
+    chipContainer.appendChild(chip);
+  }
+  
+  // POI chips
+  if (partialLesson.poi && Array.isArray(partialLesson.poi) && partialLesson.poi.length > 0) {
+    partialLesson.poi.forEach((poi, idx) => {
+      if (poi.low && poi.high) {
+        const chip = document.createElement("span");
+        chip.className = "teach-chip poi";
+        chip.textContent = `POI ${poi.low}–${poi.high}${poi.reason ? ': ' + poi.reason.substring(0, 15) : ''}`;
+        chipContainer.appendChild(chip);
+      }
+    });
+  }
+  
+  // Bias chip
+  if (partialLesson.bias) {
+    const chip = document.createElement("span");
+    chip.className = "teach-chip bias";
+    chip.textContent = `Bias: ${partialLesson.bias}`;
+    chipContainer.appendChild(chip);
+  }
+  
+  // Confidence chip
+  if (partialLesson.confidence_hint !== undefined) {
+    const chip = document.createElement("span");
+    chip.className = "teach-chip conf";
+    chip.textContent = `Conf: ${Math.round(partialLesson.confidence_hint * 100)}%`;
+    chipContainer.appendChild(chip);
+  }
+}
+
+// Phase 5C: Show teaching-specific status
+function showTeachStatus(text, type = "info") {
+  const statusBand = document.getElementById("teach-status-band");
+  if (!statusBand) return;
+  
+  const colors = {
+    info: "#4FC3F7",
+    success: "#66BB6A",
+    warning: "#FFB74D",
+    error: "#EF5350"
+  };
+  
+  statusBand.style.color = colors[type] || "#DDD";
+  statusBand.textContent = text;
+}
+
+// Phase 5C: Generate preview overlay
+async function generatePreview() {
+  try {
+    const response = await fetch("http://127.0.0.1:8765/teach/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({})  // Empty = use session's partial_lesson
+    });
+    
+    const data = await response.json();
+    
+    if (data.status === "ok" && data.overlay_url) {
+      // Update chart preview with overlay
+      const chartImg = document.getElementById("vtc-teach-chart-img");
+      if (chartImg) {
+        chartImg.src = `http://127.0.0.1:8765${data.overlay_url}`;
+        chartImg.style.display = "block";
+        document.getElementById("vtc-teach-chart-container").style.display = "none";
+      }
+    }
+    
+    return data;
+  } catch (error) {
+    console.error("[TEACH] Preview error:", error);
+    return null;
+  }
+}
+
+async function saveTeachLesson() {
   const selectEl = document.getElementById("vtc-teach-trade-select");
   const lessonInput = document.getElementById("vtc-teach-lesson-input");
   const statusEl = document.getElementById("vtc-teach-status");
@@ -1947,30 +2152,98 @@ function saveTeachLesson() {
   }
   
   const trade = teachCopilotTrades[index];
-  if (!chrome || !chrome.storage || !chrome.storage.local) {
-    statusEl.textContent = "Chrome storage API not available";
+  const tradeId = trade.id || trade.trade_id || trade.session_id;
+  
+  if (!tradeId) {
+    statusEl.textContent = "Trade ID not found";
     statusEl.style.background = "rgba(255, 69, 58, 0.1)";
     statusEl.style.color = "#ff453a";
     return;
   }
   
-  const lessonData = {
-    trade_id: trade.session_id || trade.trade_id || trade.id,
-    symbol: trade.symbol,
-    outcome: trade.outcome,
-    explanation: lesson,
-    timestamp: new Date().toISOString()
-  };
+  // Phase 5C: Check if we have a partial lesson from streaming
+  let lessonToSave = lesson;
+  try {
+    const statusRes = await fetch("http://127.0.0.1:8765/teach/status");
+    const status = await statusRes.json();
+    if (status.partial_lesson && status.partial_lesson.lesson_text) {
+      // Use accumulated lesson text if available
+      lessonToSave = status.partial_lesson.lesson_text;
+    }
+  } catch (e) {
+    // Fallback to textarea content
+  }
   
-  chrome.storage.local.set({
-    lastLesson: lessonData,
-    [`lesson_${lessonData.trade_id}`]: lessonData
-  }, () => {
-    statusEl.textContent = `✅ Lesson saved for ${trade.symbol}. (Backend integration in Phase 5B)`;
+  // Phase 5B: Call backend API to record lesson
+  try {
+    statusEl.textContent = "⏳ Saving lesson and extracting BOS/POI...";
+    statusEl.style.background = "rgba(33, 150, 243, 0.1)";
+    statusEl.style.color = "#2196f3";
+    
+    const formData = new FormData();
+    formData.append("trade_id", tradeId.toString());
+    formData.append("lesson_text", lessonToSave);
+    
+    const response = await fetch("http://127.0.0.1:8765/teach/record", {
+      method: "POST",
+      body: formData
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Server error: ${response.status} - ${errorText}`);
+    }
+    
+    const result = await response.json();
+    
+    // Success message with extracted info
+    let successMsg = `✅ Lesson saved for ${trade.symbol}`;
+    if (result.feedback_confidence !== undefined) {
+      successMsg += ` (Confidence: ${(result.feedback_confidence * 100).toFixed(0)}%)`;
+    }
+    if (result.bos_extracted) {
+      successMsg += " | BOS extracted";
+    }
+    if (result.poi_count > 0) {
+      successMsg += ` | ${result.poi_count} POI zone(s)`;
+    }
+    
+    statusEl.textContent = successMsg;
     statusEl.style.background = "rgba(48, 209, 88, 0.1)";
     statusEl.style.color = "#30d158";
+    
+    // Phase 5C: Clear chips and status band
+    const chipContainer = document.getElementById("lesson-chips");
+    if (chipContainer) chipContainer.innerHTML = "";
+    showTeachStatus("Ready to save next lesson...", "success");
+    
     lessonInput.value = "";
-  });
+    
+    // Phase 5C: Clear partial lesson and advance to next trade
+    try {
+      const nextRes = await fetch("http://127.0.0.1:8765/teach/next", { method: "POST" });
+      const nextData = await nextRes.json();
+      if (nextData.status === "ready") {
+        // Optionally reload trades to show updated index
+        // await loadTeachCopilotTrades();
+      }
+    } catch (e) {
+      console.warn("[TEACH] Failed to advance to next trade:", e);
+    }
+    
+    // Clear success message after 5 seconds
+    setTimeout(() => {
+      if (statusEl.textContent === successMsg) {
+        statusEl.textContent = "";
+      }
+    }, 5000);
+    
+  } catch (error) {
+    console.error("[Teach] Failed to save lesson:", error);
+    statusEl.textContent = `Error: ${error.message}`;
+    statusEl.style.background = "rgba(255, 69, 58, 0.1)";
+    statusEl.style.color = "#ff453a";
+  }
 }
 
 // ========== Phase 5A.3: Performance Tab Modal ==========
@@ -2363,6 +2636,28 @@ async function handleSystemCommand(userInput) {
     return "✅ Opened Session Manager";
   }
   
+  // Handle "open teach copilot" locally - trigger teaching modal
+  if (lower.includes('open teach copilot') || lower.includes('start teaching') || 
+      lower.includes('teach copilot') || lower.includes('open teaching') ||
+      lower.includes('review trades one by one') || lower.includes("let's review") ||
+      lower.includes('lets review the trades') || lower.includes("let's teach") ||
+      lower.includes('begin teaching') || lower.includes('teaching mode')) {
+    showTeachCopilotModal();
+    return "🎓 Opening Teach Copilot! Select a trade from the dropdown - the chart image will load automatically when you select it. Then type your lesson and click 'Save Lesson'.";
+  }
+  
+  // Handle "close teach copilot" / "pause teaching" locally
+  if (lower.includes('close teach copilot') || lower.includes('pause teaching') ||
+      lower.includes('pause teaching mode') || lower.includes('close teaching') ||
+      lower.includes('exit teaching mode') || lower.includes('stop teaching') ||
+      lower.includes('discard teaching lesson') || lower.includes('cancel teaching')) {
+    if (teachCopilotModal) {
+      teachCopilotModal.style.display = "none";
+      return "✅ Teach Copilot closed. Teaching mode paused.";
+    }
+    return "✅ Teaching mode is not currently active.";
+  }
+  
   // Handle "list sessions" locally - query IndexedDB directly
   if (lower.includes('list sessions') || lower.includes('show sessions')) {
     try {
@@ -2398,6 +2693,8 @@ async function handleSystemCommand(userInput) {
     lower.includes('my performance') ||
     lower.includes('what model') ||
     lower.includes('clear memory') ||
+    lower.includes('open teach copilot') ||
+    lower.includes('start teaching') ||
     lower === 'help' || lower.includes('commands')
   );
   if (!looksLikeCommand) return null;
@@ -2407,7 +2704,38 @@ async function handleSystemCommand(userInput) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ command: userInput, context: { current_model: selectedModel } })
     }).then(r=>r.json());
-    if (res && res.success) return res.message;
+    
+    if (res && res.success) {
+      // Handle frontend_action if present (e.g., open_teach_copilot, close_teach_copilot)
+      if (res.frontend_action === "open_teach_copilot") {
+        showTeachCopilotModal();
+        // Phase 5B.2: Auto-select trade if trade_id is provided
+        if (res.trade_id) {
+          // Wait for modal to render, then select the trade
+          setTimeout(async () => {
+            await loadTeachCopilotTrades();
+            // Find the trade in the dropdown and select it
+            const selectEl = document.getElementById("vtc-teach-trade-select");
+            if (selectEl && teachCopilotTrades) {
+              const tradeIndex = teachCopilotTrades.findIndex(t => 
+                (t.id == res.trade_id) || (t.trade_id == res.trade_id) || (t.session_id == res.trade_id)
+              );
+              if (tradeIndex >= 0) {
+                selectEl.value = tradeIndex.toString();
+                // Trigger the change event to load the chart
+                selectEl.dispatchEvent(new Event('change'));
+                console.log(`[TEACH] Auto-selected trade ${res.trade_id} at index ${tradeIndex}`);
+              }
+            }
+          }, 500); // Give modal time to render
+        }
+      } else if (res.frontend_action === "close_teach_copilot") {
+        if (teachCopilotModal) {
+          teachCopilotModal.style.display = "none";
+        }
+      }
+      return res.message;
+    }
     if (res && res.message) return res.message;
   } catch (e) {
     console.error('System command error', e);
@@ -2492,6 +2820,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     })();
     return true; // Keep channel open for async response
+  }
+  
+  // Phase 5B.1: Return Teach Copilot state when requested
+  if (message.action === "getTeachCopilotState") {
+    sendResponse({
+      isOpen: teachCopilotModal && teachCopilotModal.style.display !== "none",
+      selectedTrade: selectedTeachCopilotTrade
+    });
+    return false;
   }
   
   // Return chat history when requested

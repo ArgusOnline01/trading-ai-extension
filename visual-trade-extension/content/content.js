@@ -40,7 +40,9 @@ let chatContainer = null;
 let currentSession = null;
 let sessionManagerModal = null;
 let selectedModel = "fast"; // Phase 4A.1: Default GPT-5 Chat (native vision)
-let reasonedCommandsEnabled = (localStorage.getItem('vtc-reasoned-commands') === 'true');
+// DEPRECATED: Reasoned commands toggle - commands are now always AI-extracted
+// Keeping variable for backward compatibility but it's always treated as ON
+let reasonedCommandsEnabled = true; // Always enabled - commands are AI-extracted
 
 // ========== Session Management ==========
 
@@ -98,26 +100,38 @@ async function initializeSession() {
  */
 async function switchSession(sessionId) {
   try {
-    const session = await window.IDB.getSession(sessionId);
-    if (!session) {
-      throw new Error("Session not found");
+    console.log(`[SESSION_SWITCH] Switching to session: ${sessionId}`);
+    
+    // Load new session
+    currentSession = await window.IDB.getSession(sessionId);
+    if (!currentSession) {
+      throw new Error(`Session ${sessionId} not found`);
     }
     
-    currentSession = session;
-    chatHistory = await window.IDB.loadMessages(sessionId);
+    // Set as active
+    await window.IDB.setActiveSession(sessionId);
+    console.log(`[SESSION_SWITCH] Set as active session`);
     
+    // Load messages for this session
+    chatHistory = await window.IDB.loadMessages(sessionId);
+    console.log(`[SESSION_SWITCH] Loaded ${chatHistory.length} messages`);
+    
+    // Update UI
     renderMessages();
     updateSessionStatus();
     
-    showNotification(`🧠 Loaded ${session.symbol} session`, "success");
-    
-    // Close session manager if open
-    if (sessionManagerModal) {
-      closeSessionManager();
+    // Refresh session manager if open
+    if (sessionManagerModal && sessionManagerModal.classList.contains("vtc-modal-visible")) {
+      await renderSessionManager();
     }
+    
+    showNotification(`🧠 Loaded ${currentSession.symbol} session`, "success");
+    
+    return currentSession;
   } catch (error) {
-    console.error("Failed to switch session:", error);
-    showNotification("Error switching session", "error");
+    console.error("[SESSION_SWITCH] Failed to switch session:", error);
+    showNotification("Error switching session: " + error.message, "error");
+    throw error;
   }
 }
 
@@ -130,18 +144,42 @@ async function createNewSession() {
     return;
   }
   
+  await createNewSessionWithSymbol(symbol.trim());
+}
+
+async function createNewSessionWithSymbol(symbol) {
+  if (!symbol) {
+    return;
+  }
+  
   try {
-    const session = await window.IDB.createSession(symbol.trim());
+    console.log(`[SESSION_CREATE] Creating session with symbol: ${symbol}`);
+    const session = await window.IDB.createSession(symbol);
+    console.log(`[SESSION_CREATE] Session created:`, session);
+    
     await switchSession(session.sessionId);
+    console.log(`[SESSION_CREATE] Switched to session: ${session.sessionId}`);
+    
     showNotification(`✅ Created ${session.symbol} session`, "success");
     
     // Refresh session manager if open
     if (sessionManagerModal && sessionManagerModal.classList.contains("vtc-modal-visible")) {
       await renderSessionManager();
+      console.log(`[SESSION_CREATE] Refreshed session manager`);
     }
+    
+    // Update session status display
+    updateSessionStatus();
+    
+    // Close session manager after successful creation
+    setTimeout(() => {
+      if (sessionManagerModal) {
+        sessionManagerModal.classList.remove("vtc-modal-visible");
+      }
+    }, 1000);
   } catch (error) {
-    console.error("Failed to create session:", error);
-    showNotification("Error creating session", "error");
+    console.error("[SESSION_CREATE] Failed to create session:", error);
+    showNotification("Error creating session: " + error.message, "error");
   }
 }
 
@@ -294,7 +332,9 @@ async function showSessionManager() {
  */
 async function renderSessionManager() {
   const sessions = await window.IDB.getAllSessions();
-  console.log(`[Session Manager] Found ${sessions.length} sessions:`, sessions.map(s => s.title));
+  const activeSessionId = localStorage.getItem('vtc_active_session_id') || (currentSession?.sessionId);
+  console.log(`[SESSION_MANAGER] Found ${sessions.length} sessions. Active: ${activeSessionId}`);
+  console.log(`[SESSION_MANAGER] Sessions:`, sessions.map(s => `${s.title} (${s.sessionId})`));
   
   if (!sessionManagerModal) {
     sessionManagerModal = document.createElement("div");
@@ -313,13 +353,14 @@ async function renderSessionManager() {
         <button id="vtc-new-session" class="vtc-btn-primary">➕ New Session</button>
         <div class="vtc-sessions-list">
           ${sessions.map(session => `
-            <div class="vtc-session-item ${currentSession && currentSession.sessionId === session.sessionId ? 'active' : ''}" data-session-id="${session.sessionId}">
+            <div class="vtc-session-item ${session.sessionId === activeSessionId ? 'active' : ''}" data-session-id="${session.sessionId}">
               <div class="vtc-session-info">
                 <div class="vtc-session-symbol">${session.symbol}</div>
                 <div class="vtc-session-title">${session.title}</div>
                 <div class="vtc-session-meta">
                   ${formatTimestamp(session.last_updated)} • 
                   <span class="vtc-session-stats" data-session-id="${session.sessionId}">...</span>
+                  ${session.sessionId === activeSessionId ? '<span class="vtc-active-badge">ACTIVE</span>' : ''}
                 </div>
               </div>
               <div class="vtc-session-actions">
@@ -334,22 +375,34 @@ async function renderSessionManager() {
     </div>
   `;
   
+  // Make modal visible
+  sessionManagerModal.classList.add("vtc-modal-visible");
+  
   // Attach event listeners
   sessionManagerModal.querySelector(".vtc-close-modal").onclick = closeSessionManager;
   sessionManagerModal.querySelector("#vtc-new-session").onclick = createNewSession;
   
   // Load session stats asynchronously
   sessions.forEach(async (session) => {
-    const stats = await window.IDB.getSessionStats(session.sessionId);
-    const statsEl = sessionManagerModal.querySelector(`.vtc-session-stats[data-session-id="${session.sessionId}"]`);
-    if (statsEl) {
-      statsEl.textContent = `${stats.total_messages} messages`;
+    try {
+      const stats = await window.IDB.getSessionStats(session.sessionId);
+      const statsEl = sessionManagerModal.querySelector(`.vtc-session-stats[data-session-id="${session.sessionId}"]`);
+      if (statsEl) {
+        statsEl.textContent = `${stats.total_messages} messages`;
+      }
+    } catch (error) {
+      console.error(`[SESSION_MANAGER] Failed to load stats for ${session.sessionId}:`, error);
     }
   });
   
   // Session action buttons
   sessionManagerModal.querySelectorAll(".vtc-session-load").forEach(btn => {
-    btn.onclick = () => switchSession(btn.dataset.sessionId);
+    btn.onclick = async () => {
+      const sessionId = btn.dataset.sessionId;
+      console.log(`[SESSION_MANAGER] Loading session: ${sessionId}`);
+      await switchSession(sessionId);
+      await renderSessionManager(); // Refresh to show active status
+    };
   });
   
   sessionManagerModal.querySelectorAll(".vtc-session-export").forEach(btn => {
@@ -457,6 +510,10 @@ async function renameSession() {
  * Available globally for use in both normal mode and teaching mode
  */
 window.openChartPopup = function(src) {
+  // === 5F.2 TEST ===
+  console.log("[5F.2 TEST] Chart request triggered:", src);
+  // === 5F.2 TEST ===
+  
   if (!src) {
     console.error("[CHART_POPUP] No source URL provided");
     return;
@@ -619,13 +676,12 @@ window.openChartPopup = function(src) {
   `;
   
   body.innerHTML = `
-    <div style="text-align: center; background: #131722; border-radius: 8px; padding: 15px;">
-      <img id="vtc-chart-side-img" src="${src}" alt="Chart" 
-           style="max-width: 100%; height: auto; border-radius: 6px; cursor: pointer;"
-           onclick="this.style.maxWidth === '100%' ? (this.style.maxWidth='200%', this.style.position='relative', this.style.zIndex='9999') : (this.style.maxWidth='100%', this.style.position='static', this.style.zIndex='auto')"
-           onerror="console.error('[CHART_POPUP] Image failed to load:', this.src); this.style.display='none'; this.parentElement.innerHTML='<p style=\\'color: #ff453a; padding: 20px;\\'>❌ Failed to load chart image. URL: ' + this.src + '</p>';"
-           onload="console.log('[CHART_POPUP] Image loaded successfully:', this.src);">
-    </div>
+    <div id="vtc-chart-loading-indicator" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #888; font-size: 14px;">Loading chart...</div>
+    <img id="vtc-chart-side-img" src="${src}" alt="Chart" 
+         style="max-width: 100%; max-height: calc(100% - 100px); height: auto; border-radius: 6px; cursor: pointer; display: block; margin: 0 auto; object-fit: contain;"
+         onclick="if(this.style.maxWidth === '100%') { this.style.maxWidth='200%'; this.style.position='relative'; this.style.zIndex='9999'; } else { this.style.maxWidth='100%'; this.style.position='static'; this.style.zIndex='auto'; }"
+         onerror="console.error('[CHART_POPUP] Image failed to load:', this.src); document.getElementById('vtc-chart-loading-indicator').innerHTML='<div style=\\'color: #ff453a; padding: 20px; text-align: center;\\'>❌ Failed to load chart image<br/><small>' + this.src + '</small></div>';"
+         onload="console.log('[CHART_POPUP] Image loaded successfully:', this.src); const loading = document.getElementById('vtc-chart-loading-indicator'); if(loading) loading.style.display='none';">
     <div style="margin-top: 15px; padding: 12px; background: #131722; border-radius: 8px; font-size: 12px; color: #888;">
       <div style="margin-bottom: 8px;">💡 <strong>Tip:</strong> Click image to zoom in</div>
       <div>Drag header to move • Drag bottom-right corner to resize</div>
@@ -737,7 +793,7 @@ function ensureChatUI() {
           <button id="sessionManager" title="Session Manager" class="vtc-control-btn">🗂️</button>
           <button id="exportChat" title="Export Session" class="vtc-control-btn">💾</button>
           <button id="clearChat" title="Clear Messages" class="vtc-control-btn">🗑️</button>
-          <button id="toggleReasoned" title="Reasoned Commands (AI decides)" class="vtc-control-btn">🧠</button>
+          <!-- DEPRECATED: Reasoned commands toggle removed - commands are always AI-extracted -->
           <button id="resetSize" title="Reset Size" class="vtc-control-btn">⬜</button>
           <button id="minimizeChat" title="Minimize" class="vtc-control-btn">➖</button>
           <button id="closeChat" title="Close" class="vtc-control-btn">✖️</button>
@@ -864,24 +920,8 @@ function ensureChatUI() {
     document.getElementById("exportChat").onclick = exportCurrentSession;
     document.getElementById("resetSize").onclick = resetChatSize;
     document.getElementById("minimizeChat").onclick = toggleMinimize;
-    // Initialize Reasoned Commands toggle visual state
-    const toggleBtn = document.getElementById("toggleReasoned");
-    const syncToggleVisual = () => {
-      if (reasonedCommandsEnabled) {
-        toggleBtn.classList.add('active');
-        toggleBtn.title = "Reasoned Commands: ON (LLM routes + executes)";
-      } else {
-        toggleBtn.classList.remove('active');
-        toggleBtn.title = "Reasoned Commands: OFF (fast local commands)";
-      }
-    };
-    syncToggleVisual();
-    toggleBtn.onclick = () => {
-      reasonedCommandsEnabled = !reasonedCommandsEnabled;
-      localStorage.setItem('vtc-reasoned-commands', String(reasonedCommandsEnabled));
-      syncToggleVisual();
-      showNotification(`Reasoned Commands ${reasonedCommandsEnabled ? 'ON' : 'OFF'}`, 'success');
-    };
+    // DEPRECATED: Reasoned commands toggle removed - commands are always AI-extracted now
+    // Commands are automatically extracted from AI responses regardless of toggle state
     document.getElementById("closeChat").onclick = () => {
       chatContainer.classList.add("vtc-closing");
       setTimeout(() => {
@@ -954,25 +994,8 @@ function ensureChatUI() {
                                  lower.includes('pull up chart') ||
                                  lower.includes('pull up image');
       
-      if (!reasonedCommandsEnabled || isShowChartCommand) {
-        const sysReply = await handleSystemCommand(question);
-        if (sysReply) {
-          await window.IDB.saveMessage(currentSession.sessionId, "user", question);
-          await window.IDB.saveMessage(currentSession.sessionId, "assistant", sysReply);
-          chatHistory = await window.IDB.loadMessages(currentSession.sessionId);
-          renderMessages();
-          input.value = "";
-          
-          // Phase 5C: If it was a show_chart command and popup should open, the frontend_action handler already ran
-          // Just return here to prevent sending to AI
-          if (isShowChartCommand) {
-            console.log("[SHOW_CHART] Command intercepted, popup should have opened");
-          } else {
-            showNotification("Executed system command", "success");
-          }
-          return;
-        }
-      }
+      // REMOVED: Local command interception - all commands now go through AI extraction
+      // This ensures consistent behavior and proper context handling
       
       // Disable both buttons and show loading
       sendTextBtn.disabled = true;
@@ -996,6 +1019,9 @@ function ensureChatUI() {
         }
         
         // Request chart capture from background/popup (Phase 3B.2: with model selection)
+        // === 5F.2 TEST ===
+        const t0 = performance.now();
+        // === 5F.2 TEST ===
         const response = await chrome.runtime.sendMessage({
           action: "captureAndAnalyze",
           question: question,
@@ -1006,6 +1032,10 @@ function ensureChatUI() {
           reasonedCommands: reasonedCommandsEnabled,
           uploadedImage: uploadedImageData  // Phase 4A.1: Pre-uploaded image data
         });
+        // === 5F.2 TEST ===
+        const t1 = performance.now();
+        console.log("[5F.2 TEST] API call duration:", (t1 - t0).toFixed(1), "ms");
+        // === 5F.2 TEST ===
         
         if (response && response.success) {
           // Message will be added via showOverlay action
@@ -1075,20 +1105,18 @@ function ensureChatUI() {
     logTradeBtn.onclick = async () => {
       console.log("📊 [Log Trade] Button clicked");
       
-      // Check if image is uploaded
-      if (!uploadedImageData) {
-        console.warn("📊 [Log Trade] No image uploaded");
-        showNotification("📤 Please upload a chart image first", "error");
-        return;
-      }
+      // === 5F.2 FIX ===
+      // [5F.2 FIX F5] Allow text-only logging (no image required)
+      const hasImage = !!uploadedImageData;
       
-      console.log("📊 [Log Trade] Image found, starting extraction...");
-      logTradeBtn.disabled = true;
-      logTradeBtn.textContent = "⏳ Extracting...";
-      
-      try {
-        // Send structured extraction prompt to GPT
-        const extractionPrompt = `IMPORTANT: Respond with ONLY a JSON object, nothing else. No markdown, no explanation.
+      if (hasImage) {
+        console.log("📊 [Log Trade] Image found, starting extraction...");
+        logTradeBtn.disabled = true;
+        logTradeBtn.textContent = "⏳ Extracting...";
+        
+        try {
+          // Send structured extraction prompt to GPT
+          const extractionPrompt = `IMPORTANT: Respond with ONLY a JSON object, nothing else. No markdown, no explanation.
 
 Extract these values from the chart:
 {
@@ -1103,18 +1131,18 @@ Extract these values from the chart:
 }
 
 Extract visible price levels. Response must be ONLY the JSON object above with your values.`;
-        
-        const response = await chrome.runtime.sendMessage({
-          action: "captureAndAnalyze",
-          question: extractionPrompt,
-          sessionId: currentSession.sessionId,
-          includeImage: true,
-          model: "fast", // Use GPT-5 Chat for fast extraction
-          uploadedImage: uploadedImageData,
-          forLogTrade: true // Phase 4A.2: Get direct response, not via showOverlay
-        });
-        
-        if (response && response.success) {
+          
+          const response = await chrome.runtime.sendMessage({
+            action: "captureAndAnalyze",
+            question: extractionPrompt,
+            sessionId: currentSession.sessionId,
+            includeImage: true,
+            model: "fast", // Use GPT-5 Chat for fast extraction
+            uploadedImage: uploadedImageData,
+            forLogTrade: true // Phase 4A.2: Get direct response, not via showOverlay
+          });
+          
+          if (response && response.success) {
           console.log("📊 [Log Trade] ✅ Got AI response");
           
           // Parse JSON from AI response
@@ -1167,18 +1195,24 @@ Extract visible price levels. Response must be ONLY the JSON object above with y
             }
           }
           
-          // Open modal with extracted or default values
-          console.log("📊 [Log Trade] Opening modal...");
-          openTradeLogModal(extractedData, aiAnswer);
-        } else {
-          throw new Error(response?.error || "Extraction failed");
+            // Open modal with extracted or default values
+            console.log("📊 [Log Trade] Opening modal...");
+            openTradeLogModal(extractedData, aiAnswer);
+          } else {
+            throw new Error(response?.error || "Extraction failed");
+          }
+        } catch (error) {
+          console.error("Log trade error:", error);
+          showNotification("⚠️ Extraction failed: " + error.message, "error");
+        } finally {
+          logTradeBtn.disabled = false;
+          logTradeBtn.textContent = "📊 Log Trade";
         }
-      } catch (error) {
-        console.error("Log trade error:", error);
-        showNotification("⚠️ Extraction failed: " + error.message, "error");
-      } finally {
-        logTradeBtn.disabled = false;
-        logTradeBtn.textContent = "📊 Log Trade";
+      } else {
+        // === 5F.2 FIX ===
+        // [5F.2 FIX F5] Text-only logging - open modal directly without image extraction
+        console.log("📊 [Log Trade] Opening modal for text-only trade logging");
+        openTradeLogModal(null, null);
       }
     };
     
@@ -1299,7 +1333,10 @@ Extract visible price levels. Response must be ONLY the JSON object above with y
         entry_price: entry,
         stop_loss: stop,
         take_profit: tp,
-        expected_r: expectedR
+        expected_r: expectedR,
+        // === 5F.2 FIX ===
+        // [5F.2 FIX F5] Mark text-only trades (no image uploaded)
+        needs_chart: !uploadedImageData
       };
       
       try {
@@ -1357,6 +1394,134 @@ Extract visible price levels. Response must be ONLY the JSON object above with y
   }
   
   return chatContainer;
+}
+
+/**
+ * Phase 5F.1: Add chart buttons to trade rows after rendering
+ */
+function addChartButtonsToTradeRows(commands_executed) {
+  if (!commands_executed || !Array.isArray(commands_executed)) return;
+  
+  const messagesEl = document.getElementById("vtc-messages");
+  if (!messagesEl) return;
+  
+  commands_executed.forEach(cmd => {
+    const result = cmd.result || {};
+    const data = result.data || {};
+    
+    // Find the last assistant message
+    const assistantMessages = messagesEl.querySelectorAll('.vtc-message.assistant');
+    if (assistantMessages.length === 0) return;
+    
+    const lastMessage = assistantMessages[assistantMessages.length - 1];
+    const messageContent = lastMessage.querySelector('.vtc-message-content');
+    if (!messageContent) return;
+    
+    // Handle list_trades - add buttons to each trade row
+    if (result.command === 'list_trades' && data.trades && Array.isArray(data.trades)) {
+      // === 5F.2 FIX ===
+      // [5F.2 FIX F1] Prefetch top 10 chart URLs
+      const topTrades = data.trades.slice(0, 10);
+      topTrades.forEach(trade => {
+        if (trade.chart_url) {
+          const chartUrl = trade.chart_url.startsWith('http') 
+            ? trade.chart_url 
+            : `http://127.0.0.1:8765${trade.chart_url}`;
+          // Prefetch chart image in background
+          const link = document.createElement('link');
+          link.rel = 'prefetch';
+          link.href = chartUrl;
+          link.as = 'image';
+          document.head.appendChild(link);
+          console.log(`[PREFETCH] Prefetching chart: ${chartUrl}`);
+          // === 5F.2 TEST ===
+          console.log("[5F.2 TEST] Prefetching chart:", chartUrl);
+          // === 5F.2 TEST ===
+        }
+      });
+      
+      data.trades.forEach((trade, index) => {
+        if (trade.chart_url) {
+          // Find the trade row in the message text
+          const tradeId = trade.id || trade.trade_id || trade.session_id;
+          const symbol = trade.symbol || 'UNK';
+          const tradeRowPattern = new RegExp(`Trade #${tradeId}[^]*?`, 'g');
+          const messageText = messageContent.innerHTML;
+          
+          // Create button element
+          const btn = document.createElement('button');
+          btn.className = 'vtc-btn-secondary vtc-chart-btn';
+          btn.textContent = '🖼 Show Chart';
+          btn.style.marginLeft = '10px';
+          btn.style.marginTop = '5px';
+          btn.style.display = 'inline-block';
+          btn.addEventListener('click', () => {
+            const fullUrl = trade.chart_url.startsWith('http') 
+              ? trade.chart_url 
+              : `http://127.0.0.1:8765${trade.chart_url}`;
+            if (window.openChartPopup) {
+              window.openChartPopup(fullUrl);
+              showNotification(`📊 Opening chart for ${symbol} trade #${tradeId}`, "success");
+            }
+          });
+          
+          // Try to append after the trade text
+          // Find the text node containing the trade info and append button
+          const walker = document.createTreeWalker(
+            messageContent,
+            NodeFilter.SHOW_TEXT,
+            null,
+            false
+          );
+          
+          let node;
+          while (node = walker.nextNode()) {
+            if (node.textContent.includes(`Trade #${tradeId}`)) {
+              // Insert button after the parent element
+              const parent = node.parentElement;
+              if (parent && parent.tagName === 'P') {
+                parent.appendChild(btn);
+                break;
+              }
+            }
+          }
+        }
+      });
+    }
+    
+    // Handle view_trade - add button to single trade
+    if (result.command === 'view_trade' && (data.trade || data.chart_url)) {
+      const trade = data.trade || data;
+      if (trade && trade.chart_url) {
+        const tradeId = trade.id || trade.trade_id || trade.session_id;
+        const symbol = trade.symbol || 'UNK';
+        
+        const btn = document.createElement('button');
+        btn.className = 'vtc-btn-secondary vtc-chart-btn';
+        btn.textContent = '🖼 Show Chart';
+        btn.style.marginLeft = '10px';
+        btn.style.marginTop = '5px';
+        btn.style.display = 'inline-block';
+        btn.addEventListener('click', () => {
+          const fullUrl = trade.chart_url.startsWith('http') 
+            ? trade.chart_url 
+            : `http://127.0.0.1:8765${trade.chart_url}`;
+          if (window.openChartPopup) {
+            window.openChartPopup(fullUrl);
+            showNotification(`📊 Opening chart for ${symbol} trade #${tradeId}`, "success");
+          }
+        });
+        
+        // Append to message content
+        const lastParagraph = messageContent.querySelector('p:last-child');
+        if (lastParagraph) {
+          lastParagraph.appendChild(btn);
+        } else {
+          messageContent.appendChild(btn);
+        }
+      }
+    }
+  });
 }
 
 /**
@@ -3119,6 +3284,149 @@ function updateDebugOverlay({ includeImage = false, tokens = null, hybridMode = 
   }, 6000);
 }
 
+// Phase 5F.1: Trade row rendering functions
+function renderTradeRow(trade) {
+  if (!trade) return null;
+  
+  const tradeId = trade.id || trade.trade_id || trade.session_id || 'N/A';
+  const symbol = trade.symbol || 'UNK';
+  const outcome = trade.outcome || (typeof trade.pnl === 'number' ? (trade.pnl > 0 ? 'win' : (trade.pnl < 0 ? 'loss' : 'breakeven')) : 'pending');
+  const rr = trade.r_multiple ?? '-';
+  const timestamp = trade.timestamp || trade.entry_time || trade.date || '';
+  const when = timestamp ? new Date(timestamp).toLocaleString() : '';
+  
+  let row = `\n**Trade #${tradeId}** • ${symbol} • ${outcome} • R:${rr}${when ? ' • ' + when : ''}`;
+  
+  // Chart button will be added via HTML rendering in renderMessages
+  return row;
+}
+
+function renderTradeRows(trades) {
+  if (!Array.isArray(trades) || trades.length === 0) return null;
+  
+  return trades.map(t => renderTradeRow(t)).join('\n');
+}
+
+// Phase 5F.1: Enhanced message rendering with trade buttons
+function formatMessageWithTrades(content, commandsData) {
+  // First, format the message normally
+  let html = formatMessage(content);
+  
+  // Then, check if we need to add trade rows with buttons
+  if (commandsData && commandsData.commands_executed) {
+    commandsData.commands_executed.forEach(cmd => {
+      const result = cmd.result || {};
+      const data = result.data || {};
+      
+      // Handle list_trades
+      if (result.command === 'list_trades' && data.trades) {
+        const tradesContainer = document.createElement('div');
+        tradesContainer.className = 'vtc-trade-list';
+        data.trades.forEach(trade => {
+          const row = createTradeRowElement(trade);
+          tradesContainer.appendChild(row);
+        });
+        // Append after message
+        html += tradesContainer.outerHTML;
+      }
+      
+      // Handle view_trade
+      if (result.command === 'view_trade' && (data.trade || data.chart_url)) {
+        const trade = data.trade || data;
+        if (trade && (trade.id || trade.trade_id)) {
+          const row = createTradeRowElement(trade);
+          html += row.outerHTML;
+        }
+      }
+    });
+  }
+  
+  return html;
+}
+
+function createTradeRowElement(trade) {
+  const row = document.createElement('div');
+  row.className = 'vtc-trade-row';
+  
+  const tradeId = trade.id || trade.trade_id || trade.session_id || 'N/A';
+  const symbol = trade.symbol || 'UNK';
+  const outcome = trade.outcome || (typeof trade.pnl === 'number' ? (trade.pnl > 0 ? 'win' : (trade.pnl < 0 ? 'loss' : 'breakeven')) : 'pending');
+  const rr = trade.r_multiple ?? '-';
+  const timestamp = trade.timestamp || trade.entry_time || trade.date || '';
+  const when = timestamp ? new Date(timestamp).toLocaleString() : '';
+  
+  row.innerHTML = `
+    <div class="vtc-trade-info">
+      <strong>Trade #${tradeId}</strong> • ${symbol} • ${outcome} • R:${rr}${when ? ' • ' + when : ''}
+    </div>
+  `;
+  
+  // Add chart button if chart_url available
+  const chartUrl = trade.chart_url;
+  if (chartUrl) {
+    const btn = document.createElement('button');
+    btn.className = 'vtc-btn-secondary vtc-chart-btn';
+    btn.textContent = '🖼 Show Chart';
+    btn.style.marginLeft = '10px';
+    btn.style.marginTop = '5px';
+    btn.style.display = 'inline-block';
+    btn.addEventListener('click', async () => {
+      // Resolve chart URL if needed
+      let fullUrl = chartUrl.startsWith('http') 
+        ? chartUrl 
+        : `http://127.0.0.1:8765${chartUrl}`;
+      
+      console.log("[TRADE_ROW] Show Chart clicked, URL:", fullUrl);
+      
+      if (window.openChartPopup) {
+        window.openChartPopup(fullUrl);
+        showNotification(`📊 Opening chart for ${symbol} trade #${tradeId}`, "success");
+      } else {
+        showNotification("❌ Chart popup function not available", "error");
+      }
+    });
+    row.appendChild(btn);
+  } else {
+    // No chart_url - try to resolve it on-demand
+    const btn = document.createElement('button');
+    btn.className = 'vtc-btn-secondary vtc-chart-btn';
+    btn.textContent = '🖼 Show Chart';
+    btn.style.marginLeft = '10px';
+    btn.style.marginTop = '5px';
+    btn.style.display = 'inline-block';
+    btn.addEventListener('click', async () => {
+      // Try to resolve chart URL via API
+      const tradeId = trade.id || trade.trade_id || trade.session_id;
+      try {
+        const response = await fetch(`http://127.0.0.1:8765/charts/chart/${tradeId}`);
+        if (response.ok) {
+          const meta = await response.json();
+          const chartPath = meta.chart_path;
+          if (chartPath) {
+            const filename = chartPath.split(/[/\\]/).pop();
+            const fullUrl = `http://127.0.0.1:8765/charts/${filename}`;
+            console.log("[TRADE_ROW] Resolved chart URL:", fullUrl);
+            if (window.openChartPopup) {
+              window.openChartPopup(fullUrl);
+              showNotification(`📊 Opening chart for ${symbol} trade #${tradeId}`, "success");
+            }
+          } else {
+            showNotification("❌ Chart not found for this trade", "error");
+          }
+        } else {
+          showNotification("❌ Chart not available for this trade", "error");
+        }
+      } catch (e) {
+        console.error("[TRADE_ROW] Error resolving chart:", e);
+        showNotification("❌ Error loading chart", "error");
+      }
+    });
+    row.appendChild(btn);
+  }
+  
+  return row;
+}
+
 // ==== Copilot Bridge Intent Handler ====
 async function handleCopilotIntent(userInput) {
   const lower = userInput.toLowerCase();
@@ -3148,53 +3456,8 @@ async function handleCopilotIntent(userInput) {
     const list = res.examples.map((e,i)=>`#${i+1} ${e.symbol} (${e.outcome||'unlabeled'}) – ${e.chart_path}`).join("\n");
     return `🧾 Here are your last ${limit} teaching examples:\n${list}`;
   }
-  // Generic: "what trades I've took/ taken", "list my trades", etc. -> fall back to performance/all
-  const asksListTrades = /\b(what|which|list|show|see)\b[\s\S]*\b(trades|entries)\b/i.test(userInput) ||
-                         lower.includes("what trades i've") || lower.includes("what trades i have") || lower.includes("what trades i took");
-  if (asksListTrades) {
-    const limit = 10;
-    const arr = await fetch(`http://127.0.0.1:8765/performance/all?limit=${limit}`).then(r=>r.json());
-    if (Array.isArray(arr) && arr.length) {
-      const items = arr.slice(-limit).map((t,i)=>{
-        const outcome = t.outcome || (typeof t.pnl === 'number' ? (t.pnl>0?'win':(t.pnl<0?'loss':'breakeven')) : 'pending');
-        const rr = t.r_multiple ?? '-';
-        const when = (t.timestamp||t.entry_time||'').toString().slice(0,19);
-        return `#${i+1} ${t.symbol||'UNK'} ${outcome} R:${rr} ${when}`;
-      }).join("\n");
-      return `📋 Last ${Math.min(limit, arr.length)} trades (from performance logs):\n${items}`;
-    }
-  }
-  // "first trade" (various phrasings) -> show earliest chronologically
-  if (/\bfirst\s+trade\b/i.test(userInput)) {
-    const arr = await fetch(`http://127.0.0.1:8765/performance/all?limit=200`).then(r=>r.json());
-    if (Array.isArray(arr) && arr.length) {
-      const sorted = arr.slice().sort((a,b)=>{
-        const ta = new Date(a.timestamp || a.entry_time || 0).getTime();
-        const tb = new Date(b.timestamp || b.entry_time || 0).getTime();
-        return ta - tb;
-      });
-      const t = sorted[0];
-      const outcome = t.outcome || (typeof t.pnl === 'number' ? (t.pnl>0?'win':(t.pnl<0?'loss':'breakeven')) : 'pending');
-      const rr = t.r_multiple ?? '-';
-      const when = (t.timestamp||t.entry_time||'').toString().slice(0,19);
-      return `📈 First trade: ${t.symbol||'UNK'} ${outcome} R:${rr} ${when}`;
-    }
-  }
-  // "how many can you see" → count
-  if (/how\s+many[\s\S]*can\s+you\s+see/i.test(userInput)) {
-    const arr = await fetch(`http://127.0.0.1:8765/performance/all?limit=1000`).then(r=>r.json());
-    if (Array.isArray(arr)) {
-      return `I can see ${arr.length} trades from the backend logs.`;
-    }
-  }
-  const tradeIdMatch = userInput.match(/trade\s*(\d+)/i) || userInput.match(/#?(\d{6,})/);
-  if (lower.includes('what was trade') || tradeIdMatch) {
-    const id = tradeIdMatch ? tradeIdMatch[1] || tradeIdMatch[0] : lower.match(/\d+/)[0];
-    const res = await fetch(`http://127.0.0.1:8765/copilot/teach/example/${id}`).then(r=>r.json());
-    if (!res.success) return res.message;
-    const e = res.example;
-    return `📈 Trade ${id}: ${e.symbol} (${e.direction}) → ${e.outcome||'unlabeled'}  \nPOI: ${e.poi_range||'N/A'}  BOS: ${e.bos_range||'N/A'}  \nExplanation: ${e.explanation||'Not set yet.'}`;
-  }
+  // Phase 5F.1: Trade-related commands removed - now handled by Intent Analyzer via /ask endpoint
+  // All trade listing, viewing, and chart display now routes through backend command system
   return null;
 }
 
@@ -3203,7 +3466,8 @@ async function handleSystemCommand(userInput) {
   const lower = userInput.toLowerCase();
   
   // Handle UI commands locally (no backend needed)
-  if (lower.includes('close chat') || lower.includes('hide chat') || lower.includes('minimize chat')) {
+  // NOTE: Only handle "close chat" locally, let "minimize chat" go to backend for proper handling
+  if ((lower.includes('close chat') || lower.includes('hide chat')) && !lower.includes('minimize')) {
     const closeBtn = document.getElementById("closeChat");
     if (closeBtn) {
       closeBtn.click();
@@ -3353,9 +3617,14 @@ async function handleSystemCommand(userInput) {
       } else if (res.frontend_action === "show_chart_popup") {
         // Phase 5C: Show chart popup in normal mode
         console.log("[SHOW_CHART] Received show_chart_popup action:", res);
+        console.log("[SHOW_CHART] Full response data:", JSON.stringify(res, null, 2));
         
-        if (!res.chart_url) {
+        // Try multiple ways to get chart_url
+        const chartUrl = res.chart_url || res.data?.chart_url || res.chartUrl;
+        
+        if (!chartUrl) {
           console.error("[SHOW_CHART] No chart_url in response:", res);
+          console.error("[SHOW_CHART] Available keys:", Object.keys(res));
           showNotification("❌ Chart URL not found. Chart may not be available for this trade.", "error");
           return res.message || "Error: No chart URL provided";
         }
@@ -3366,19 +3635,19 @@ async function handleSystemCommand(userInput) {
           return res.message || "Error: Chart popup function not loaded";
         }
         
-        const chartUrl = res.chart_url.startsWith('http') 
-          ? res.chart_url 
-          : `http://127.0.0.1:8765${res.chart_url}`;
+        const fullUrl = chartUrl.startsWith('http') 
+          ? chartUrl 
+          : `http://127.0.0.1:8765${chartUrl}`;
         
-        console.log("[SHOW_CHART] Opening chart popup:", chartUrl);
-        console.log("[SHOW_CHART] Debug info:", res.debug || "none");
+        console.log("[SHOW_CHART] Opening chart popup:", fullUrl);
+        console.log("[SHOW_CHART] Debug info:", res.debug || res.data?.debug || "none");
         
         try {
-          window.openChartPopup(chartUrl);
-          console.log("[SHOW_CHART] Popup opened successfully");
-          showNotification(`📊 Opening chart for ${res.symbol || 'trade'} ${res.trade_id}...`, "success");
+          window.openChartPopup(fullUrl);
+          console.log("[SHOW_CHART] ✅ Popup opened successfully");
+          showNotification(`📊 Opening chart for ${res.symbol || res.data?.symbol || 'trade'} ${res.trade_id || res.data?.trade_id || ''}...`, "success");
         } catch (error) {
-          console.error("[SHOW_CHART] Error opening popup:", error);
+          console.error("[SHOW_CHART] ❌ Error opening popup:", error);
           showNotification(`❌ Failed to open chart: ${error.message}`, "error");
         }
       } else if (res.frontend_action === "close_chat") {
@@ -3406,6 +3675,128 @@ async function handleSystemCommand(userInput) {
         resetChatSize();
       } else if (res.frontend_action === "show_session_manager") {
         showSessionManager();
+      } else if (res.frontend_action === "create_session_prompt") {
+        // Open session manager and trigger new session creation
+        showSessionManager();
+        setTimeout(() => {
+          const newSessionBtn = document.getElementById("vtc-new-session");
+          if (newSessionBtn) {
+            // If symbol was extracted, pre-fill it
+            const symbol = res.data?.symbol;
+            if (symbol) {
+              // Create session directly with the symbol
+              createNewSessionWithSymbol(symbol);
+            } else {
+              newSessionBtn.click();
+            }
+          }
+        }, 500);
+      } else if (res.frontend_action === "delete_session") {
+        // Delete session directly using session ID or name
+        const sessionId = res.data?.session_id;
+        const sessionName = res.data?.session_name || res.data?.symbol;
+        const additionalIds = res.data?.additional_session_ids || []; // For multiple deletions
+        
+        console.log(`[DELETE_SESSION] Received:`, { sessionId, sessionName, additionalIds, resData: res.data });
+        
+        // Delete multiple sessions if provided
+        const sessionsToDelete = [sessionId, ...additionalIds].filter(Boolean);
+        
+        if (sessionsToDelete.length > 0) {
+          // Delete all specified sessions without confirmation (AI-initiated)
+          console.log(`[DELETE_SESSION] Deleting ${sessionsToDelete.length} session(s) by ID`);
+          (async () => {
+            try {
+              for (const sid of sessionsToDelete) {
+                await window.IDB.deleteSession(sid);
+                console.log(`[DELETE_SESSION] ✅ Deleted session: ${sid}`);
+              }
+              
+              // If deleting current session, switch to another or create new
+              if (currentSession && sessionsToDelete.includes(currentSession.sessionId)) {
+                const sessions = await window.IDB.getAllSessions();
+                if (sessions.length > 0) {
+                  await switchSession(sessions[0].sessionId);
+                } else {
+                  // Create default session
+                  const newSession = await window.IDB.createSession("CHART", "Default Session");
+                  await switchSession(newSession.sessionId);
+                }
+              }
+              
+              showNotification(`✅ Deleted ${sessionsToDelete.length} session(s)`, "success");
+              
+              // Refresh session manager if open
+              if (sessionManagerModal) {
+                await renderSessionManager();
+              }
+            } catch (error) {
+              console.error("Failed to delete session(s):", error);
+              showNotification("❌ Failed to delete session(s)", "error");
+            }
+          })();
+        } else if (sessionName) {
+          // Find ALL sessions matching name/symbol and delete them
+          (async () => {
+            try {
+              const allSessions = await window.IDB.getAllSessions();
+              const matchingSessions = allSessions.filter(s => {
+                const sId = s.sessionId || '';
+                const sSymbol = (s.symbol || '').toLowerCase();
+                const sTitle = (s.title || '').toLowerCase();
+                const searchName = sessionName.toLowerCase();
+                
+                return sId.includes(searchName) || 
+                       sSymbol.includes(searchName) ||
+                       sTitle.includes(searchName) ||
+                       sId.toLowerCase().includes(searchName);
+              });
+              
+              if (matchingSessions.length > 0) {
+                console.log(`[SESSION_DELETE] Found ${matchingSessions.length} matching session(s) for "${sessionName}"`);
+                
+                // Delete all matching sessions
+                for (const session of matchingSessions) {
+                  await window.IDB.deleteSession(session.sessionId);
+                  console.log(`[SESSION_DELETE] ✅ Deleted session: ${session.sessionId} (${session.symbol})`);
+                }
+                
+                // If deleting current session, switch to another or create new
+                const deletedCurrentSession = matchingSessions.some(s => 
+                  currentSession && currentSession.sessionId === s.sessionId
+                );
+                
+                if (deletedCurrentSession) {
+                  const remainingSessions = await window.IDB.getAllSessions();
+                  if (remainingSessions.length > 0) {
+                    await switchSession(remainingSessions[0].sessionId);
+                  } else {
+                    // Create default session
+                    const newSession = await window.IDB.createSession("CHART", "Default Session");
+                    await switchSession(newSession.sessionId);
+                  }
+                }
+                
+                showNotification(`✅ Deleted ${matchingSessions.length} session(s)`, "success");
+                
+                // Refresh session manager if open
+                if (sessionManagerModal) {
+                  await renderSessionManager();
+                }
+              } else {
+                // Fallback: open session manager
+                showSessionManager();
+                showNotification(`Could not find session "${sessionName}". Please select it from the list.`, "warning");
+              }
+            } catch (error) {
+              console.error("Delete session error:", error);
+              showNotification("Error deleting session", "error");
+            }
+          })();
+        } else {
+          // No session specified - open manager
+          showSessionManager();
+        }
       } else if (res.frontend_action === "view_lessons") {
         // Open Teach Copilot and show lessons viewer
         showTeachCopilotModal();
@@ -3466,7 +3857,50 @@ async function handleSystemCommand(userInput) {
           chartPanel.style.display = "none";
         }
       }
-      return res.message;
+      
+      // Phase 5F.1: Add trade rows to message if response contains trade data
+      let responseMessage = res.message || "Command executed.";
+      
+      if (res.data) {
+        // Handle list_trades response
+        if (res.data.trades && Array.isArray(res.data.trades)) {
+          responseMessage += "\n\n";
+          res.data.trades.forEach(trade => {
+            const row = renderTradeRow(trade);
+            if (row) {
+              responseMessage += row + "\n";
+            }
+          });
+        }
+        // Handle view_trade response (single trade)
+        if (res.data.trade) {
+          const row = renderTradeRow(res.data.trade);
+          if (row) {
+            responseMessage += "\n\n" + row;
+          }
+        }
+        // Handle view_trade response (chart_url at top level)
+        if (res.data.chart_url && res.command === "view_trade") {
+          const trade = res.data.trade || res.data;
+          if (trade && trade.id) {
+            const row = renderTradeRow(trade);
+            if (row) {
+              responseMessage += "\n\n" + row;
+            }
+          }
+        }
+      }
+      
+      // Phase 5F.1: Store command data for button rendering (will be added after message is saved)
+      if (res && res.success && res.data) {
+        // Store in a global variable for button rendering after save
+        window._lastCommandData = {
+          command: res.command,
+          data: res.data
+        };
+      }
+      
+      return responseMessage;
     }
     if (res && res.message) return res.message;
   } catch (e) {
@@ -3525,15 +3959,57 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // Save user question
         await window.IDB.saveMessage(currentSession.sessionId, "user", question);
         
-        // Save assistant response
-        await window.IDB.saveMessage(currentSession.sessionId, "assistant", response.answer);
+        // Phase 5D: Append command execution summary if available
+        let assistantMessage = response.answer;
+        if (response.summary) {
+          assistantMessage += "\n\n**Command Summary:**\n" + response.summary;
+        }
         
-        // Phase 4A: Auto-detect trade logging (DISABLED - use "📊 Log Trade" button instead)
-        // await detectAndLogTrade(question, response.answer, currentSession.context || {});
+        // Phase 5F.1: Add trade rows with chart buttons if commands_executed contains trade commands
+        if (response.commands_executed && Array.isArray(response.commands_executed)) {
+          response.commands_executed.forEach(cmd => {
+            const result = cmd.result || {};
+            const data = result.data || {};
+            
+            // Handle list_trades
+            if (result.command === 'list_trades' && data.trades && Array.isArray(data.trades)) {
+              assistantMessage += '\n\n';
+              data.trades.forEach(trade => {
+                const tradeRow = renderTradeRow(trade);
+                if (tradeRow) {
+                  assistantMessage += tradeRow + '\n';
+                }
+              });
+            }
+            
+            // Handle view_trade
+            if (result.command === 'view_trade' && (data.trade || data.chart_url)) {
+              const trade = data.trade || data;
+              if (trade && (trade.id || trade.trade_id)) {
+                const tradeRow = renderTradeRow(trade);
+                if (tradeRow) {
+                  assistantMessage += '\n\n' + tradeRow;
+                }
+              }
+            }
+          });
+        }
+        
+        // Save assistant response
+        await window.IDB.saveMessage(currentSession.sessionId, "assistant", assistantMessage);
+        
+        // Phase 5F.1: Also store commands_executed data for rendering trade buttons
+        // We'll need to enhance renderMessages to check for stored command data
+        // For now, the trade rows are in the message text, buttons will be added after render
         
         // Reload messages and render
         chatHistory = await window.IDB.loadMessages(currentSession.sessionId);
         renderMessages();
+        
+        // Phase 5F.1: After rendering, add chart buttons to trade rows
+        setTimeout(() => {
+          addChartButtonsToTradeRows(response.commands_executed);
+        }, 100);
         
         // Update context
         await updateSessionContext();
@@ -3561,6 +4037,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       selectedTrade: selectedTeachCopilotTrade
     });
     return false;
+  }
+  
+  // Return conversation history for command execution
+  if (message.action === "getConversationHistory") {
+    (async () => {
+      try {
+        if (!currentSession) {
+          await initializeSession();
+        }
+        
+        // Get last 20 messages for command context (recent enough to find current trade)
+        const messages = await window.IDB.loadMessages(currentSession.sessionId, 20);
+        const formattedHistory = messages.map(msg => ({
+          role: msg.role || (msg.sender === "user" ? "user" : "assistant"),
+          content: msg.content || msg.text || msg.message || ""
+        }));
+        
+        sendResponse({ messages: formattedHistory });
+      } catch (error) {
+        console.error("Failed to get conversation history:", error);
+        sendResponse({ messages: [] });
+      }
+    })();
+    return true; // Keep channel open for async response
   }
   
   // Return chat history when requested
@@ -3679,6 +4179,245 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     showPerformanceTabModal();
     sendResponse({ status: "opened" });
     return false;
+  }
+  
+  // CRITICAL FIX: Handle frontend actions from background.js (when reasoned commands enabled)
+  if (message.action === "executeFrontendAction") {
+    const frontendAction = message.frontend_action;
+    const actionData = message.data || {};
+    
+    console.log(`[FRONTEND_ACTION] Received from background: ${frontendAction}`, actionData);
+    
+    // Execute the frontend action using the same logic as handleSystemCommand
+    // Wrap async operations in IIFE
+    (async () => {
+      if (frontendAction === "minimize_chat") {
+        const minimizeBtn = document.getElementById("minimizeChat");
+        if (minimizeBtn) {
+          minimizeBtn.click();
+          console.log("[FRONTEND_ACTION] ✅ Clicked minimize button");
+        } else {
+          console.error("[FRONTEND_ACTION] ❌ Minimize button not found");
+        }
+      } else if (frontendAction === "close_chat") {
+        const closeBtn = document.getElementById("closeChat");
+        if (closeBtn) closeBtn.click();
+      } else if (frontendAction === "open_chat") {
+        ensureChatUI();
+        if (chatContainer) {
+          chatContainer.classList.add("vtc-visible");
+          chatContainer.style.display = "flex";
+        }
+      } else if (frontendAction === "resize_chat") {
+        const sizeHint = actionData?.size_hint;
+        if (chatContainer) {
+          if (sizeHint === "bigger") {
+            chatContainer.style.width = Math.min(parseInt(chatContainer.style.width || "400") + 100, 1200) + "px";
+          } else if (sizeHint === "smaller") {
+            chatContainer.style.width = Math.max(parseInt(chatContainer.style.width || "400") - 100, 300) + "px";
+          }
+        }
+      } else if (frontendAction === "reset_chat_size") {
+        resetChatSize();
+      } else if (frontendAction === "show_session_manager") {
+        showSessionManager();
+      } else if (frontendAction === "create_session_prompt") {
+        showSessionManager();
+        setTimeout(() => {
+          const newSessionBtn = document.getElementById("vtc-new-session");
+          if (newSessionBtn) {
+            const symbol = actionData?.symbol;
+            if (symbol) {
+              createNewSessionWithSymbol(symbol);
+            } else {
+              newSessionBtn.click();
+            }
+          }
+        }, 500);
+      } else if (frontendAction === "delete_session") {
+        // Delete session directly using session ID or name
+        const sessionId = actionData?.session_id;
+        const sessionName = actionData?.session_name || actionData?.symbol;
+        const additionalIds = actionData?.additional_session_ids || []; // For multiple deletions
+        
+        console.log(`[FRONTEND_ACTION] delete_session received:`, { sessionId, sessionName, additionalIds, actionData });
+        
+        // Delete multiple sessions if provided
+        const sessionsToDelete = [sessionId, ...additionalIds].filter(Boolean);
+        
+        if (sessionsToDelete.length > 0) {
+          // Delete all specified sessions
+          console.log(`[FRONTEND_ACTION] Deleting ${sessionsToDelete.length} session(s) by ID`);
+          try {
+            for (const sid of sessionsToDelete) {
+              await window.IDB.deleteSession(sid);
+              console.log(`[FRONTEND_ACTION] ✅ Deleted session: ${sid}`);
+            }
+            
+            // If deleting current session, switch to another or create new
+            if (currentSession && sessionsToDelete.includes(currentSession.sessionId)) {
+              const sessions = await window.IDB.getAllSessions();
+              if (sessions.length > 0) {
+                await switchSession(sessions[0].sessionId);
+              } else {
+                // Create default session
+                const newSession = await window.IDB.createSession("CHART", "Default Session");
+                await switchSession(newSession.sessionId);
+              }
+            }
+            
+            showNotification(`✅ ${sessionsToDelete.length} session(s) deleted`, "success");
+            
+            // Refresh session manager if open
+            if (sessionManagerModal) {
+              await renderSessionManager();
+            }
+          } catch (error) {
+            console.error("Failed to delete session(s):", error);
+            showNotification("❌ Failed to delete session(s)", "error");
+          }
+        } else if (sessionName) {
+          // Find ALL sessions matching name/symbol and delete them
+          try {
+            const allSessions = await window.IDB.getAllSessions();
+            const matchingSessions = allSessions.filter(s => {
+              const sId = s.sessionId || '';
+              const sSymbol = (s.symbol || '').toLowerCase();
+              const sTitle = (s.title || '').toLowerCase();
+              const searchName = sessionName.toLowerCase();
+              
+              return sId.includes(searchName) || 
+                     sSymbol.includes(searchName) ||
+                     sTitle.includes(searchName) ||
+                     sId.toLowerCase().includes(searchName);
+            });
+            
+            if (matchingSessions.length > 0) {
+              console.log(`[FRONTEND_ACTION] Found ${matchingSessions.length} matching session(s) for "${sessionName}"`);
+              
+              // Delete all matching sessions
+              for (const session of matchingSessions) {
+                // Skip confirmation for AI-initiated deletions
+                await window.IDB.deleteSession(session.sessionId);
+                console.log(`[FRONTEND_ACTION] ✅ Deleted session: ${session.sessionId} (${session.symbol})`);
+              }
+              
+              // If deleting current session, switch to another or create new
+              const deletedCurrentSession = matchingSessions.some(s => 
+                currentSession && currentSession.sessionId === s.sessionId
+              );
+              
+              if (deletedCurrentSession) {
+                const remainingSessions = await window.IDB.getAllSessions();
+                if (remainingSessions.length > 0) {
+                  await switchSession(remainingSessions[0].sessionId);
+                } else {
+                  // Create default session
+                  const newSession = await window.IDB.createSession("CHART", "Default Session");
+                  await switchSession(newSession.sessionId);
+                }
+              }
+              
+              showNotification(`✅ Deleted ${matchingSessions.length} session(s)`, "success");
+              
+              // Refresh session manager if open
+              if (sessionManagerModal) {
+                await renderSessionManager();
+              }
+            } else {
+              // Fallback: open session manager
+              showSessionManager();
+              showNotification(`Could not find session "${sessionName}". Please select it from the list.`, "warning");
+            }
+          } catch (error) {
+            console.error("Delete session error:", error);
+            showNotification("Error deleting session", "error");
+          }
+        } else {
+          // No session specified - open manager
+          showSessionManager();
+        }
+      } else if (frontendAction === "rename_session") {
+        const newName = actionData?.new_name;
+        const targetSessionId = actionData?.current_session_id || currentSession?.sessionId;
+        
+        console.log(`[FRONTEND_ACTION] rename_session received:`, { newName, targetSessionId, actionData });
+        
+        if (newName && targetSessionId) {
+          try {
+            // Update session title in IndexedDB
+            await window.IDB.updateSession(targetSessionId, { title: newName.trim() });
+            
+            // Update local state
+            if (currentSession && currentSession.sessionId === targetSessionId) {
+              currentSession.title = newName.trim();
+              const statusEl = document.getElementById("vtc-session-status");
+              if (statusEl) {
+                statusEl.textContent = `🧠 ${newName.trim()}`;
+              }
+            }
+            
+            showNotification(`✅ Session renamed to "${newName}"`, "success");
+            
+            // Refresh session manager if open
+            if (sessionManagerModal) {
+              await renderSessionManager();
+            }
+          } catch (error) {
+            console.error("Failed to rename session:", error);
+            showNotification("❌ Failed to rename session", "error");
+          }
+        } else {
+          // Fallback: prompt user
+          renameSession();
+        }
+      } else if (frontendAction === "show_chart_popup") {
+        // Try multiple ways to get chart_url
+        const chartUrl = actionData?.chart_url || actionData?.chartUrl;
+        console.log("[FRONTEND_ACTION] show_chart_popup received:", { chartUrl, actionData });
+        
+        if (chartUrl && window.openChartPopup) {
+          const fullUrl = chartUrl.startsWith('http') ? chartUrl : `http://127.0.0.1:8765${chartUrl}`;
+          console.log("[FRONTEND_ACTION] Opening chart popup:", fullUrl);
+          window.openChartPopup(fullUrl);
+          showNotification("📊 Chart popup opened", "success");
+        } else {
+          console.error("[FRONTEND_ACTION] No chart_url in actionData:", actionData);
+          showNotification("❌ Chart URL not found", "error");
+        }
+      } else if (frontendAction === "close_chart_popup") {
+        const chartPanel = document.getElementById("vtc-chart-side-panel");
+        if (chartPanel) chartPanel.style.display = "none";
+      } else if (frontendAction === "open_teach_copilot") {
+        showTeachCopilotModal();
+        if (actionData?.trade_id) {
+          setTimeout(async () => {
+            await loadTeachCopilotTrades();
+            const selectEl = document.getElementById("vtc-teach-trade-select");
+            if (selectEl && teachCopilotTrades) {
+              const tradeIndex = teachCopilotTrades.findIndex(t => 
+                (t.id == actionData.trade_id) || (t.trade_id == actionData.trade_id)
+              );
+              if (tradeIndex >= 0) {
+                selectEl.value = tradeIndex.toString();
+                selectEl.dispatchEvent(new Event('change'));
+              }
+            }
+          }, 500);
+        }
+      } else if (frontendAction === "close_teach_copilot") {
+        if (teachCopilotModal) {
+          teachCopilotModal.style.display = "none";
+        }
+      }
+      
+      sendResponse({ status: "executed", frontend_action: frontendAction });
+    })().catch(err => {
+      console.error("[FRONTEND_ACTION] Error executing action:", err);
+      sendResponse({ status: "error", error: err.message });
+    });
+    
+    return true; // Keep channel open for async response
   }
 });
 

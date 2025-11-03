@@ -7,11 +7,19 @@ import statistics
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from .models import TradeRecord
+import time
+import threading
 
-
+# === 5F.2 FIX ===
 # Phase 4D.3: Use absolute path anchored to this module to avoid CWD issues
 DATA_DIR = Path(__file__).parent.parent / "data"
 LOG_FILE = str(DATA_DIR / "performance_logs.json")
+
+# TTL cache for read_logs() [5F.2 FIX F1]
+_logs_cache = None
+_logs_cache_timestamp = 0
+_logs_cache_lock = threading.Lock()
+LOGS_CACHE_TTL = 10  # seconds
 
 
 def ensure_data_dir():
@@ -23,14 +31,39 @@ def ensure_data_dir():
 
 
 def read_logs() -> List[Dict[str, Any]]:
-    """Read all trade logs from JSON file"""
-    ensure_data_dir()
-    try:
-        with open(LOG_FILE, 'r') as f:
-            raw = json.load(f)
-            return [normalize_trade(trade) for trade in raw]
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []
+    """Read all trade logs from JSON file with TTL cache [5F.2 FIX F1]"""
+    global _logs_cache, _logs_cache_timestamp
+    
+    current_time = time.time()
+    
+    with _logs_cache_lock:
+        # Check if cache is valid
+        if _logs_cache is not None and (current_time - _logs_cache_timestamp) < LOGS_CACHE_TTL:
+            print(f"[PERFORMANCE] Using cached logs (age: {current_time - _logs_cache_timestamp:.1f}s)")
+            return _logs_cache
+        
+        # Cache expired or not set - read from file
+        ensure_data_dir()
+        try:
+            with open(LOG_FILE, 'r') as f:
+                raw = json.load(f)
+                _logs_cache = [normalize_trade(trade) for trade in raw]
+                _logs_cache_timestamp = current_time
+                print(f"[PERFORMANCE] Loaded {len(_logs_cache)} trades from file (cache set)")
+                return _logs_cache
+        except (FileNotFoundError, json.JSONDecodeError):
+            _logs_cache = []
+            _logs_cache_timestamp = current_time
+            return _logs_cache
+
+
+def invalidate_logs_cache():
+    """Invalidate the logs cache (call after write operations) [5F.2 FIX F1]"""
+    global _logs_cache, _logs_cache_timestamp
+    with _logs_cache_lock:
+        _logs_cache = None
+        _logs_cache_timestamp = 0
+        print("[PERFORMANCE] Logs cache invalidated")
 
 
 def write_logs(logs: List[Dict[str, Any]]):
@@ -38,6 +71,7 @@ def write_logs(logs: List[Dict[str, Any]]):
     ensure_data_dir()
     with open(LOG_FILE, 'w') as f:
         json.dump(logs, f, indent=2)
+    invalidate_logs_cache()  # [5F.2 FIX F1] Clear cache after write
 
 
 def _parse_timestamp(entry_time: str) -> str:
@@ -144,6 +178,16 @@ def get_trade_by_session(session_id: str) -> Optional[Dict[str, Any]]:
     logs = read_logs()
     for trade in logs:
         if trade["session_id"] == session_id:
+            return trade
+    return None
+
+
+def get_trade_by_id(trade_id: int) -> Optional[Dict[str, Any]]:
+    """Get a specific trade by numeric ID"""
+    logs = read_logs()
+    for trade in logs:
+        # Check both 'id' and 'trade_id' fields
+        if trade.get('id') == trade_id or trade.get('trade_id') == trade_id:
             return trade
     return None
 

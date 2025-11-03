@@ -100,6 +100,17 @@ window.IDB.openDB = async function openDB() {
  */
 window.IDB.createSession = async function createSession(symbol, title = null) {
   const db = await window.IDB.openDB();
+  
+  // Check for existing sessions with same symbol to prevent duplicates
+  const existingSessions = await window.IDB.getAllSessions();
+  const duplicateSessions = existingSessions.filter(s => 
+    s.symbol && s.symbol.toUpperCase() === symbol.toUpperCase()
+  );
+  
+  if (duplicateSessions.length > 0) {
+    console.warn(`[IDB] Found ${duplicateSessions.length} existing session(s) with symbol "${symbol}". Creating new session anyway (sessions can have duplicate symbols).`);
+  }
+  
   const sessionId = `${symbol}-${Date.now()}`;
   const session = {
     sessionId,
@@ -121,8 +132,14 @@ window.IDB.createSession = async function createSession(symbol, title = null) {
     const store = transaction.objectStore("sessions");
     const request = store.add(session);
 
-    request.onsuccess = () => resolve(session);
-    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      console.log(`[IDB] Created session: ${sessionId} (${symbol})`);
+      resolve(session);
+    };
+    request.onerror = () => {
+      console.error(`[IDB] Failed to create session:`, request.error);
+      reject(request.error);
+    };
   });
 }
 
@@ -202,28 +219,61 @@ window.IDB.updateSession = async function updateSession(sessionId, updates) {
 window.IDB.deleteSession = async function deleteSession(sessionId) {
   const db = await window.IDB.openDB();
   
+  // First verify the session exists
+  const session = await window.IDB.getSession(sessionId);
+  if (!session) {
+    console.warn(`[IDB] Session ${sessionId} not found, skipping deletion`);
+    return Promise.resolve();
+  }
+  
+  console.log(`[IDB] Deleting session: ${sessionId} (${session.symbol || 'unknown'})`);
+  
   return new Promise(async (resolve, reject) => {
     const transaction = db.transaction(["sessions", "messages"], "readwrite");
     
     // Delete session
     const sessionsStore = transaction.objectStore("sessions");
-    sessionsStore.delete(sessionId);
+    const deleteRequest = sessionsStore.delete(sessionId);
+    
+    deleteRequest.onsuccess = () => {
+      console.log(`[IDB] ✅ Session deleted: ${sessionId}`);
+    };
+    deleteRequest.onerror = () => {
+      console.error(`[IDB] ❌ Failed to delete session:`, deleteRequest.error);
+      reject(deleteRequest.error);
+      return;
+    };
     
     // Delete all messages for this session
     const messagesStore = transaction.objectStore("messages");
     const index = messagesStore.index("sessionId");
     const request = index.openCursor(IDBKeyRange.only(sessionId));
     
+    let messageCount = 0;
     request.onsuccess = (e) => {
       const cursor = e.target.result;
       if (cursor) {
         messagesStore.delete(cursor.primaryKey);
+        messageCount++;
         cursor.continue();
+      } else {
+        console.log(`[IDB] Deleted ${messageCount} message(s) for session ${sessionId}`);
       }
     };
+    request.onerror = () => {
+      console.error(`[IDB] ❌ Failed to delete messages:`, request.error);
+      reject(request.error);
+      return;
+    };
 
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
+    transaction.oncomplete = () => {
+      console.log(`[IDB] ✅ Transaction complete: Session ${sessionId} and ${messageCount} messages deleted`);
+      resolve();
+    };
+    transaction.onerror = () => {
+      console.error(`[IDB] ❌ Transaction error:`, transaction.error);
+      reject(transaction.error);
+    };
   });
 }
 
@@ -352,6 +402,7 @@ window.IDB.exportSession = async function exportSession(sessionId) {
 
 /**
  * Get the most recent active session (or create default if none exist)
+ * Checks localStorage first, then falls back to most recently updated
  * @returns {Promise<Object>}
  */
 window.IDB.getActiveSession = async function getActiveSession() {
@@ -362,7 +413,27 @@ window.IDB.getActiveSession = async function getActiveSession() {
     return await window.IDB.createSession("CHART", "Default Session");
   }
   
+  // Check localStorage for active session ID
+  const activeSessionId = localStorage.getItem('vtc_active_session_id');
+  if (activeSessionId) {
+    const activeSession = sessions.find(s => s.sessionId === activeSessionId);
+    if (activeSession) {
+      return activeSession;
+    }
+  }
+  
   return sessions[0]; // Most recently updated
+}
+
+/**
+ * Set active session (stores in localStorage)
+ * @param {string} sessionId
+ * @returns {Promise<void>}
+ */
+window.IDB.setActiveSession = async function setActiveSession(sessionId) {
+  // Store in localStorage as active session marker
+  localStorage.setItem('vtc_active_session_id', sessionId);
+  console.log(`[IDB] Set active session: ${sessionId}`);
 }
 
 /**

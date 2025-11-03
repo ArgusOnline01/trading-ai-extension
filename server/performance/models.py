@@ -23,6 +23,9 @@ class TradeRecord(BaseModel):
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
     expected_r: Optional[float] = None  # Expected R:R at entry
+    # === 5F.2 FIX ===
+    # [5F.2 FIX F5] Text-only logging support
+    needs_chart: bool = False  # True if trade logged without chart image
 
 
 class TradeUpdate(BaseModel):

@@ -12,6 +12,7 @@ def extract_trade_id_from_text(text: str) -> Optional[int]:
         return None
     
     id_patterns = [
+        r'\btrade\s*#?\s*(\d+)',  # "Trade#7" or "trade 7" or "Trade #7"
         r'\bid\s*[:\s]+(\d{8,})',
         r'trade\s+(?:id\s+)?(\d{8,})',
         r'ID\s+(\d{8,})',
@@ -140,24 +141,127 @@ def detect_trade_reference(message: str, all_trades: List[Dict[str, Any]] = None
             # Search backwards through conversation history for trade mentions (most recent first)
             # Check both user and assistant messages for trade context
             for msg in reversed(conversation_history[-15:]):  # Check last 15 messages
-                content = str(msg.get('content', '')).upper()
+                content = str(msg.get('content', ''))
+                content_upper = content.upper()
                 role = msg.get('role', '')
                 
-                # Priority 1: Look for explicit symbol mentions (e.g., "MNQZ5", "first trade: MNQZ5")
-                # Check for symbol patterns - especially in context like "first trade: MNQZ5"
+                # Priority 1: Extract trade ID from message (most reliable)
+                # Also check for "Trade#7" format explicitly
+                trade_id_patterns = [
+                    r'\btrade\s*#?\s*(\d+)',  # "Trade#7" or "trade 7"
+                    r'\btrade\s+(?:number\s+)?(\d+)',  # "trade number 7"
+                ]
+                trade_id = None
+                for pattern in trade_id_patterns:
+                    match = re.search(pattern, content, re.IGNORECASE)
+                    if match:
+                        try:
+                            trade_id = int(match.group(1))
+                            break
+                        except (ValueError, IndexError):
+                            continue
+                
+                # If no match from patterns, try extract_trade_id_from_text
+                if not trade_id:
+                    trade_id = extract_trade_id_from_text(content)
+                
+                if trade_id:
+                    # For short IDs like "7", need to match against trade index or find by symbol+context
+                    if trade_id < 1000:
+                        # This is likely a trade number/index, not a full trade ID
+                        # Try to find by matching symbol from the same message
+                        symbol_match = re.search(r'\b([A-Z]{2,6}\d{0,1})\b', content_upper)
+                        if symbol_match:
+                            symbol = symbol_match.group(1)
+                            # Find all trades with this symbol, sort by date, then get by index
+                            matching_trades = [t for t in all_trades if t.get('symbol', '').upper() == symbol]
+                            if matching_trades:
+                                sorted_trades = sorted(matching_trades,
+                                                      key=lambda t: t.get('timestamp') or t.get('entry_time') or '',
+                                                      reverse=True)
+                                if trade_id <= len(sorted_trades):
+                                    trade = sorted_trades[trade_id - 1]  # Convert to 0-based index
+                                    print(f"[TRADE_DETECTOR] Found trade #{trade_id} ({symbol}) from conversation: '{content[:100]}'")
+                                    return trade
+                    
+                    # Try to match full trade ID
+                    trade = next((t for t in all_trades if (t.get('id') == trade_id or 
+                                                           t.get('trade_id') == trade_id or
+                                                           str(t.get('id')) == str(trade_id))), None)
+                    if trade:
+                        print(f"[TRADE_DETECTOR] Found specific trade {trade_id} from conversation history: '{content[:100]}'")
+                        return trade
+                
+                # Priority 2: Look for symbol + date combination (e.g., "6EZ5 from 10/29" or "6EZ5 on 2025-10-23")
+                # This is CRITICAL to avoid matching wrong trade when multiple trades have same symbol
+                symbol_match = re.search(r'\b([A-Z]{2,6}\d{0,1})\b', content_upper)
+                if symbol_match:
+                    symbol = symbol_match.group(1)
+                    
+                    # Extract date patterns from the same message
+                    date_patterns = [
+                        r'(\d{1,2})/(\d{1,2})/(\d{2,4})',  # 10/29/2025
+                        r'(\d{1,2})/(\d{1,2})',  # 10/29
+                        r'(\d{4})-(\d{2})-(\d{2})',  # 2025-10-23
+                    ]
+                    
+                    for date_pattern in date_patterns:
+                        date_match = re.search(date_pattern, content)
+                        if date_match:
+                            # Find trade matching BOTH symbol AND date
+                            for trade in all_trades:
+                                if trade.get('symbol', '').upper() == symbol:
+                                    trade_date = trade.get('timestamp') or trade.get('entry_time') or trade.get('date')
+                                    if trade_date:
+                                        date_str = str(trade_date)
+                                        # Check if date components match
+                                        if any(d in date_str for d in date_match.groups()):
+                                            print(f"[TRADE_DETECTOR] Found trade {symbol} with date from conversation: '{content[:100]}'")
+                                            return trade
+                
+                # Priority 3: Look for symbol + outcome (e.g., "6EZ5 loss")
+                if symbol_match:
+                    symbol = symbol_match.group(1)
+                    outcome_keywords = {
+                        'win': ['win', 'won', 'profit', 'positive', r'\+'],
+                        'loss': ['loss', 'lose', 'negative', 'red', r'-'],
+                        'breakeven': ['breakeven', 'even', 'zero']
+                    }
+                    
+                    for outcome_type, keywords in outcome_keywords.items():
+                        if any(re.search(kw, content, re.IGNORECASE) for kw in keywords):
+                            # Find trade matching symbol and outcome
+                            matching_trades = [
+                                t for t in all_trades
+                                if t.get('symbol', '').upper() == symbol and
+                                (t.get('outcome', '').lower() == outcome_type or
+                                 (outcome_type == 'win' and t.get('pnl', 0) > 0) or
+                                 (outcome_type == 'loss' and t.get('pnl', 0) < 0) or
+                                 (outcome_type == 'breakeven' and t.get('pnl', 0) == 0))
+                            ]
+                            if matching_trades:
+                                # Return most recent matching trade
+                                sorted_matches = sorted(matching_trades,
+                                                       key=lambda t: t.get('timestamp') or t.get('entry_time') or '',
+                                                       reverse=True)
+                                print(f"[TRADE_DETECTOR] Found trade {symbol} {outcome_type} from conversation: '{content[:100]}'")
+                                return sorted_matches[0]
+                
+                # Priority 4: Look for explicit symbol mentions with context (e.g., "first trade: MNQZ5")
+                # Only use this if no date was found above (to avoid wrong trade)
                 symbol_patterns = [
-                    r'\b([A-Z]{2,6}\d{1})\s*\|\s*(?:win|loss|breakeven)',  # "MNQZ5 | win"
-                    r'(?:first|second|third|last|next)\s+(?:trade|one)[\s:]*([A-Z]{2,6}\d{1})',  # "first trade: MNQZ5"
-                    r'✅\s*[^:]*:\s*([A-Z]{2,6}\d{1})',  # "✅ First trade: MNQZ5"
-                    r'\b([A-Z]{2,6}\d{1})\s+win|\b([A-Z]{2,6}\d{1})\s+loss',  # "MNQZ5 win" or "MNQZ5 loss"
+                    r'\b([A-Z]{2,6}\d{0,1})\s*\|\s*(?:win|loss|breakeven)',  # "MNQZ5 | win"
+                    r'(?:first|second|third|last|next)\s+(?:trade|one)[\s:]*([A-Z]{2,6}\d{0,1})',  # "first trade: MNQZ5"
+                    r'✅\s*[^:]*:\s*([A-Z]{2,6}\d{0,1})',  # "✅ First trade: MNQZ5"
+                    r'\b([A-Z]{2,6}\d{0,1})\s+win|\b([A-Z]{2,6}\d{0,1})\s+loss',  # "MNQZ5 win" or "MNQZ5 loss"
                 ]
                 
                 for pattern in symbol_patterns:
-                    matches = re.findall(pattern, content)
+                    matches = re.findall(pattern, content_upper)
                     for match in matches:
                         symbol = match if isinstance(match, str) else (match[0] if match[0] else match[1] if len(match) > 1 else None)
                         if symbol:
-                            # Find most recent trade with this symbol
+                            # Find most recent trade with this symbol (but only if no date/outcome was found)
                             matching = [t for t in all_trades if t.get('symbol', '').upper() == symbol.upper()]
                             if matching:
                                 # Return most recent
@@ -167,19 +271,9 @@ def detect_trade_reference(message: str, all_trades: List[Dict[str, Any]] = None
                                 print(f"[TRADE_DETECTOR] Found trade {symbol} from conversation context: '{content[:100]}'")
                                 return sorted_matches[0]
                 
-                # Priority 2: Extract trade ID from message
-                trade_id = extract_trade_id_from_text(content)
-                if trade_id:
-                    trade = next((t for t in all_trades if (t.get('id') == trade_id or 
-                                                           t.get('trade_id') == trade_id or
-                                                           str(t.get('id')) == str(trade_id))), None)
-                    if trade:
-                        print(f"[TRADE_DETECTOR] Found trade {trade_id} from conversation history")
-                        return trade
-                
-                # Priority 3: Try symbol extraction (e.g., "SILZ5 | loss") - fallback
+                # Priority 5: Try symbol extraction (e.g., "SILZ5 | loss") - fallback
                 if role == 'assistant':
-                    symbol_match = re.search(r'\b([A-Z0-9]{3,6})\s*\|', content)
+                    symbol_match = re.search(r'\b([A-Z0-9]{3,6})\s*\|', content_upper)
                     if symbol_match:
                         symbol = symbol_match.group(1)
                         # Find most recent trade with this symbol

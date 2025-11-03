@@ -132,38 +132,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // all_sessions should already be in sessionContext from content.js, but ensure it exists
 
         // Phase 4D.3.2: If reasoned commands are enabled, execute commands BEFORE AI call
-        let commandResult = null;
-        if (reasonedCommands) {
-          try {
-            // Execute command (or detect if no command) - include session context
-            const cmdContext = {
-              current_model: model,
-              all_sessions: sessionContext?.all_sessions || [],
-              current_session_id: sessionContext?.current_session_id
-            };
-            const cmdRes = await fetch('http://127.0.0.1:8765/memory/system/command', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ command: question, context: cmdContext })
-            }).then(r=>r.json());
-            
-            // If a command was detected and executed, inject result into context
-            if (cmdRes && cmdRes.detected_command) {
-              commandResult = cmdRes;
-              // Inject command result into session context so AI knows what happened
-              sessionContext = sessionContext || {};
-              sessionContext.last_command_result = {
-                command: cmdRes.command,
-                success: cmdRes.success,
-                message: cmdRes.message,
-                data: cmdRes.data
-              };
-              console.log(`[COMMAND] Executed: ${cmdRes.command}, success: ${cmdRes.success}`);
-            }
-          } catch (e) {
-            console.warn('Reasoned command execution failed:', e);
-          }
-        }
+        // NEW APPROACH: Don't pre-filter commands when reasoned mode is ON
+        // Let the AI see ALL text first, then post-process the response to detect and execute commands
+        // This allows the AI to understand context, detect multiple commands, and combine them naturally
 
         // Phase 5B.1: Auto-detect trade if Teach Copilot is open and trade is selected
         let detectedTradeId = null;
@@ -207,10 +178,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         
         let data = await apiResponse.json();
 
-        // Phase 4D.3.2: If command was executed, append result to AI response
-        if (commandResult && commandResult.success && commandResult.message) {
-          const joined = (data.answer || data.response || '') + "\n\n" + commandResult.message;
-          if (data.answer !== undefined) data.answer = joined; else data.response = joined;
+        // NEW: Execute commands extracted by AI from response
+        // Commands are now extracted by AI and returned in commands_executed array
+        let executedCommands = data.commands_executed || [];
+        
+        // Execute frontend actions from command results
+        for (const cmdData of executedCommands) {
+          try {
+            const cmdResult = cmdData.result;
+            
+            if (cmdResult && cmdResult.frontend_action) {
+              console.log(`[COMMAND_EXEC] Executing frontend_action: ${cmdResult.frontend_action}`, cmdResult);
+              
+              // Prepare action data - merge top-level fields with data object
+              const actionData = { ...(cmdResult.data || {}) };
+              
+              // CRITICAL: Chart URL can be at top level or in data
+              if (cmdResult.chart_url) {
+                actionData.chart_url = cmdResult.chart_url;
+              }
+              if (cmdResult.trade_id) {
+                actionData.trade_id = cmdResult.trade_id;
+              }
+              if (cmdResult.symbol) {
+                actionData.symbol = cmdResult.symbol;
+              }
+              
+              console.log(`[COMMAND_EXEC] Action data prepared:`, actionData);
+              
+              // Send frontend action to content script
+              await chrome.tabs.sendMessage(tabId, {
+                action: "executeFrontendAction",
+                frontend_action: cmdResult.frontend_action,
+                data: actionData
+              });
+            }
+          } catch (err) {
+            console.warn("[COMMAND_EXEC] Could not execute frontend action:", err);
+          }
         }
         
         // Phase 3C: Include hybrid mode info in response

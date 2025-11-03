@@ -11,3 +11,9 @@ yfinance>=0.2.28
 mplfinance>=0.12.10b0
 matplotlib>=3.7.0
 pandas>=2.0.0
+
+# Phase 5E: Model-Mediated Command Layer
+pydantic>=2.0.0
+
+# Phase 5D: Command Router Validation (optional, has fallback)
+jsonschema>=4.0.0

@@ -82,3 +82,6 @@ $RECYCLE.BIN/
 *.bak
 *.swp
 .cache/
+
+# LATv2 test logs
+server/tests/results/

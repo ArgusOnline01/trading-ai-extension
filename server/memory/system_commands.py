@@ -7,7 +7,11 @@ import difflib
 from typing import Dict, Any, Optional, Tuple
 from .utils import get_memory_status, load_json, save_json
 from performance.learning import _load_json, LOG_PATH, PROFILE_PATH, generate_learning_profile
+from utils.chart_service import get_chart_url, load_chart_base64
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # Command patterns (lowercase for fuzzy matching)
@@ -51,7 +55,7 @@ COMMAND_PATTERNS = {
     "edit_lesson": ["edit lesson", "update lesson", "modify lesson", "change lesson", "update this lesson"],
     
     # Chart Commands
-    "show_chart": ["show chart", "show image", "show the chart", "display chart", "pull up chart", "show me the chart", "open chart", "view chart", "can you show the chart", "show that chart", "show this chart", "chart please"],
+    "show_chart": ["show chart", "show image", "show the chart", "display chart", "pull up chart", "pull up its chart", "pull up the chart", "pull up image", "pull up its image", "pull up the image", "show me the chart", "open chart", "view chart", "can you show the chart", "show that chart", "show this chart", "chart please"],
     "close_chart": ["close chart", "hide chart", "close image", "close the chart", "close chart popup"],
     
     # System Commands
@@ -90,8 +94,17 @@ def detect_command(user_input: str) -> Optional[str]:
     Detect if user input is a system command using fuzzy matching
     Handles both direct commands and question phrasings
     Returns command key if detected, None otherwise
+    
+    ⚠️ LEGACY: This function is deprecated for trade commands.
+    Trade commands should be routed through Intent Analyzer (Phase 5E).
+    This function is kept only as an emergency fallback.
     """
     user_lower = user_input.lower().strip()
+    
+    # Check if this is a trade-related command (should use Intent Analyzer)
+    trade_keywords = ['trade', 'chart', 'list', 'view', 'next', 'previous']
+    if any(kw in user_lower for kw in trade_keywords):
+        logger.warning(f"LEGACY detect_command() used for trade command: '{user_input}' - should be routed by Intent Analyzer")
     
     # Normalize input to handle question phrasings
     normalized = normalize_input(user_lower)
@@ -123,11 +136,20 @@ def detect_command(user_input: str) -> Optional[str]:
     
     # Finally, try substring matching - check if pattern is contained in input
     # This catches "can you restore last trade" -> "restore last trade"
+    # Also check reversed (input in pattern) for partial matches
     for cmd_key, patterns in COMMAND_PATTERNS.items():
         for pattern in patterns:
             # Check if pattern appears in original or normalized input
             if len(pattern) > 6:
                 if pattern in user_lower or pattern in normalized:
+                    return cmd_key
+            # Also check if input contains key parts of the pattern
+            # For "pull up image", match if user says "pull up image" or similar
+            pattern_words = pattern.split()
+            if len(pattern_words) >= 2:
+                # Check if at least 2 key words from pattern are in input
+                words_in_input = sum(1 for word in pattern_words if len(word) > 2 and word in user_lower)
+                if words_in_input >= min(2, len(pattern_words) - 1):
                     return cmd_key
     
     return None
@@ -229,14 +251,22 @@ def execute_command(command: str, context: Dict[str, Any] = None) -> Dict[str, A
         return execute_skip_trade_teaching_command()
     
     # Trade Management Commands
+    elif command == "list_trades":
+        return execute_list_trades_command(context)
     elif command == "delete_trade":
         return execute_delete_trade_command(context)
     elif command == "view_trade":
         return execute_view_trade_command(context)
     
     # Chart Commands
+    elif command == "show_chart":
+        return execute_show_chart_command(context)
     elif command == "close_chart":
         return execute_close_chart_command()
+    
+    # Teaching Navigation Commands
+    elif command == "previous_trade_teaching":
+        return execute_previous_trade_teaching_command()
     
     else:
         return {
@@ -245,7 +275,7 @@ def execute_command(command: str, context: Dict[str, Any] = None) -> Dict[str, A
         }
 
 
-def execute_stats_command() -> Dict[str, Any]:
+def execute_stats_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
     """Execute 'show my stats' command"""
     try:
         profile = load_json(PROFILE_PATH, {})
@@ -501,36 +531,184 @@ def execute_switch_session_command(context: Dict[str, Any] = None) -> Dict[str, 
     }
 
 def execute_create_session_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
-    """Execute 'create session' command - requires frontend action"""
+    """Execute 'create session' command - uses AI-extracted parameters"""
+    print("[EXECUTE_COMMAND] execute_create_session_command()")
+    context = context or {}
+    
+    # Get AI-extracted parameters
+    detected_command = context.get('detected_command', {})
+    symbol = detected_command.get('symbol') or detected_command.get('session_name') or detected_command.get('name')
+    
+    # Clean up symbol (remove filler words)
+    if symbol:
+        symbol = symbol.strip().upper()
+        # Remove common filler words
+        filler_words = ['CALLED', 'THE', 'A', 'AN']
+        words = symbol.split()
+        filtered_words = [w for w in words if w not in filler_words]
+        if filtered_words:
+            symbol = filtered_words[-1]  # Use last word (usually the actual symbol)
+    
+    if symbol:
+        message = f"➕ **Creating {symbol} Session**\n\nOpening Session Manager to create the session..."
+        result = {
+            "success": True,
+            "command": "create_session",
+            "message": message,
+            "frontend_action": "create_session_prompt",
+            "data": {"symbol": symbol}
+        }
+        print(f"[EXECUTE_COMMAND] execute_create_session_command() → success (symbol: {symbol})")
+        return result
+    
     return {
         "success": True,
         "command": "create_session",
-        "message": "➕ **Create Session**\n\nI can help you create a new session. Click the ➕ New Session button in the Session Manager (🗂️), or tell me the symbol (e.g., 'create session ES').",
+        "message": "➕ **Create Session**\n\nOpening Session Manager. Click the ➕ New Session button, or tell me the symbol (e.g., 'create session ES').",
         "frontend_action": "create_session_prompt",
         "data": {}
     }
 
 def execute_delete_session_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
-    """Execute 'delete session' command - requires frontend action"""
+    """Execute 'delete session' command - uses AI-extracted parameters"""
+    print("[EXECUTE_COMMAND] execute_delete_session_command()")
+    context = context or {}
     all_sessions = context.get("all_sessions", []) if context else []
     
     if not all_sessions:
         return {
-            "success": False,
+            "success": True,
             "command": "delete_session",
-            "message": "⚠️ No sessions available to delete"
+            "message": "📂 **No Sessions to Delete**\n\nYou don't have any sessions yet. Open the Session Manager to create one!",
+            "frontend_action": "show_session_manager",
+            "data": {"available_sessions": []}
         }
+    
+    # Get AI-extracted parameters
+    detected_command = context.get('detected_command', {})
+    session_name = detected_command.get('session_name') or detected_command.get('name')
+    session_id = detected_command.get('session_id') or detected_command.get('id')
+    
+    # If AI didn't extract, fallback to current session for "this session"
+    if not session_name and not session_id:
+        current_session_id = context.get('current_session_id')
+        if current_session_id:
+            # Find current session
+            for session in all_sessions:
+                if session.get('sessionId') == current_session_id:
+                    session_name = session.get('title') or session.get('symbol')
+                    session_id = current_session_id
+                    break
+    
+    if session_name or session_id:
+        # Find matching sessions - handle multiple matches
+        matching_sessions = []
+        for session in all_sessions:
+            sess_id = session.get('sessionId') or session.get('id') or ''
+            sess_symbol = (session.get('symbol') or '').upper()
+            sess_title = (session.get('title') or '').lower()
+            
+            # Match by provided ID
+            if session_id and (session_id in sess_id or sess_id in session_id):
+                matching_sessions.append(session)
+                break  # ID match is unique
+            # Match by name/symbol
+            elif session_name:
+                search_name = session_name.upper()
+                if (search_name in sess_symbol) or (session_name.lower() in sess_title) or (search_name in sess_id.upper()):
+                    matching_sessions.append(session)
+        
+        # Handle multiple matches
+        if len(matching_sessions) > 1:
+            # Multiple sessions match - check if user wants "duplicate", "other", "both", etc.
+            detected_command = context.get('detected_command', {})
+            action_hint = detected_command.get('action_hint', '').lower()
+            
+            # If user said "other", "duplicate", "both", "all" - delete all matching sessions
+            # IMPORTANT: When user says "both", delete ALL matching sessions, not just non-current ones
+            current_session_id = context.get('current_session_id')
+            if any(word in action_hint for word in ['other', 'duplicate', 'both', 'all', '2', 'two']):
+                # If "both" or "all", delete ALL matching sessions
+                if 'both' in action_hint or 'all' in action_hint:
+                    sessions_to_delete = matching_sessions.copy()
+                else:
+                    # For "other" or "duplicate", exclude current session
+                    sessions_to_delete = [s for s in matching_sessions if s.get('sessionId') != current_session_id]
+                    if not sessions_to_delete:
+                        # If current is one of them, delete all except one
+                        sessions_to_delete = matching_sessions[1:]
+                
+                if sessions_to_delete:
+                    # Return first one - backend will handle multiple via frontend_action
+                    # Actually, we should return multiple commands or a special flag
+                    session_id_to_delete = sessions_to_delete[0].get('sessionId')
+                    remaining_ids = [s.get('sessionId') for s in sessions_to_delete[1:]]
+                    
+                    message = f"🗑️ **Deleting {len(sessions_to_delete)} Sessions**\n\nDeleting matching sessions..."
+                    return {
+                        "success": True,
+                        "command": "delete_session",
+                        "message": message,
+                        "frontend_action": "delete_session",
+                        "data": {
+                            "session_name": session_name,
+                            "session_id": session_id_to_delete,
+                            "additional_session_ids": remaining_ids,  # For multiple deletions
+                            "available_sessions": all_sessions
+                        }
+                    }
+            
+            # Otherwise, ask for clarification
+            session_list = "\n".join([f"- {s.get('title')} (ID: {s.get('sessionId')})" for s in matching_sessions])
+            return {
+                "success": True,
+                "command": "delete_session",
+                "message": f"🗑️ **Multiple Sessions Found**\n\nFound {len(matching_sessions)} sessions matching '{session_name}':\n{session_list}\n\nPlease specify which one to delete, or say 'delete both/all' to delete them all.",
+                "frontend_action": "show_session_manager",
+                "data": {"session_name": session_name, "available_sessions": all_sessions, "matching_sessions": matching_sessions}
+            }
+        
+        # Single match
+        matching_session = matching_sessions[0] if matching_sessions else None
+        session_id_to_delete = matching_session.get('sessionId') if matching_session else session_id
+        
+        if session_id_to_delete:
+            message = f"🗑️ **Deleting Session**\n\nDeleting '{session_name}' (ID: {session_id_to_delete[:20]}...)..."
+            result = {
+                "success": True,
+                "command": "delete_session",
+                "message": message,
+                "frontend_action": "delete_session",
+                "data": {
+                    "session_name": session_name,
+                    "session_id": session_id_to_delete,
+                    "available_sessions": all_sessions
+                }
+            }
+            print(f"[EXECUTE_COMMAND] execute_delete_session_command() → success (session: {session_name})")
+            return result
+        else:
+            # Session name provided but not found - still try to delete by name
+            message = f"🗑️ **Deleting Session**\n\nAttempting to delete '{session_name}'..."
+            return {
+                "success": True,
+                "command": "delete_session",
+                "message": message,
+                "frontend_action": "delete_session",
+                "data": {"session_name": session_name, "available_sessions": all_sessions}
+            }
     
     return {
         "success": True,
         "command": "delete_session",
-        "message": "🗑️ **Delete Session**\n\nUse the Session Manager (🗂️ button) to delete sessions, or tell me which session to delete by name.",
+        "message": "🗑️ **Delete Session**\n\nOpening Session Manager. Click the 🗑️ button next to the session you want to delete, or tell me which session (e.g., 'delete session ES').",
         "frontend_action": "show_session_manager",
         "data": {"available_sessions": all_sessions}
     }
 
 def execute_rename_session_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
-    """Execute 'rename session' command - requires frontend action"""
+    """Execute 'rename session' command - uses AI-extracted parameters"""
+    context = context or {}
     current_session_id = context.get("current_session_id") if context else None
     
     if not current_session_id:
@@ -538,6 +716,22 @@ def execute_rename_session_command(context: Dict[str, Any] = None) -> Dict[str, 
             "success": False,
             "command": "rename_session",
             "message": "⚠️ No active session to rename"
+        }
+    
+    # Get AI-extracted parameters
+    detected_command = context.get('detected_command', {})
+    new_name = detected_command.get('new_name') or detected_command.get('name')
+    
+    if new_name:
+        return {
+            "success": True,
+            "command": "rename_session",
+            "message": f"✏️ **Renaming Session**\n\nRenaming to '{new_name}'...",
+            "frontend_action": "rename_session",
+            "data": {
+                "current_session_id": current_session_id,
+                "new_name": new_name
+            }
         }
     
     return {
@@ -596,39 +790,61 @@ def execute_close_teach_copilot_command() -> Dict[str, Any]:
 def execute_show_chart_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
     """
     Execute 'show chart' command - opens chart popup for detected trade
+    Phase 5F.1: Uses unified chart_service for chart resolution
     """
     context = context or {}
     
-    # Try to detect trade from context
+    # Priority 1: Use detected_trade from context (from /ask endpoint)
     detected_trade = context.get('detected_trade')
-    if not detected_trade and context:
-        # Try to detect from conversation history
-        from utils.trade_detector import detect_trade_reference, extract_trade_id_from_text
+    
+    # Priority 2: If not in context, try to detect from conversation history
+    if not detected_trade:
+        from utils.trade_detector import detect_trade_reference
         from performance.utils import read_logs
         
-        all_trades = read_logs()
+        all_trades = context.get('all_trades') or read_logs()
         command_text = context.get('command_text', '')
-        conversation_history = context.get('all_sessions') or []
+        conversation_history = context.get('conversation_history') or context.get('messages') or []
         
-        # Build combined text from command + recent conversation
-        combined_text = command_text
-        if conversation_history:
-            # Add last few messages to help with detection
-            for msg in reversed(conversation_history[-5:]):
-                if msg.get('role') == 'assistant':
-                    combined_text += " " + str(msg.get('content', ''))
-                elif msg.get('role') == 'user':
-                    combined_text += " " + str(msg.get('content', ''))
+        # Check for reference phrases ("its chart", "that trade", etc.)
+        message_lower = command_text.lower()
+        if any(phrase in message_lower for phrase in ['its chart', 'its image', 'the chart', 'that chart', 'this chart', 'that trade', 'this trade', 'pull up its', 'show its']):
+            # Search conversation history for trade mentions
+            if conversation_history and all_trades:
+                recent_text = ""
+                for msg in reversed(conversation_history[-10:]):
+                    if isinstance(msg, dict):
+                        recent_text += " " + str(msg.get('content', ''))
+                    else:
+                        recent_text += " " + str(msg)
+                detected_trade = detect_trade_reference(recent_text, all_trades, conversation_history)
         
-        print(f"[SHOW_CHART] Detecting trade from: '{combined_text[:200]}...'")
-        print(f"[SHOW_CHART] History length: {len(conversation_history)}")
+        # Normal detection flow
+        if not detected_trade:
+            combined_text = command_text
+            if conversation_history:
+                for msg in reversed(conversation_history[-5:]):
+                    if isinstance(msg, dict):
+                        combined_text += " " + str(msg.get('content', ''))
+                    else:
+                        combined_text += " " + str(msg)
+            detected_trade = detect_trade_reference(combined_text, all_trades, conversation_history)
+    
+    # Priority 3: Fallback to most recent trade
+    if not detected_trade:
+        all_trades = context.get('all_trades') or []
+        if not all_trades:
+            try:
+                from performance.utils import read_logs
+                all_trades = read_logs()
+            except:
+                all_trades = []
         
-        detected_trade = detect_trade_reference(combined_text, all_trades, conversation_history)
-        
-        if detected_trade:
-            print(f"[SHOW_CHART] Detected trade: {detected_trade.get('id')} - {detected_trade.get('symbol')}")
-        else:
-            print(f"[SHOW_CHART] No trade detected")
+        if all_trades:
+            sorted_trades = sorted(all_trades, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=True)
+            if sorted_trades:
+                detected_trade = sorted_trades[0]
+                print(f"[SHOW_CHART] Using most recent trade as fallback: {detected_trade.get('id')} - {detected_trade.get('symbol')}")
     
     if not detected_trade:
         return {
@@ -641,48 +857,10 @@ def execute_show_chart_command(context: Dict[str, Any] = None) -> Dict[str, Any]
     trade_id = detected_trade.get('id') or detected_trade.get('trade_id')
     symbol = detected_trade.get('symbol', 'Unknown')
     
-    # Find chart path
-    chart_path = detected_trade.get('chart_path')
-    print(f"[SHOW_CHART] Trade chart_path from object: {chart_path}")
+    # Phase 5F.1: Use unified chart_service
+    chart_url = get_chart_url(detected_trade)
     
-    if not chart_path:
-        # Try to find via metadata API
-        try:
-            import requests
-            meta_response = requests.get(f"http://127.0.0.1:8765/charts/chart/{trade_id}", timeout=2)
-            if meta_response.ok:
-                meta = meta_response.json()
-                chart_path = meta.get('chart_path')
-                print(f"[SHOW_CHART] Found via metadata API: {chart_path}")
-        except Exception as e:
-            print(f"[SHOW_CHART] Metadata API lookup failed: {e}")
-    
-    if not chart_path:
-        # Try to find via file system
-        try:
-            from pathlib import Path
-            charts_dir = Path(__file__).parent.parent / "data" / "charts"
-            print(f"[SHOW_CHART] Searching in: {charts_dir}")
-            
-            if trade_id and symbol:
-                patterns = [
-                    f"{symbol}_5m_{trade_id}.png",
-                    f"{symbol}_5m_{trade_id}*.png",
-                    f"{symbol}_*_{trade_id}.png"
-                ]
-                for pattern in patterns:
-                    matches = list(charts_dir.glob(pattern))
-                    if matches:
-                        chart_path = str(matches[0])
-                        print(f"[SHOW_CHART] Found via pattern {pattern}: {chart_path}")
-                        break
-        except Exception as e:
-            print(f"[SHOW_CHART] File system lookup failed: {e}")
-    
-    if not chart_path:
-        print(f"[SHOW_CHART] Chart not found. Trade: {symbol} {trade_id}")
-    
-    if not chart_path:
+    if not chart_url:
         return {
             "success": False,
             "command": "show_chart",
@@ -690,26 +868,18 @@ def execute_show_chart_command(context: Dict[str, Any] = None) -> Dict[str, Any]
             "frontend_action": None
         }
     
-    # Extract filename for URL
-    import os
-    filename = os.path.basename(chart_path)
-    
-    # Build chart URL (charts are mounted at /charts)
-    chart_url = f"/charts/{filename}"
-    print(f"[SHOW_CHART] Returning chart_url: {chart_url}")
-    print(f"[SHOW_CHART] Full URL will be: http://127.0.0.1:8765{chart_url}")
+    print(f"[SHOW_CHART] Chart resolved via chart_service: {chart_url}")
     
     return {
         "success": True,
         "command": "show_chart",
         "message": f"📊 Opening chart for {symbol} trade {trade_id}...",
         "frontend_action": "show_chart_popup",
-        "trade_id": trade_id,
         "chart_url": chart_url,
-        "symbol": symbol,
-        "debug": {
-            "chart_path": chart_path,
-            "filename": filename
+        "data": {
+            "trade_id": trade_id,
+            "chart_url": chart_url,
+            "symbol": symbol
         }
     }
 
@@ -791,7 +961,7 @@ def execute_open_chat_command() -> Dict[str, Any]:
         "frontend_action": "open_chat"
     }
 
-def execute_minimize_chat_command() -> Dict[str, Any]:
+def execute_minimize_chat_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
     """Execute 'minimize chat' command"""
     return {
         "success": True,
@@ -838,7 +1008,7 @@ def execute_show_session_manager_command() -> Dict[str, Any]:
         "frontend_action": "show_session_manager"
     }
 
-def execute_view_lessons_command() -> Dict[str, Any]:
+def execute_view_lessons_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
     """Execute 'view lessons' command - opens lessons viewer in Teach Copilot"""
     return {
         "success": True,
@@ -905,7 +1075,7 @@ def execute_delete_lesson_command(context: Dict[str, Any] = None) -> Dict[str, A
         # Delete via API
         try:
             import requests
-            response = requests.delete(f"http://127.0.0.1:8765/teach/lessons/{lesson_id}", timeout=5)
+            response = requests.delete(f"http://127.0.0.1:8765/teach/lessons/{lesson_id}", timeout=30)
             if response.status_code == 200:
                 return {
                     "success": True,
@@ -969,7 +1139,7 @@ def execute_teaching_progress_command() -> Dict[str, Any]:
     """Execute 'teaching progress' command"""
     try:
         import requests
-        response = requests.get("http://127.0.0.1:8765/teach/progress", timeout=5)
+        response = requests.get("http://127.0.0.1:8765/teach/progress", timeout=30)
         if response.status_code == 200:
             data = response.json()
             progress = data.get("progress", {})
@@ -1058,11 +1228,84 @@ def execute_end_teaching_command() -> Dict[str, Any]:
             "message": f"⚠️ Error ending teaching session: {str(e)}"
         }
 
+def execute_list_trades_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """
+    Execute 'list trades' command - returns all trades with chart URLs
+    Phase 5F.1: New handler for trade listing
+    """
+    context = context or {}
+    
+    try:
+        # Use direct file read instead of API call to avoid timeout
+        from performance.utils import read_logs
+        trades = read_logs()
+        
+        if not trades:
+            return {
+                "success": True,
+                "command": "list_trades",
+                "message": "📋 No trades found.",
+                "data": {
+                    "trades": [],
+                    "count": 0
+                }
+            }
+        
+        # Phase 5F.1: Sort trades chronologically (oldest first)
+        trades = sorted(trades, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=False)
+        
+        # === 5F.2 FIX ===
+        # [5F.2 FIX F4] Persist trade list snapshot for index consistency
+        from .utils import load_json, save_json
+        from pathlib import Path
+        import time
+        
+        cache_file = Path(__file__).parent.parent / "data" / "trade_list_cache.json"
+        cache_data = {
+            "trades": trades,
+            "timestamp": time.time(),
+            "count": len(trades)
+        }
+        try:
+            save_json(str(cache_file), cache_data)
+            print(f"[LIST_TRADES] Cached trade list snapshot ({len(trades)} trades)")
+        except Exception as e:
+            print(f"[LIST_TRADES] Warning: Failed to cache trade list: {e}")
+        
+        # Phase 5F.1: Attach chart_url to each trade (fast - only check direct chart_path)
+        from utils.chart_service import get_chart_url_fast
+        for trade in trades:
+            chart_url = get_chart_url_fast(trade)
+            if chart_url:
+                trade['chart_url'] = chart_url
+            # If no direct chart_path, chart URL will be resolved on-demand when user clicks "Show Chart"
+        
+        message = f"📋 Found {len(trades)} trades."
+        if len(trades) > 0:
+            message += "\n\nUse the 🖼 Show Chart button below each trade to view its chart."
+        
+        return {
+            "success": True,
+            "command": "list_trades",
+            "message": message,
+            "data": {
+                "trades": trades,
+                "count": len(trades)
+            }
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "command": "list_trades",
+            "message": f"⚠️ Error loading trades: {str(e)}"
+        }
+
+
 def execute_next_trade_teaching_command() -> Dict[str, Any]:
     """Execute 'next trade' command in teaching mode"""
     try:
         import requests
-        response = requests.post("http://127.0.0.1:8765/teach/next", timeout=5)
+        response = requests.post("http://127.0.0.1:8765/teach/next", timeout=30)
         if response.status_code == 200:
             data = response.json()
             return {
@@ -1084,11 +1327,71 @@ def execute_next_trade_teaching_command() -> Dict[str, Any]:
             "message": f"⚠️ Error moving to next trade: {str(e)}"
         }
 
+
+def execute_previous_trade_teaching_command() -> Dict[str, Any]:
+    """
+    Execute 'previous trade' command in teaching mode
+    Phase 5F.1: New handler for backward navigation
+    """
+    try:
+        from .utils import load_json, save_json
+        from pathlib import Path
+        
+        ctx_path = Path(__file__).parent.parent / "data" / "session_contexts.json"
+        ctx = load_json(str(ctx_path), {})
+        
+        if not isinstance(ctx, dict):
+            ctx = {"current_trade_index": 0}
+        
+        current_idx = ctx.get("current_trade_index", 0)
+        if current_idx > 0:
+            ctx["current_trade_index"] = current_idx - 1
+        else:
+            return {
+                "success": False,
+                "command": "previous_trade_teaching",
+                "message": "⚠️ Already at the first trade. Cannot go back further."
+            }
+        
+        save_json(str(ctx_path), ctx)
+        
+        # Try to get current trade and its chart URL
+        trade_id = None
+        chart_url = None
+        try:
+            import requests
+            perf_response = requests.get("http://127.0.0.1:8765/performance/all?limit=1000", timeout=30)
+            if perf_response.status_code == 200:
+                all_trades = perf_response.json()
+                if ctx["current_trade_index"] < len(all_trades):
+                    trade = all_trades[ctx["current_trade_index"]]
+                    trade_id = trade.get('id') or trade.get('trade_id')
+                    chart_url = get_chart_url(trade)
+        except Exception:
+            pass
+        
+        return {
+            "success": True,
+            "command": "previous_trade_teaching",
+            "message": f"⬅️ Moved to trade index {ctx['current_trade_index']}",
+            "data": {
+                "trade_index": ctx["current_trade_index"],
+                "trade_id": trade_id,
+                "chart_url": chart_url
+            }
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "command": "previous_trade_teaching",
+            "message": f"⚠️ Error moving to previous trade: {str(e)}"
+        }
+
 def execute_skip_trade_teaching_command() -> Dict[str, Any]:
     """Execute 'skip trade' command in teaching mode"""
     try:
         import requests
-        response = requests.post("http://127.0.0.1:8765/teach/skip", timeout=5)
+        response = requests.post("http://127.0.0.1:8765/teach/skip", timeout=30)
         if response.status_code == 200:
             data = response.json()
             return {
@@ -1131,7 +1434,7 @@ def execute_delete_trade_command(context: Dict[str, Any] = None) -> Dict[str, An
     if trade_id:
         try:
             import requests
-            response = requests.delete(f"http://127.0.0.1:8765/performance/trades/{trade_id}", timeout=5)
+            response = requests.delete(f"http://127.0.0.1:8765/performance/trades/{trade_id}", timeout=30)
             if response.status_code == 200:
                 return {
                     "success": True,
@@ -1159,52 +1462,374 @@ def execute_delete_trade_command(context: Dict[str, Any] = None) -> Dict[str, An
         }
 
 def execute_view_trade_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
-    """Execute 'view trade' command"""
+    """
+    Execute 'view trade' command
+    Phase 5F.1: Uses Intent Analyzer arguments instead of regex
+    """
     context = context or {}
     
-    # Try to extract trade ID
+    # Phase 5F.1: Extract trade_id from Intent Analyzer arguments (no regex fallback)
     trade_id = None
-    if context.get('trade_id'):
-        trade_id = context['trade_id']
-    elif context.get('detected_trade'):
-        trade_id = context['detected_trade'].get('id') or context['detected_trade'].get('trade_id')
+    detected_command = context.get('detected_command', {})
+    arguments = detected_command.get('arguments', {})
     
+    print(f"[VIEW_TRADE] detected_command: {detected_command}")
+    print(f"[VIEW_TRADE] arguments: {arguments}")
+    
+    # Try arguments.trade_id first
+    trade_id = arguments.get('trade_id')
+    if trade_id:
+        try:
+            trade_id = int(trade_id)
+            print(f"[VIEW_TRADE] Found trade_id from arguments: {trade_id}")
+        except (ValueError, TypeError):
+            trade_id = None
+    
+    # === 5F.2 FIX ===
+    # Try trade_reference (first, last, recent, second, third, fourth, random_win, previous, next, etc.)
+    if not trade_id:
+        trade_reference = arguments.get('trade_reference', '').lower()
+        print(f"[VIEW_TRADE] trade_reference from arguments: '{trade_reference}'")
+        
+        # Normalize "latest" to "last"
+        if trade_reference == 'latest':
+            trade_reference = 'last'
+        
+        # [5F.2 FIX F3] Handle "previous" and "next" using context_manager
+        if trade_reference in ['previous', 'prev', 'back']:
+            from memory.context_manager import get_current_trade_index, decrement_trade_index
+            from performance.utils import read_logs
+            
+            current_idx = get_current_trade_index()
+            if current_idx <= 0:
+                return {
+                    "success": False,
+                    "command": "view_trade",
+                    "message": "⚠️ Already at the first trade. Cannot go back further.",
+                    "data": {"current_index": current_idx}
+                }
+            
+            new_idx = decrement_trade_index()
+            all_trades = context.get('all_trades') or read_logs()
+            if all_trades:
+                # Sort trades chronologically (oldest first) for index-based lookup
+                sorted_trades = sorted(all_trades, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=False)
+                if new_idx is not None and new_idx < len(sorted_trades):
+                    trade_id = sorted_trades[new_idx].get('id') or sorted_trades[new_idx].get('trade_id')
+                    print(f"[VIEW_TRADE] Resolved 'previous' to index {new_idx}, trade ID: {trade_id}")
+                else:
+                    return {
+                        "success": False,
+                        "command": "view_trade",
+                        "message": f"⚠️ Invalid index {new_idx} (total trades: {len(sorted_trades)})"
+                    }
+        
+        elif trade_reference in ['next']:
+            from memory.context_manager import get_current_trade_index, increment_trade_index
+            from performance.utils import read_logs
+            
+            current_idx = get_current_trade_index()
+            new_idx = increment_trade_index()
+            all_trades = context.get('all_trades') or read_logs()
+            if all_trades:
+                # Sort trades chronologically (oldest first) for index-based lookup
+                sorted_trades = sorted(all_trades, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=False)
+                if new_idx < len(sorted_trades):
+                    trade_id = sorted_trades[new_idx].get('id') or sorted_trades[new_idx].get('trade_id')
+                    print(f"[VIEW_TRADE] Resolved 'next' to index {new_idx}, trade ID: {trade_id}")
+                else:
+                    return {
+                        "success": False,
+                        "command": "view_trade",
+                        "message": f"⚠️ Already at the last trade (index {new_idx} of {len(sorted_trades)}). Cannot go forward.",
+                        "data": {"current_index": new_idx, "total_trades": len(sorted_trades)}
+                    }
+        
+        # [5F.2 FIX F2] Handle "random_win" - pick random winning trade
+        elif trade_reference == 'random_win':
+            import random
+            from performance.utils import read_logs
+            
+            all_trades = context.get('all_trades') or read_logs()
+            if all_trades:
+                winning_trades = [t for t in all_trades if t.get('outcome') == 'win' or (isinstance(t.get('pnl'), (int, float)) and t.get('pnl', 0) > 0)]
+                if winning_trades:
+                    random_trade = random.choice(winning_trades)
+                    trade_id = random_trade.get('id') or random_trade.get('trade_id')
+                    print(f"[VIEW_TRADE] Resolved 'random_win' to trade ID: {trade_id} (from {len(winning_trades)} winning trades)")
+                else:
+                    return {
+                        "success": False,
+                        "command": "view_trade",
+                        "message": "❓ No winning trades found. Try 'list my trades' to see all trades."
+                    }
+        
+        # Handle ordinal numbers (first, second, third, etc.)
+        ordinal_map = {
+            'first': 1,
+            'second': 2,
+            'third': 3,
+            'fourth': 4,
+            'fifth': 5,
+            'sixth': 6,
+            'seventh': 7,
+            'eighth': 8,
+            'ninth': 9,
+            'tenth': 10
+        }
+        
+        if trade_reference in ['first', 'last', 'recent']:
+            from performance.utils import read_logs
+            all_trades = context.get('all_trades') or read_logs()
+            if all_trades:
+                # Sort trades by timestamp (most recent first for 'last', oldest first for 'first')
+                # Handle both timestamp formats: ISO string or Unix timestamp
+                def get_timestamp_sort_key(trade):
+                    ts = trade.get('timestamp') or trade.get('entry_time') or ''
+                    if isinstance(ts, (int, float)):
+                        return ts
+                    if isinstance(ts, str):
+                        try:
+                            # Try parsing as ISO datetime string
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                            return dt.timestamp()
+                        except:
+                            # Fallback: try Unix timestamp string
+                            try:
+                                return float(ts)
+                            except:
+                                return 0
+                    return 0
+                
+                sorted_trades = sorted(all_trades, key=get_timestamp_sort_key, reverse=(trade_reference == 'last'))
+                if sorted_trades:
+                    trade_id = sorted_trades[0].get('id') or sorted_trades[0].get('trade_id')
+                    print(f"[VIEW_TRADE] Resolved {trade_reference} trade: {trade_id} (from {len(all_trades)} total trades)")
+                    print(f"[VIEW_TRADE] Selected trade timestamp: {sorted_trades[0].get('timestamp') or sorted_trades[0].get('entry_time')}")
+        elif trade_reference in ordinal_map:
+            # Handle ordinal positions (1-based index)
+            ordinal_index = ordinal_map[trade_reference]
+            from performance.utils import read_logs
+            all_trades = context.get('all_trades') or read_logs()
+            if all_trades:
+                # Sort trades chronologically (oldest first) for ordinal lookup
+                sorted_trades = sorted(all_trades, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=False)
+                if ordinal_index <= len(sorted_trades):
+                    trade_id = sorted_trades[ordinal_index - 1].get('id') or sorted_trades[ordinal_index - 1].get('trade_id')
+                    print(f"[VIEW_TRADE] Resolved {trade_reference} (index {ordinal_index - 1}) trade: {trade_id}")
+                else:
+                    print(f"[VIEW_TRADE] Ordinal {trade_reference} ({ordinal_index}) exceeds trade count ({len(sorted_trades)})")
+    
+    # Fallback: Try to extract from command text if arguments not available
     if not trade_id:
         command_text = context.get('command_text', '')
-        import re
-        id_match = re.search(r'(?:trade|id)\s*[#:]?\s*(\d+)', command_text, re.IGNORECASE)
-        if id_match:
-            trade_id = id_match.group(1)
+        if command_text:
+            import re
+            # Try to extract trade ID from text like "trade #13" or "trade 13"
+            id_match = re.search(r'(?:trade|#)\s*[#:]?\s*(\d+)', command_text, re.IGNORECASE)
+            if id_match:
+                extracted_id = int(id_match.group(1))
+                print(f"[VIEW_TRADE] Extracted ID from command text: {extracted_id}")
+                
+                # Try to find trade by ID first
+                from performance.utils import read_logs
+                all_trades = context.get('all_trades') or read_logs()
+                
+                # Check if this ID exists as a trade ID
+                found_trade = None
+                for t in all_trades:
+                    if (t.get('id') == extracted_id or 
+                        t.get('trade_id') == extracted_id or 
+                        str(t.get('id')) == str(extracted_id) or
+                        str(t.get('trade_id')) == str(extracted_id)):
+                        found_trade = t
+                        break
+                
+                if found_trade:
+                    trade_id = extracted_id
+                    print(f"[VIEW_TRADE] Found trade with ID {extracted_id}")
+                else:
+                    # === 5F.2 FIX ===
+                    # [5F.2 FIX F4] Try to resolve via trade_list_cache.json first
+                    from .utils import load_json
+                    from pathlib import Path
+                    import time
+                    
+                    cache_file = Path(__file__).parent.parent / "data" / "trade_list_cache.json"
+                    cache_stale = True
+                    cached_trades = None
+                    
+                    if cache_file.exists():
+                        try:
+                            cache_data = load_json(str(cache_file), {})
+                            cache_age = time.time() - cache_data.get('timestamp', 0)
+                            if cache_age < 300:  # Cache valid for 5 minutes
+                                cached_trades = cache_data.get('trades', [])
+                                cache_stale = False
+                                print(f"[VIEW_TRADE] Using cached trade list (age: {cache_age:.1f}s)")
+                        except Exception as e:
+                            print(f"[VIEW_TRADE] Failed to load cache: {e}")
+                    
+                    # ID doesn't exist - interpret as index (1-based)
+                    # e.g., "trade #13" means the 13th trade
+                    trades_to_use = cached_trades if cached_trades and not cache_stale else all_trades
+                    
+                    if cache_stale and cached_trades:
+                        # Warn user that cache is stale
+                        print(f"[VIEW_TRADE] Cache stale ({time.time() - cache_data.get('timestamp', 0):.1f}s old), using current trade list")
+                    
+                    if extracted_id <= len(trades_to_use):
+                        # Sort trades by timestamp (oldest first for index-based lookup)
+                        sorted_trades = sorted(trades_to_use, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=False)
+                        if extracted_id - 1 < len(sorted_trades):
+                            trade_id = sorted_trades[extracted_id - 1].get('id') or sorted_trades[extracted_id - 1].get('trade_id')
+                            print(f"[VIEW_TRADE] Interpreting #{extracted_id} as index {extracted_id - 1}, found trade ID: {trade_id}")
+                            if cache_stale:
+                                print(f"[VIEW_TRADE] Note: Trade list cache is stale. Consider running 'list my trades' to refresh.")
+                        else:
+                            print(f"[VIEW_TRADE] Index {extracted_id} exceeds trade count ({len(trades_to_use)})")
+                    elif cache_stale:
+                        return {
+                            "success": False,
+                            "command": "view_trade",
+                            "message": f"⚠️ Trade list cache is stale. Please run 'list my trades' first to refresh the cache, then try again."
+                        }
+            
+            # Try to detect "first", "last", or "latest" from command text
+            elif 'first' in command_text.lower():
+                from performance.utils import read_logs
+                all_trades = context.get('all_trades') or read_logs()
+                if all_trades:
+                    sorted_trades = sorted(all_trades, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=False)
+                    if sorted_trades:
+                        trade_id = sorted_trades[0].get('id') or sorted_trades[0].get('trade_id')
+                        print(f"[VIEW_TRADE] Resolved 'first' from command text: {trade_id}")
+            elif 'last' in command_text.lower() or 'latest' in command_text.lower():
+                from performance.utils import read_logs
+                all_trades = context.get('all_trades') or read_logs()
+                if all_trades:
+                    # Use same timestamp sorting logic as above
+                    def get_timestamp_sort_key(trade):
+                        ts = trade.get('timestamp') or trade.get('entry_time') or ''
+                        if isinstance(ts, (int, float)):
+                            return ts
+                        if isinstance(ts, str):
+                            try:
+                                from datetime import datetime
+                                dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                                return dt.timestamp()
+                            except:
+                                try:
+                                    return float(ts)
+                                except:
+                                    return 0
+                        return 0
+                    sorted_trades = sorted(all_trades, key=get_timestamp_sort_key, reverse=True)
+                    if sorted_trades:
+                        trade_id = sorted_trades[0].get('id') or sorted_trades[0].get('trade_id')
+                        print(f"[VIEW_TRADE] Resolved 'last/latest' from command text: {trade_id}")
+    
+    # Fallback to detected_trade from context
+    if not trade_id:
+        detected_trade = context.get('detected_trade')
+        if detected_trade:
+            trade_id = detected_trade.get('id') or detected_trade.get('trade_id')
+            print(f"[VIEW_TRADE] Using detected_trade from context: {trade_id}")
     
     if trade_id:
         try:
             import requests
-            response = requests.get(f"http://127.0.0.1:8765/performance/trades/{trade_id}", timeout=5)
-            if response.status_code == 200:
-                trade = response.json().get('trade', {})
+            # Try to get trade by ID - first try direct endpoint, then fallback to reading all trades
+            try:
+                # Increase timeout to 30 seconds for trade loading (may need to load chart data)
+                response = requests.get(f"http://127.0.0.1:8765/performance/trades/{trade_id}", timeout=30)
+                if response.status_code == 200:
+                    trade_data = response.json()
+                    # Handle both formats: {"trade": {...}} or direct trade object
+                    trade = trade_data.get('trade', trade_data) if isinstance(trade_data, dict) else trade_data
+                elif response.status_code == 404:
+                    # Try reading from all trades instead
+                    response = requests.get("http://127.0.0.1:8765/performance/all", timeout=30)
+                    if response.status_code == 200:
+                        all_trades = response.json()
+                        trade = next((t for t in all_trades if str(t.get('id')) == str(trade_id) or str(t.get('trade_id')) == str(trade_id)), None)
+                    else:
+                        trade = None
+                else:
+                    trade = None
+            except requests.exceptions.Timeout:
+                # Fallback: read from file directly
+                from performance.utils import read_logs
+                all_trades = read_logs()
+                trade = next((t for t in all_trades if str(t.get('id')) == str(trade_id) or str(t.get('trade_id')) == str(trade_id)), None)
+            
+            if trade:
                 symbol = trade.get('symbol', 'Unknown')
                 outcome = trade.get('outcome', 'pending')
                 pnl = trade.get('pnl', 0)
                 r_multiple = trade.get('r_multiple', 0)
                 
+                # === 5F.2 FIX ===
+                # [5F.2 FIX F1] Parallelize trade fetch + chart resolve (async)
+                # Phase 5F.1: Attach chart_url for inline button (with error handling)
+                chart_url = None
+                try:
+                    chart_url = get_chart_url(trade)
+                except Exception as chart_error:
+                    print(f"[VIEW_TRADE] Warning: Could not resolve chart URL: {chart_error}")
+                    # Continue without chart_url - button will resolve on-demand
+                
+                # [5F.2 FIX F3] Update context_manager with current trade index
+                from memory.context_manager import set_current_trade_index
+                from performance.utils import read_logs
+                all_trades_for_index = context.get('all_trades') or read_logs()
+                if all_trades_for_index:
+                    sorted_trades = sorted(all_trades_for_index, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=False)
+                    for idx, t in enumerate(sorted_trades):
+                        if (t.get('id') == trade_id or t.get('trade_id') == trade_id or
+                            str(t.get('id')) == str(trade_id) or str(t.get('trade_id')) == str(trade_id)):
+                            set_current_trade_index(idx)
+                            print(f"[VIEW_TRADE] Updated current_trade_index to {idx}")
+                            break
+                
                 message = f"📊 **Trade {trade_id} Details**\n\n"
                 message += f"• Symbol: {symbol}\n"
                 message += f"• Outcome: {outcome}\n"
                 message += f"• P&L: ${pnl:.2f}\n"
-                message += f"• R-Multiple: {r_multiple:.2f}R\n"
+                message += f"• R-Multiple: {r_multiple:.2f}R"
+                
+                trade_data = trade.copy()
+                if chart_url:
+                    trade_data['chart_url'] = chart_url
                 
                 return {
                     "success": True,
                     "command": "view_trade",
                     "message": message,
-                    "data": trade
+                    "data": {
+                        "trade": trade_data,
+                        "chart_url": chart_url  # Also at top level for easier access
+                    }
                 }
             else:
                 return {
                     "success": False,
                     "command": "view_trade",
-                    "message": f"⚠️ Could not load trade {trade_id}: {response.text}"
+                    "message": f"❓ Trade {trade_id} not found. Please check the trade ID and try again."
                 }
+        except requests.exceptions.Timeout:
+            return {
+                "success": False,
+                "command": "view_trade",
+                "message": f"⏱️ Request timed out while loading trade {trade_id}. The server may be busy. Please try again."
+            }
+        except requests.exceptions.ConnectionError:
+            return {
+                "success": False,
+                "command": "view_trade",
+                "message": f"🔌 Could not connect to server. Please ensure the backend server is running."
+            }
         except Exception as e:
             return {
                 "success": False,

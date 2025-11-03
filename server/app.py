@@ -2,7 +2,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Dict
 import base64
 import io
 import json
@@ -82,11 +82,27 @@ app.include_router(amn_teaching_router)
 # Mount static files for dashboard (Phase 4B.1)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# === 5F.2 FIX ===
 # Mount chart images (Phase 5A: Teach Copilot)
 from pathlib import Path
 charts_dir = Path(__file__).parent / "data" / "charts"
 if charts_dir.exists():
-    app.mount("/charts", StaticFiles(directory=str(charts_dir)), name="charts")
+    # [5F.2 FIX F1] Add Cache-Control headers for StaticFiles
+    class CachedStaticFiles(StaticFiles):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+        
+        async def __call__(self, scope, receive, send):
+            async def send_wrapper(message):
+                if message["type"] == "http.response.start":
+                    # Add Cache-Control header
+                    headers = dict(message.get("headers", []))
+                    headers[b"cache-control"] = b"public, max-age=604800"  # 7 days
+                    message["headers"] = list(headers.items())
+                await send(message)
+            await super().__call__(scope, receive, send_wrapper)
+    
+    app.mount("/charts", CachedStaticFiles(directory=str(charts_dir)), name="charts")
 
 # Phase 5C: Mount overlay images (serve from overlays directory)
 overlays_dir = Path(__file__).parent / "data" / "amn_training_examples" / "overlays"
@@ -139,14 +155,22 @@ async def startup_event():
     except Exception as e:
         print(f"[LEARNING] Warning: Could not regenerate profile: {e}")
     
-    print("[SYSTEM] Awareness layer initialized")
-    print("[SYSTEM] Commands registered: stats, delete, clear, model, sessions, help")
+    # Initialize awareness layer
+    try:
+        print("[SYSTEM] Awareness layer initialized")
+        print("[SYSTEM] Commands registered: stats, delete, clear, model, sessions, help")
+    except KeyError as e:
+        print(f"[SYSTEM] Awareness layer skipped (missing key: {e})")
+    except Exception as e:
+        print(f"[SYSTEM] Awareness layer initialization warning: {e}")
     print("=" * 60)
 
 # Pydantic models
 class AskResponse(BaseModel):
     model: str
     answer: str
+    commands_executed: List[Dict] = []  # Commands extracted and executed from AI response
+    summary: Optional[str] = None  # Phase 5D: Human-readable command execution summary
 
 @app.get("/")
 async def root():
@@ -338,36 +362,18 @@ async def ask_about_chart(
         detected_trade = None
         
         # If explicit trade_id provided, load chart
+        # DISABLED: Auto-chart loading causes 500 errors with invalid image formats
+        # Use explicit chart commands instead
         if trade_id:
-            from utils.trade_detector import load_chart_image_for_trade
-            from performance.utils import read_logs
-            
-            try:
-                # Convert trade_id to int if it's a string
-                try:
-                    trade_id_int = int(trade_id)
-                except (ValueError, TypeError):
-                    trade_id_int = None
-                
-                all_trades = read_logs()
-                trade = None
-                if trade_id_int:
-                    trade = next((t for t in all_trades if (t.get('id') == trade_id_int or 
-                                                           t.get('trade_id') == trade_id_int or
-                                                           str(t.get('id')) == str(trade_id_int))), None)
-                if trade:
-                    detected_trade = trade
-                    image_base64 = load_chart_image_for_trade(trade)
-                    if image_base64:
-                        print(f"[ASK] Auto-loaded chart for trade {trade_id} ({len(image_base64)} chars base64)")
-                    else:
-                        print(f"[ASK] Trade {trade_id} found but no chart image available")
-            except Exception as e:
-                print(f"[ASK] Failed to auto-load chart for trade_id {trade_id}: {e}")
+            print(f"[ASK] trade_id provided but auto-chart loading disabled - use explicit chart commands")
+            detected_trade = None
+            image_base64 = None
         
-        # If no explicit trade_id but image not provided, try auto-detection
+        # DISABLED: Auto-chart loading for non-commands causes 500 errors
+        # Users should use explicit chart commands or upload images manually
+        # Auto-detection still runs for trade detection context, but won't load charts
         if image is None and image_base64 is None:
-            from utils.trade_detector import detect_trade_reference, load_chart_image_for_trade
+            from utils.trade_detector import detect_trade_reference
             
             try:
                 # Parse context to get all_trades if available
@@ -384,23 +390,19 @@ async def ask_about_chart(
                     from performance.utils import read_logs
                     all_trades = read_logs()
                 
-                # Detect trade reference in question (also check conversation history)
+                # Detect trade reference for context (but don't load chart - causes 500 errors)
                 conversation_history_for_detection = []
                 if messages:
                     try:
                         parsed_messages = json.loads(messages)
-                        conversation_history_for_detection = parsed_messages[-10:]  # Last 10 for trade detection
+                        conversation_history_for_detection = parsed_messages[-10:]
                     except:
                         pass
                 
+                # Detect trade for context only (no chart loading)
                 detected_trade = detect_trade_reference(question, all_trades, conversation_history_for_detection)
                 if detected_trade:
-                    image_base64 = load_chart_image_for_trade(detected_trade)
-                    if image_base64:
-                        trade_id_val = detected_trade.get('id') or detected_trade.get('trade_id')
-                        print(f"[ASK] Auto-detected trade {trade_id_val} in question, loaded chart ({len(image_base64)} chars base64)")
-                    else:
-                        print(f"[ASK] Auto-detected trade but no chart image available")
+                    print(f"[ASK] Detected trade {detected_trade.get('id')} for context (chart loading disabled)")
             except Exception as e:
                 print(f"[ASK] Trade auto-detection failed: {e}")
         
@@ -453,7 +455,7 @@ async def ask_about_chart(
                 # Take last 50 messages for full context (Phase 3B upgrade from 5)
                 conversation_history = parsed_messages[-50:]
                 print(f"[OK] Received {len(conversation_history)} messages for context")
-                print(f"[DEBUG] First message: {conversation_history[0] if conversation_history else 'None'}")
+                # print(f"[DEBUG] First message: {conversation_history[0] if conversation_history else 'None'}")
             except json.JSONDecodeError as e:
                 print(f"[WARNING] Failed to parse messages: {e}")
                 # Continue without history if parsing fails
@@ -468,19 +470,186 @@ async def ask_about_chart(
             except json.JSONDecodeError as e:
                 print(f"Warning: Failed to parse context: {e}")
         
-        # Get OpenAI client and create response with selected model, conversation context, and session state
+        # Phase 5E: Model-Mediated Command Layer - Analyze intent BEFORE processing
+        from ai.intent_analyzer import analyze_intent
+        from utils.command_extractor import normalize_command
+        from utils.command_router import route_command, merge_multi_commands, generate_execution_summary
+        
+        # Analyze user intent FIRST (before auto-loading charts)
+        intent_analysis = analyze_intent(question, conversation_history)
+        
+        # Phase 5E: Confidence threshold (configurable)
+        CONFIDENCE_THRESHOLD = float(os.getenv('INTENT_CONFIDENCE_THRESHOLD', '0.5'))  # Lowered default from 0.6 to 0.5 for better detection
+        
+        # Log intent analysis for debugging
+        print(f"[INTENT_ANALYZER] Result: is_command={intent_analysis.get('is_command')}, confidence={intent_analysis.get('confidence')}, threshold={CONFIDENCE_THRESHOLD}")
+        
+        # If intent analyzer detected a command, DON'T auto-load charts (causes 500 errors and delays)
+        # Commands handle their own chart loading via frontend actions
+        is_command = intent_analysis.get("is_command") and intent_analysis.get("confidence", 0) >= CONFIDENCE_THRESHOLD
+        
+        # CRITICAL: Always clear image_base64 to prevent 500 errors
+        # Auto-chart loading causes invalid image format errors
+        # Users should upload images explicitly or use chart commands
+        image_base64 = None
+        if is_command:
+            print("[ASK] Command detected - skipping auto-chart loading to prevent errors")
+        else:
+            print("[ASK] Non-command mode - auto-chart loading disabled to prevent 500 errors")
+        
+        # Build context for command execution
+        all_trades_for_context = session_context.get('all_trades')
+        if not all_trades_for_context:
+            try:
+                from performance.utils import read_logs
+                all_trades_for_context = read_logs()
+            except:
+                all_trades_for_context = []
+        
+        cmd_context = {
+            **session_context,
+            'conversation_history': conversation_history,
+            'detected_trade': detected_trade,
+            'all_trades': all_trades_for_context,
+            'command_text': question
+        }
+        
+        # If intent analyzer detected a command, execute it directly
+        if is_command:
+            executed_commands = []
+            execution_log = []
+            
+            raw_commands = intent_analysis.get("commands_detected", [])
+            print(f"[INTENT_ANALYZER] Detected {len(raw_commands)} command(s) with confidence {intent_analysis.get('confidence')}")
+            
+            # Deduplicate commands
+            raw_commands = merge_multi_commands(raw_commands)
+            
+            # Route and execute each command
+            for raw_cmd in raw_commands:
+                print(f"[COMMAND_ROUTER] Routing command: {raw_cmd.get('command', 'unknown')}")
+                try:
+                    result = route_command(raw_cmd, cmd_context)
+                    execution_log.append(result)
+                    
+                    executed_commands.append({
+                        'command': result.get('command', 'unknown'),
+                        'result': result
+                    })
+                    
+                    print(f"[COMMAND_ROUTER] Result: {result.get('success')}, frontend_action: {result.get('frontend_action')}")
+                except Exception as cmd_error:
+                    import traceback
+                    error_trace = traceback.format_exc()
+                    print(f"[COMMAND_ROUTER] Error routing command: {cmd_error}")
+                    print(f"[COMMAND_ROUTER] Traceback: {error_trace}")
+                    execution_log.append({
+                        "success": False,
+                        "command": raw_cmd.get('command', 'unknown'),
+                        "message": f"Command execution error: {str(cmd_error)}",
+                        "error": str(cmd_error)
+                    })
+                    executed_commands.append({
+                        'command': raw_cmd.get('command', 'unknown'),
+                        'result': {
+                            "success": False,
+                            "command": raw_cmd.get('command', 'unknown'),
+                            "message": f"⚠️ Error executing command: {str(cmd_error)}",
+                            "error": str(cmd_error)
+                        }
+                    })
+            
+            # Generate execution summary
+            summary_text = generate_execution_summary(execution_log)
+            print(f"[COMMAND_ROUTER] Execution summary:\n{summary_text}")
+            
+            # For commands, generate a brief acknowledgment (no full AI response needed)
+            answer_text = "Command executed successfully."
+            if executed_commands:
+                first_cmd = executed_commands[0].get('result', {})
+                if first_cmd.get('message'):
+                    answer_text = first_cmd.get('message', answer_text)
+            
+            return AskResponse(
+                model="intent-analyzer",
+                answer=answer_text,
+                commands_executed=executed_commands,
+                summary=summary_text
+            )
+        
+        # Not a command - proceed with normal chat flow
+        print(f"[INTENT_ANALYZER] Not a command (confidence: {intent_analysis.get('confidence')}), proceeding with normal chat")
+        
+        # Check if there was an error in intent analysis
+        if intent_analysis.get("error"):
+            print(f"[INTENT_ANALYZER] Warning: Intent analyzer had error: {intent_analysis.get('error')}")
+            print(f"[INTENT_ANALYZER] Falling back to normal chat flow")
+        
+        # Generate AI response using normal flow
+        # IMPORTANT: Only send image_base64 if it's valid and not empty
+        # Invalid image formats cause 500 errors
         client = get_client()
+        
+        # Validate image_base64 before sending (prevent 500 errors)
+        if image_base64:
+            # Check if it's a valid data URL format
+            if not image_base64.startswith('data:image/'):
+                # If it's raw base64, wrap it in data URL
+                if len(image_base64) > 100:  # Basic sanity check
+                    image_base64 = f"data:image/jpeg;base64,{image_base64}"
+                else:
+                    print("[ASK] Invalid image_base64, skipping image")
+                    image_base64 = None
+        
         response = await client.create_response(
-            question, 
-            image_base64, 
+            question=question,
+            image_base64=image_base64,
             model=selected_model,
             conversation_history=conversation_history,
             session_context=session_context
         )
         
+        # Phase 5E: Still check for commands in AI response (for backward compatibility)
+        # This handles cases where AI explicitly mentions commands in its response
+        answer_text = response["answer"]
+        executed_commands = []
+        execution_log = []
+        
+        try:
+            # Legacy: Extract commands from AI response (for cases where AI mentions commands)
+            from utils.command_extractor import extract_commands_from_response
+            
+            raw_commands = extract_commands_from_response(answer_text)
+            print(f"[COMMAND_EXTRACT] Found {len(raw_commands)} command(s) in AI response")
+            
+            if raw_commands:
+                raw_commands = merge_multi_commands(raw_commands)
+                
+                for raw_cmd in raw_commands:
+                    normalized = normalize_command(raw_cmd)
+                    result = route_command(normalized, cmd_context)
+                    execution_log.append(result)
+                    executed_commands.append({
+                        'command': result.get('command', 'unknown'),
+                        'result': result
+                    })
+                
+                summary_text = generate_execution_summary(execution_log)
+            else:
+                summary_text = None
+            
+        except Exception as e:
+            print(f"[COMMAND_EXEC] Error executing commands: {e}")
+            import traceback
+            traceback.print_exc()
+            summary_text = f"❌ **Error**: {str(e)}"
+        
+        # Return response with executed commands info and summary
         return AskResponse(
             model=response["model"],
-            answer=response["answer"]
+            answer=answer_text,
+            commands_executed=executed_commands,
+            summary=summary_text
         )
         
     except HTTPException:

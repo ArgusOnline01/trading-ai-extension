@@ -175,6 +175,11 @@ async def system_command(request: CommandRequest):
                 request.context['detected_trade'] = detected_trade
                 print(f"[SYSTEM_COMMAND] Detected trade {detected_trade.get('id')} for show chart")
         
+        # Always add command_text to context for session commands
+        if detected in ["create_session", "delete_session", "switch_session", "rename_session"]:
+            request.context = request.context or {}
+            request.context['command_text'] = request.command
+        
         # Execute command
         result = execute_command(detected, request.context)
         

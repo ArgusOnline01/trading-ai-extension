@@ -1,7 +1,7 @@
 {
   "teaching_active": false,
-  "current_trade_index": 0,
-  "session_start": "2025-11-01T13:48:59.355479",
+  "current_trade_index": 30,
+  "session_start": "2025-11-02T03:17:28.454246",
   "partial_lesson": {
     "bias": "bullish",
     "confidence_hint": 0.9,
@@ -18,6 +18,6 @@
       }
     ]
   },
-  "session_end": "2025-11-01T13:49:04.408679",
-  "last_session_duration_seconds": 5
+  "session_end": "2025-11-02T03:17:28.467200",
+  "last_session_duration_seconds": 0
 }

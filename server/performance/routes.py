@@ -8,6 +8,7 @@ from .utils import (
     backtest_chart,
     get_all_trades,
     get_trade_by_session,
+    get_trade_by_id,
     delete_trade
 )
 from .learning import generate_learning_profile
@@ -144,12 +145,23 @@ async def get_all(limit: int = Query(100, ge=1, le=1000)):
 @router.get("/trades/{session_id}")
 async def get_trade(session_id: str):
     """
-    Get a specific trade by session ID
+    Get a specific trade by session ID or numeric ID
+    If session_id is numeric, try to find by ID first, then by session_id
     """
+    # Try to parse as numeric ID first
+    try:
+        trade_id = int(session_id)
+        trade = get_trade_by_id(trade_id)
+        if trade:
+            return {"trade": trade}
+    except ValueError:
+        pass
+    
+    # Fallback to session_id lookup
     trade = get_trade_by_session(session_id)
     
     if trade:
-        return trade
+        return {"trade": trade}
     else:
         return {
             "status": "error",

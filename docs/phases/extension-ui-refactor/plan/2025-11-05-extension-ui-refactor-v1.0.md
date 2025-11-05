@@ -2,7 +2,7 @@
 
 **Date:** 2025-11-05  
 **Phase:** Phase 4B  
-**Status:** Planning
+**Status:** Completed
 
 ---
 
@@ -24,22 +24,22 @@ As a trader, I want a clean overlay chat that auto-appears on Topstep so I can a
 ## Technical Requirements
 
 ### Backend Changes
-- [ ] None for Iteration 1 (reuse existing `/ask`)
+- [x] None for Iteration 1 (reuse existing `/ask`)
 - [ ] (Future) Streaming responses support (optional)
 
 ### Frontend Changes (Extension)
-- [ ] Overlay Home view (default screen on auto-open)
-  - [ ] Sections: New Conversation, Continue Chat, Past Sessions, My Performance, Analytics Dashboard, Teach Copilot
-  - [ ] Black + yellow redesign; micro-animations
-  - [ ] Button/link to open `/app`
-- [ ] Pure AI Chat view (separate from Home)
-  - [ ] Left pane: conversation transcript
-  - [ ] Right pane: Quick Context (selected symbol, last few trades summary, session switcher)
-  - [ ] Header model selector (default GPT-5 latest)
-  - [ ] Remove upload and log-trade buttons
-- [ ] Auto-open Overlay Home (not Chat) on Topstep/TradingView; persisted toggle in `chrome.storage`
-- [ ] Resizable overlay (persist size/position)
-- [ ] Content → Background messaging to call `/ask` with recent history
+- [x] Overlay Home view (default screen on auto-open)
+  - [x] Sections: New Conversation, Continue Chat, Past Sessions, My Performance, Analytics Dashboard, Teach Copilot
+  - [x] Black + yellow redesign; micro-animations
+  - [x] Button/link to open `/app`
+- [x] Pure AI Chat view (separate from Home)
+  - [x] Left pane: conversation transcript
+  - [ ] Right pane: Quick Context (selected symbol, last few trades summary, session switcher) — deferred
+  - [x] Header model selector (default GPT-5 latest)
+  - [x] Remove upload and log-trade buttons
+- [x] Auto-open Overlay Home (not Chat) on Topstep/TradingView; persisted toggle in `chrome.storage`
+- [x] Resizable overlay (persist size/position)
+- [x] Content → Background messaging to call `/ask` with recent history
 
 ### Database Changes
 - [ ] None
@@ -152,14 +152,14 @@ visual-trade-extension/
 Updated extension overlay for chat with `/app` button; no trade-management UI in extension.
 
 ### Acceptance Criteria
-- [ ] Auto-open shows Overlay Home (not Chat) on Topstep/TradingView (configurable)
-- [ ] Overlay Home displays redesigned menu items and transitions to Chat
-- [ ] Chat sends to `/ask` and renders responses with loading/error states
-- [ ] Quick Context shows symbol, last few trades, session switcher
-- [ ] Open App button launches `/app` in new tab
-- [ ] Visual style fully refreshed (cards, buttons, inputs, bubbles) within black + yellow theme; micro-animations on hover/press/open/route
-- [ ] Overlay is user-resizable; size/position persisted
-- [ ] Default model is GPT-5 latest; current logo retained; no upload/log-trade in chat
+- [x] Auto-open shows Overlay Home (not Chat) on Topstep/TradingView (configurable)
+- [x] Overlay Home displays redesigned menu items and transitions to Chat
+- [x] Chat sends to `/ask` and renders responses with loading/error states
+- [ ] Quick Context shows symbol, last few trades, session switcher (deferred)
+- [x] Open App button launches `/app` in new tab
+- [x] Visual style refreshed (cards, buttons, inputs, bubbles) within black + yellow theme; micro-animations on hover/press/open/route
+- [x] Overlay is user-resizable; size/position persisted
+- [x] Default model is GPT-5 latest; current logo retained; no upload/log-trade in chat
 
 ### What "Done" Looks Like
 A streamlined, branded overlay chat experience in the extension, with the Web App as the place for reviewing and managing trades.
@@ -186,36 +186,28 @@ A streamlined, branded overlay chat experience in the extension, with the Web Ap
 ## Implementation Status
 
 ### Completed
-- [ ] (TBD)
+- [x] Overlay shell implementation (Home + Chat)
+- [x] Chat wiring to `/ask`
+- [x] Auto-open + settings persistence
+- [x] Layout normalization and size persistence
+- [x] Polished theme + animations
 
 ### In Progress
-- [x] Plan document
+- [ ] Quick Context panel (deferred to next iteration)
 
 ### Pending
-- [ ] Overlay shell implementation
-- [ ] Chat wiring to `/ask`
-- [ ] Settings persistence
-- [ ] Polish and tests
+- [ ] Optional streaming responses
 
 ---
 
 ## Testing Status
 
-### Passed
-- [ ] (TBD)
-
-### Failed
-- [ ] (TBD)
-
-### Pending
-- [ ] Auto-open tests
-- [ ] Chat round-trip tests
-- [ ] `/app` button tests
+Manual validation performed (see Test README for details). Automated tests skipped for this iteration by product decision.
 
 ---
 
 ## Changes from Original Plan
-- N/A (initial plan)
+- Quick Context panel deferred to a subsequent iteration.
 
 ---
 

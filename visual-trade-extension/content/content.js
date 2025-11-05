@@ -2009,8 +2009,8 @@ function normalizeChatLayout() {
     // If a stale saved height leaves a gap, snap to full viewport and clear the saved height
     const gap = Math.abs(window.innerHeight - chatContainer.getBoundingClientRect().height);
     if (gap > 2) {
-      // Prefer stretching with bottom:0; ensure no fixed height is persisted
-      chatContainer.style.height = "auto";
+      // Use dynamic viewport height to avoid Chrome UI/zoom rounding gaps
+      chatContainer.style.height = "100dvh";
       try {
         const raw = localStorage.getItem('vtc_overlay_rect');
         if (raw) {
@@ -2050,6 +2050,8 @@ function ensureBaseStyles() {
   style.id = 'vtc-base-styles';
   style.textContent = `
     .vtc-chat-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 620px; display: flex; flex-direction: column; background: #0b0b0b; color: #e8e8e8; border-left: 2px solid #ffd400; box-shadow: -8px 0 24px rgba(0,0,0,.35); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial; box-sizing: border-box; }
+    .vtc-chat-panel, .vtc-header, .vtc-input-area, .vtc-footer, .vtc-messages { margin: 0 !important; }
+    .vtc-footer { margin-top: 0 !important; }
     /* Ensure resize handles do not affect layout flow */
     .vtc-resize-handle { position: absolute; background: transparent; z-index: 5; }
     .vtc-resize-top { top: 0; left: 0; width: 100%; height: 6px; cursor: ns-resize; }

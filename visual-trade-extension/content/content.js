@@ -2069,7 +2069,12 @@ function ensureBaseStyles() {
   const style = document.createElement('style');
   style.id = 'vtc-base-styles';
   style.textContent = `
-    .vtc-chat-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 620px; display: flex; flex-direction: column; background: #0b0b0b; color: #e8e8e8; border-left: 2px solid #ffd400; box-shadow: -8px 0 24px rgba(0,0,0,.35); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial; box-sizing: border-box; }
+    /* Theme tokens */
+    :root { --vtc-bg: #0b0b0b; --vtc-bg-elev: #111; --vtc-surface: #141414; --vtc-border: #242424; --vtc-text: #e8e8e8; --vtc-muted: #a8a8a8; --vtc-brand: #ffd400; }
+    /* Motion */
+    @keyframes vtc-fade-slide-in { from { opacity:0; transform: translateY(8px);} to { opacity:1; transform:none;} }
+    @keyframes vtc-scale-in { from { opacity:.6; transform: scale(.98);} to { opacity:1; transform: scale(1);} }
+    .vtc-chat-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 620px; display: flex; flex-direction: column; background: var(--vtc-bg); color: var(--vtc-text); border-left: 2px solid var(--vtc-brand); box-shadow: -8px 0 24px rgba(0,0,0,.35); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial; box-sizing: border-box; }
     .vtc-chat-panel, .vtc-header, .vtc-input-area, .vtc-footer, .vtc-messages { margin: 0 !important; }
     .vtc-footer { margin-top: 0 !important; }
     /* Ensure resize handles do not affect layout flow */
@@ -2082,25 +2087,29 @@ function ensureBaseStyles() {
     .vtc-resize-topright { top: 0; right: 0; width: 10px; height: 10px; cursor: nesw-resize; }
     .vtc-resize-bottomleft { bottom: 0; left: 0; width: 10px; height: 10px; cursor: nesw-resize; }
     .vtc-resize-bottomright { bottom: 0; right: 0; width: 10px; height: 10px; cursor: nwse-resize; }
-    .vtc-header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #202020; background: #111; }
+    .vtc-header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--vtc-border); background: var(--vtc-bg-elev); backdrop-filter: saturate(120%) blur(6px); }
     .vtc-title { display:flex; align-items:center; gap:10px; }
-    .vtc-session-badge { margin-left: 8px; padding: 2px 8px; border: 1px solid #2a2a2a; border-radius: 999px; font-size: 12px; color: #ffd400; }
-    .vtc-model-selector { background:#151515; color:#ddd; border:1px solid #2a2a2a; border-radius:8px; padding:6px 8px; }
+    .vtc-title h3 { margin: 0; font-weight: 700; letter-spacing: .2px; }
+    .vtc-session-badge { margin-left: 8px; padding: 2px 8px; border: 1px solid var(--vtc-border); border-radius: 999px; font-size: 12px; color: var(--vtc-brand); background: rgba(255,212,0,0.06); }
+    .vtc-model-selector { background:var(--vtc-surface); color:#ddd; border:1px solid var(--vtc-border); border-radius:10px; padding:8px 10px; }
     .vtc-controls { display:flex; gap:6px; }
-    .vtc-control-btn { background:#151515; border:1px solid #2a2a2a; color:#ddd; border-radius:8px; padding:6px 8px; cursor:pointer; }
-    .vtc-control-btn:hover { border-color:#3a3a3a; color:#fff; }
-    .vtc-messages { flex: 1 1 auto; overflow-y: auto; padding: 12px 16px; }
+    .vtc-control-btn { background:var(--vtc-surface); border:1px solid var(--vtc-border); color:#ddd; border-radius:10px; padding:8px 10px; cursor:pointer; transition: transform .12s ease, border-color .2s ease; }
+    .vtc-control-btn:hover { border-color:#3a3a3a; color:#fff; transform: translateY(-1px); }
+    .vtc-messages { flex: 1 1 auto; overflow-y: auto; padding: 14px 18px; animation: vtc-fade-slide-in .22s ease both; }
     .vtc-message { display:flex; gap:10px; margin: 10px 0; }
     .vtc-message-avatar { width:28px; height:28px; border-radius:999px; display:flex; align-items:center; justify-content:center; background:#1a1a1a; border:1px solid #2a2a2a; }
     .vtc-message-content { max-width: calc(100% - 38px); }
     .vtc-message-text { line-height: 1.45; }
     .vtc-message-time { color:#888; font-size: 12px; margin-top: 6px; }
-    .vtc-input-area { flex: 0 0 auto; padding: 10px 12px; border-top: 1px solid #202020; background:#0f0f0f; }
-    .vtc-input { width:100%; background:#141414; color:#fff; border:1px solid #2a2a2a; border-radius:10px; }
+    .vtc-input-area { flex: 0 0 auto; padding: 12px 14px; border-top: 1px solid var(--vtc-border); background:var(--vtc-bg-elev); }
+    .vtc-input { width:100%; background:var(--vtc-surface); color:#fff; border:1px solid var(--vtc-border); border-radius:12px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.02); }
     .vtc-send-controls { display:flex; gap:8px; margin-top:8px; }
-    .vtc-btn-text, .vtc-btn-image { flex:1; background:#151515; color:#ddd; border:1px solid #2a2a2a; border-radius:10px; padding:10px 12px; cursor:pointer; }
-    .vtc-btn-text:hover, .vtc-btn-image:hover { border-color:#3a3a3a; color:#fff; }
-    .vtc-footer { flex: 0 0 auto; display:flex; align-items:center; justify-content: space-between; gap:12px; padding: 8px 12px; border-top: 1px solid #202020; background:#0f0f0f; font-size:12px; color:#aaa; }
+    .vtc-btn-text, .vtc-btn-image { flex:1; background:linear-gradient(180deg, #161616 0%, #121212 100%); color:#ddd; border:1px solid var(--vtc-border); border-radius:12px; padding:10px 12px; cursor:pointer; transition: transform .12s ease, border-color .2s ease; }
+    .vtc-btn-text:hover, .vtc-btn-image:hover { border-color:#3a3a3a; color:#fff; transform: translateY(-1px); }
+    .vtc-footer { flex: 0 0 auto; display:flex; align-items:center; justify-content: space-between; gap:12px; padding: 10px 14px; border-top: 1px solid var(--vtc-border); background:var(--vtc-bg-elev); font-size:12px; color:#aaa; }
+    /* Overlay Home cards */
+    #vtc-overlay-home .vtc-card { background: radial-gradient(1200px 180px at -20% -10%, rgba(255,212,0,0.06), transparent 60%), #0f0f0f; border:1px solid #232323; border-radius:14px; padding:16px; transition: transform .16s ease, box-shadow .16s ease, border-color .2s ease; }
+    #vtc-overlay-home .vtc-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.35); border-color:#2e2e2e; }
   `;
   document.head.appendChild(style);
   window.__vtc_base_styles = true;

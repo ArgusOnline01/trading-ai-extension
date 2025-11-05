@@ -2050,6 +2050,16 @@ function ensureBaseStyles() {
   style.id = 'vtc-base-styles';
   style.textContent = `
     .vtc-chat-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 620px; display: flex; flex-direction: column; background: #0b0b0b; color: #e8e8e8; border-left: 2px solid #ffd400; box-shadow: -8px 0 24px rgba(0,0,0,.35); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial; box-sizing: border-box; }
+    /* Ensure resize handles do not affect layout flow */
+    .vtc-resize-handle { position: absolute; background: transparent; z-index: 5; }
+    .vtc-resize-top { top: 0; left: 0; width: 100%; height: 6px; cursor: ns-resize; }
+    .vtc-resize-bottom { bottom: 0; left: 0; width: 100%; height: 6px; cursor: ns-resize; }
+    .vtc-resize-left { top: 0; left: 0; width: 6px; height: 100%; cursor: ew-resize; }
+    .vtc-resize-right { top: 0; right: 0; width: 6px; height: 100%; cursor: ew-resize; }
+    .vtc-resize-topleft { top: 0; left: 0; width: 10px; height: 10px; cursor: nwse-resize; }
+    .vtc-resize-topright { top: 0; right: 0; width: 10px; height: 10px; cursor: nesw-resize; }
+    .vtc-resize-bottomleft { bottom: 0; left: 0; width: 10px; height: 10px; cursor: nesw-resize; }
+    .vtc-resize-bottomright { bottom: 0; right: 0; width: 10px; height: 10px; cursor: nwse-resize; }
     .vtc-header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #202020; background: #111; }
     .vtc-title { display:flex; align-items:center; gap:10px; }
     .vtc-session-badge { margin-left: 8px; padding: 2px 8px; border: 1px solid #2a2a2a; border-radius: 999px; font-size: 12px; color: #ffd400; }

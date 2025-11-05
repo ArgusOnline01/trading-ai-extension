@@ -875,6 +875,8 @@ function showOverlayHome() {
  */
 function ensureChatUI() {
   if (!chatContainer) {
+    // Ensure base styles exist once for consistent layout/theme
+    try { ensureBaseStyles(); } catch (_) {}
     chatContainer = document.createElement("div");
     chatContainer.id = "vtc-chat";
     chatContainer.className = "vtc-chat-panel";
@@ -2006,8 +2008,51 @@ function normalizeChatLayout() {
       messages.style.flex = "1 1 auto";
       messages.style.overflowY = "auto";
       messages.style.minHeight = "0"; // allow flexbox to size correctly
+      messages.style.padding = messages.style.padding || "12px 16px";
+    }
+    // Inputs
+    const ta = document.getElementById("vtc-input");
+    if (ta) {
+      ta.style.resize = "none";
+      ta.style.maxHeight = "120px";
+      ta.style.minHeight = "44px";
+      ta.style.lineHeight = "20px";
+      ta.style.padding = ta.style.padding || "10px 12px";
     }
   } catch (_) {}
+}
+
+/**
+ * Inject base CSS once for polished layout and theme
+ */
+function ensureBaseStyles() {
+  if (window.__vtc_base_styles) return;
+  const style = document.createElement('style');
+  style.id = 'vtc-base-styles';
+  style.textContent = `
+    .vtc-chat-panel { position: fixed; top: 0; right: 0; width: 620px; height: 100vh; display: flex; flex-direction: column; background: #0b0b0b; color: #e8e8e8; border-left: 2px solid #ffd400; box-shadow: -8px 0 24px rgba(0,0,0,.35); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial; }
+    .vtc-header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #202020; background: #111; }
+    .vtc-title { display:flex; align-items:center; gap:10px; }
+    .vtc-session-badge { margin-left: 8px; padding: 2px 8px; border: 1px solid #2a2a2a; border-radius: 999px; font-size: 12px; color: #ffd400; }
+    .vtc-model-selector { background:#151515; color:#ddd; border:1px solid #2a2a2a; border-radius:8px; padding:6px 8px; }
+    .vtc-controls { display:flex; gap:6px; }
+    .vtc-control-btn { background:#151515; border:1px solid #2a2a2a; color:#ddd; border-radius:8px; padding:6px 8px; cursor:pointer; }
+    .vtc-control-btn:hover { border-color:#3a3a3a; color:#fff; }
+    .vtc-messages { flex: 1 1 auto; overflow-y: auto; padding: 12px 16px; }
+    .vtc-message { display:flex; gap:10px; margin: 10px 0; }
+    .vtc-message-avatar { width:28px; height:28px; border-radius:999px; display:flex; align-items:center; justify-content:center; background:#1a1a1a; border:1px solid #2a2a2a; }
+    .vtc-message-content { max-width: calc(100% - 38px); }
+    .vtc-message-text { line-height: 1.45; }
+    .vtc-message-time { color:#888; font-size: 12px; margin-top: 6px; }
+    .vtc-input-area { flex: 0 0 auto; padding: 10px 12px; border-top: 1px solid #202020; background:#0f0f0f; }
+    .vtc-input { width:100%; background:#141414; color:#fff; border:1px solid #2a2a2a; border-radius:10px; }
+    .vtc-send-controls { display:flex; gap:8px; margin-top:8px; }
+    .vtc-btn-text, .vtc-btn-image { flex:1; background:#151515; color:#ddd; border:1px solid #2a2a2a; border-radius:10px; padding:10px 12px; cursor:pointer; }
+    .vtc-btn-text:hover, .vtc-btn-image:hover { border-color:#3a3a3a; color:#fff; }
+    .vtc-footer { flex: 0 0 auto; display:flex; align-items:center; justify-content: space-between; gap:12px; padding: 8px 12px; border-top: 1px solid #202020; background:#0f0f0f; font-size:12px; color:#aaa; }
+  `;
+  document.head.appendChild(style);
+  window.__vtc_base_styles = true;
 }
 
 /**

@@ -1964,13 +1964,13 @@ function makeResizable(element) {
 function resetChatSize() {
   if (!chatContainer) return;
   
-  // Default dimensions (Phase 3C: Balanced size to avoid covering chart)
+  // Default dimensions (balanced size) – stretch with top/bottom to avoid 100vh gaps
   chatContainer.style.width = "620px";
-  chatContainer.style.height = "100vh";
   chatContainer.style.top = "0";
   chatContainer.style.right = "0";
+  chatContainer.style.bottom = "0";
   chatContainer.style.left = "auto";
-  chatContainer.style.bottom = "auto";
+  chatContainer.style.height = "auto";
   
   // Ensure normalized layout after resetting geometry
   try { normalizeChatLayout(); } catch (_) {}
@@ -1989,8 +1989,10 @@ function normalizeChatLayout() {
     chatContainer.style.display = "flex";
     chatContainer.style.flexDirection = "column";
     chatContainer.style.boxSizing = "border-box";
-    chatContainer.style.top = chatContainer.style.top || "0";
-    chatContainer.style.right = chatContainer.style.right || "0";
+    chatContainer.style.top = "0";
+    chatContainer.style.right = "0";
+    chatContainer.style.bottom = "0";
+    chatContainer.style.height = "auto";
 
     // Regions
     const header = document.getElementById("vtc-header");
@@ -2005,9 +2007,10 @@ function normalizeChatLayout() {
     });
 
     // If a stale saved height leaves a gap, snap to full viewport and clear the saved height
-    const gap = window.innerHeight - chatContainer.offsetHeight;
-    if (gap > 4) {
-      chatContainer.style.height = "100vh";
+    const gap = Math.abs(window.innerHeight - chatContainer.getBoundingClientRect().height);
+    if (gap > 2) {
+      // Prefer stretching with bottom:0; ensure no fixed height is persisted
+      chatContainer.style.height = "auto";
       try {
         const raw = localStorage.getItem('vtc_overlay_rect');
         if (raw) {
@@ -2046,7 +2049,7 @@ function ensureBaseStyles() {
   const style = document.createElement('style');
   style.id = 'vtc-base-styles';
   style.textContent = `
-    .vtc-chat-panel { position: fixed; top: 0; right: 0; width: 620px; height: 100vh; display: flex; flex-direction: column; background: #0b0b0b; color: #e8e8e8; border-left: 2px solid #ffd400; box-shadow: -8px 0 24px rgba(0,0,0,.35); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial; }
+    .vtc-chat-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 620px; display: flex; flex-direction: column; background: #0b0b0b; color: #e8e8e8; border-left: 2px solid #ffd400; box-shadow: -8px 0 24px rgba(0,0,0,.35); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial; box-sizing: border-box; }
     .vtc-header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #202020; background: #111; }
     .vtc-title { display:flex; align-items:center; gap:10px; }
     .vtc-session-badge { margin-left: 8px; padding: 2px 8px; border: 1px solid #2a2a2a; border-radius: 999px; font-size: 12px; color: #ffd400; }

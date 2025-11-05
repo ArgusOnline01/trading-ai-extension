@@ -1047,7 +1047,7 @@ function ensureChatUI() {
     try { normalizeChatLayout(); } catch (_) {}
     if (!window.__vtc_layout_listener_added) {
       try {
-        window.addEventListener('resize', () => { try { normalizeChatLayout(); } catch (_) {} });
+        window.addEventListener('resize', () => { try { normalizeChatLayout(); recomputeMessagesHeight(); } catch (_) {} });
         window.__vtc_layout_listener_added = true;
       } catch (_) {}
     }
@@ -1783,7 +1783,7 @@ function renderMessages() {
   messagesEl.scrollTop = messagesEl.scrollHeight;
   
   // Recompute layout after content changes
-  try { normalizeChatLayout(); } catch (_) {}
+  try { normalizeChatLayout(); recomputeMessagesHeight(); } catch (_) {}
   
   // Update footer
   updateFooter(chatHistory.length);
@@ -1973,7 +1973,7 @@ function resetChatSize() {
   chatContainer.style.height = "auto";
   
   // Ensure normalized layout after resetting geometry
-  try { normalizeChatLayout(); } catch (_) {}
+  try { normalizeChatLayout(); recomputeMessagesHeight(); } catch (_) {}
   
   showNotification("Chat size reset", "success");
 }
@@ -2029,6 +2029,8 @@ function normalizeChatLayout() {
       messages.style.minHeight = "0"; // allow flexbox to size correctly
       messages.style.padding = messages.style.padding || "12px 16px";
     }
+    // Force exact message area height to eliminate rounding gaps
+    try { recomputeMessagesHeight(); } catch (_) {}
     // Inputs
     const ta = document.getElementById("vtc-input");
     if (ta) {
@@ -2039,6 +2041,24 @@ function normalizeChatLayout() {
       ta.style.padding = ta.style.padding || "10px 12px";
     }
   } catch (_) {}
+}
+
+/**
+ * Compute exact messages area height based on container and fixed regions
+ */
+function recomputeMessagesHeight() {
+  const messages = document.getElementById("vtc-messages");
+  const header = document.getElementById("vtc-header");
+  const inputArea = document.getElementById("vtc-input-area");
+  const footer = document.getElementById("vtc-footer");
+  if (!chatContainer || !messages || !header || !inputArea || !footer) return;
+  // Ensure container uses full dynamic viewport height
+  chatContainer.style.height = "100dvh";
+  const containerRect = chatContainer.getBoundingClientRect();
+  const available = containerRect.height - header.offsetHeight - inputArea.offsetHeight - footer.offsetHeight;
+  if (available > 0) {
+    messages.style.height = available + "px";
+  }
 }
 
 /**

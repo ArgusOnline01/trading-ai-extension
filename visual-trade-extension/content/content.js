@@ -2004,6 +2004,22 @@ function normalizeChatLayout() {
       el.style.margin = "0";
     });
 
+    // If a stale saved height leaves a gap, snap to full viewport and clear the saved height
+    const gap = window.innerHeight - chatContainer.offsetHeight;
+    if (gap > 4) {
+      chatContainer.style.height = "100vh";
+      try {
+        const raw = localStorage.getItem('vtc_overlay_rect');
+        if (raw) {
+          const rect = JSON.parse(raw);
+          if (rect && rect.height) {
+            delete rect.height;
+            localStorage.setItem('vtc_overlay_rect', JSON.stringify(rect));
+          }
+        }
+      } catch (_) {}
+    }
+
     if (messages) {
       messages.style.flex = "1 1 auto";
       messages.style.overflowY = "auto";

@@ -37,9 +37,10 @@ let idbReadyPromise = new Promise((resolve) => {
 
 let chatHistory = [];
 let chatContainer = null;
+let overlayHome = null;
 let currentSession = null;
 let sessionManagerModal = null;
-let selectedModel = "fast"; // Phase 4A.1: Default GPT-5 Chat (native vision)
+let selectedModel = "gpt-5-chat-latest"; // Default to GPT-5 latest per Phase 4B plan
 // DEPRECATED: Reasoned commands toggle - commands are now always AI-extracted
 // Keeping variable for backward compatibility but it's always treated as ON
 let reasonedCommandsEnabled = true; // Always enabled - commands are AI-extracted
@@ -93,6 +94,24 @@ async function initializeSession() {
     chatHistory = [];
     return currentSession;
   }
+}
+
+// Retry wrapper to ensure session becomes available and header updates
+async function initializeSessionWithRetry(maxAttempts = 3) {
+  let lastError = null;
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      await initializeSession();
+      updateSessionStatus();
+      return currentSession;
+    } catch (e) {
+      lastError = e;
+      await new Promise(r => setTimeout(r, 250 * (i + 1)));
+    }
+  }
+  console.warn("initializeSessionWithRetry failed", lastError);
+  try { updateSessionStatus(); } catch {}
+  return currentSession;
 }
 
 /**
@@ -746,6 +765,111 @@ window.openChartPopup = function(src) {
 
 // ========== Chat UI Functions ==========
 
+// Small helper to safely bind event handlers to optional elements
+function safeBind(elementId, handler) {
+  try {
+    const el = document.getElementById(elementId);
+    if (el) el.onclick = handler;
+  } catch (_) {}
+}
+
+function showOverlayHome() {
+  try {
+    // If already visible, bring to front
+    if (overlayHome && document.body.contains(overlayHome)) {
+      overlayHome.style.display = 'block';
+      return;
+    }
+    overlayHome = document.createElement('div');
+    overlayHome.id = 'vtc-overlay-home';
+    overlayHome.style.cssText = `
+      position: fixed; top: 0; right: 0; width: 620px; height: 100vh; z-index: 2147483000;
+      background: rgba(9,9,9,0.96); border-left: 1px solid #2a2a2a;
+      box-shadow: -8px 0 24px rgba(0,0,0,0.45); color: #f5f5f5; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      display: flex; flex-direction: column; overflow: hidden;
+      opacity: 0; transform: translateX(12px) scale(0.98); transition: opacity .25s ease, transform .25s ease;
+      backdrop-filter: blur(2px);
+    `;
+    overlayHome.innerHTML = `
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background:#111; border-bottom:1px solid #232323;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:20px">🤖</span>
+          <div style="font-weight:700">Visual Trade Copilot</div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button id="vtc-home-open-app" title="Open Trades Web App" style="background:#ffd400; color:#000; border:none; padding:8px 10px; border-radius:8px; cursor:pointer; font-weight:600;">Open App</button>
+          <button id="vtc-home-close" title="Close" style="background:transparent; color:#aaa; border:1px solid #2a2a2a; padding:8px 10px; border-radius:8px; cursor:pointer;">✖</button>
+        </div>
+      </div>
+      <div style="display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:14px; padding:16px; overflow:auto;">
+        ${[
+          {id:'new', title:'New Conversation', desc:'Start fresh analysis', icon:'💬'},
+          {id:'continue', title:'Continue Chat', desc:'Resume current session', icon:'➡️'},
+          {id:'sessions', title:'Past Sessions', desc:'View conversation history', icon:'🗂️'},
+          {id:'performance', title:'My Performance', desc:'View trading stats', icon:'📊'},
+          {id:'analytics', title:'Analytics Dashboard', desc:'Visual performance charts', icon:'📈'},
+          {id:'teach', title:'Teach Copilot', desc:'Train AI with your setups', icon:'🧠'}
+        ].map(card => `
+          <div class="vtc-card" data-card="${card.id}" style="background:#0f0f0f; border:1px solid #232323; border-radius:12px; padding:14px; cursor:pointer; transition: transform .2s ease, box-shadow .2s ease;">
+            <div style="font-size:22px">${card.icon}</div>
+            <div style="margin-top:6px; font-weight:700;">${card.title}</div>
+            <div style="margin-top:4px; color:#bdbdbd; font-size:13px;">${card.desc}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    document.body.appendChild(overlayHome);
+    requestAnimationFrame(() => {
+      overlayHome.style.opacity = '1';
+      overlayHome.style.transform = 'translateX(0) scale(1)';
+    });
+
+    // Wire actions
+    overlayHome.querySelectorAll('.vtc-card').forEach(el => {
+      el.addEventListener('click', async () => {
+        const id = el.getAttribute('data-card');
+        if (id === 'new') {
+          try { await createNewSession(); } catch {}
+          try { ensureChatUI(); resetChatSize(); } catch (e) { console.warn('ensureChatUI failed', e); }
+          try { if (chatContainer) chatContainer.style.display = 'block'; } catch {}
+          overlayHome.style.display = 'none';
+        } else if (id === 'continue') {
+          console.log('[HOME] Continue Chat clicked');
+          try {
+            let s = await (window.IDB?.getActiveSession?.() || Promise.resolve(null));
+            if (!s) {
+              s = await window.IDB.createSession("CHART", "Default Session");
+            }
+            await initializeSessionWithRetry();
+          } catch {}
+          try { ensureChatUI(); resetChatSize(); } catch (e) { console.warn('ensureChatUI failed', e); }
+          try {
+            if (currentSession?.sessionId) {
+              chatHistory = await window.IDB.loadMessages(currentSession.sessionId);
+              renderMessages();
+            }
+            updateSessionStatus();
+          } catch (_) {}
+          try { if (chatContainer) chatContainer.style.display = 'block'; } catch {}
+          overlayHome.style.display = 'none';
+        } else if (id === 'sessions') {
+          try { showSessionManager(); } catch {}
+        } else if (id === 'performance' || id === 'analytics') {
+          window.open('http://127.0.0.1:8765/app/', '_blank');
+        } else if (id === 'teach') {
+          try { showTeachCopilotModal(); } catch {}
+        }
+      });
+    });
+
+    // Safe bindings to avoid null onclick errors
+    safeBind('vtc-home-close', () => { try { overlayHome.remove(); } catch (_) {} });
+    safeBind('vtc-home-open-app', () => window.open('http://127.0.0.1:8765/app/', '_blank'));
+  } catch (e) {
+    console.error('Failed to show overlay home', e);
+  }
+}
+
 /**
  * Create or get the chat panel
  */
@@ -775,7 +899,7 @@ function ensureChatUI() {
           <span id="vtc-session-status" class="vtc-session-badge">🧠 Loading...</span>
               <select id="vtc-model-selector" class="vtc-model-selector" title="Select AI Model">
                 <optgroup label="Recommended Models">
-                  <option value="fast" selected>⚡ Fast (GPT-5 Chat) 👁️</option>
+                  <option value="gpt-5-chat-latest" selected>GPT-5 Chat Latest</option>
                   <option value="balanced">⚖️ Balanced (GPT-5 Search) 🧠</option>
                   <option value="advanced">🔷 Advanced (GPT-4o) 👁️</option>
                 </optgroup>
@@ -793,6 +917,7 @@ function ensureChatUI() {
                </select>
         </div>
         <div id="vtc-controls" class="vtc-controls">
+          <button id="vtc-home" title="Home" class="vtc-control-btn">🏠</button>
           <button id="sessionManager" title="Session Manager" class="vtc-control-btn">🗂️</button>
           <button id="exportChat" title="Export Session" class="vtc-control-btn">💾</button>
           <button id="clearChat" title="Clear Messages" class="vtc-control-btn">🗑️</button>
@@ -808,14 +933,13 @@ function ensureChatUI() {
         <div class="vtc-send-controls">
           <button id="vtc-send-text" class="vtc-btn-text" title="Send text-only (fast, cheaper)">📝 Text</button>
           <button id="vtc-send-image" class="vtc-btn-image" title="Analyze chart with image (slower, more expensive)">📸 Chart</button>
-          <button id="vtc-upload-image" class="vtc-btn-upload" title="Upload saved screenshot">📤 Upload</button>
-          <button id="vtc-log-trade" class="vtc-btn-log" title="Smart trade logging with AI extraction">📊 Log Trade</button>
         </div>
         <input type="file" id="vtc-file-input" accept="image/*" style="display: none;" />
       </div>
       <div id="vtc-footer" class="vtc-footer">
         <span id="vtc-message-count">0 messages</span>
         <span id="vtc-status">Ready</span>
+        <button id="vtc-open-webapp" class="vtc-control-btn" title="Open Trades Web App">🗂️ Open App</button>
       </div>
     `;
     
@@ -917,30 +1041,73 @@ function ensureChatUI() {
     
     document.body.appendChild(chatContainer);
     
-    // Attach event listeners
-    document.getElementById("sessionManager").onclick = showSessionManager;
-    document.getElementById("clearChat").onclick = clearCurrentSession;
-    document.getElementById("exportChat").onclick = exportCurrentSession;
-    document.getElementById("resetSize").onclick = resetChatSize;
-    document.getElementById("minimizeChat").onclick = toggleMinimize;
+    // Normalize layout immediately after mount and on resize
+    try { normalizeChatLayout(); } catch (_) {}
+    if (!window.__vtc_layout_listener_added) {
+      try {
+        window.addEventListener('resize', () => { try { normalizeChatLayout(); } catch (_) {} });
+        window.__vtc_layout_listener_added = true;
+      } catch (_) {}
+    }
+    
+    // Attach event listeners (guarded)
+    safeBind("sessionManager", showSessionManager);
+    safeBind("clearChat", clearCurrentSession);
+    safeBind("exportChat", exportCurrentSession);
+    safeBind("resetSize", resetChatSize);
+    safeBind("minimizeChat", toggleMinimize);
+    const homeBtn = document.getElementById("vtc-home");
+    if (homeBtn) {
+      homeBtn.onclick = () => {
+        try { showOverlayHome(); } catch (e) { console.warn('showOverlayHome failed', e); }
+        if (chatContainer) chatContainer.style.display = 'none';
+      };
+    }
     // DEPRECATED: Reasoned commands toggle removed - commands are always AI-extracted now
     // Commands are automatically extracted from AI responses regardless of toggle state
-    document.getElementById("closeChat").onclick = () => {
-      logUIEvent("click_close_chat");
+    safeBind("closeChat", () => {
+      try { logUIEvent("click_close_chat"); } catch (_) {}
+      if (!chatContainer) return;
       chatContainer.classList.add("vtc-closing");
       setTimeout(() => {
-        chatContainer.remove();
+        try { chatContainer.remove(); } catch (_) {}
         chatContainer = null;
       }, 300);
-    };
+    });
+
+    // Open Trades Web App
+    safeBind("vtc-open-webapp", () => window.open("http://127.0.0.1:8765/app/", "_blank"));
     
+    // Restore overlay size/position if previously saved
+    try {
+      const raw = localStorage.getItem('vtc_overlay_rect');
+      if (raw) {
+        const rect = JSON.parse(raw);
+        if (rect.width) chatContainer.style.width = rect.width;
+        if (rect.height) chatContainer.style.height = rect.height;
+        if (rect.top) chatContainer.style.top = rect.top;
+        if (rect.left && rect.left !== 'auto') {
+          chatContainer.style.left = rect.left;
+          chatContainer.style.right = 'auto';
+        } else if (rect.right) {
+          chatContainer.style.right = rect.right;
+          chatContainer.style.left = 'auto';
+        }
+      }
+    } catch (e) { /* ignore */ }
+
     // Phase 3B.2: Model selector event listener
-    document.getElementById("vtc-model-selector").onchange = (e) => {
-      selectedModel = e.target.value;
-      const modelText = e.target.options[e.target.selectedIndex].text.trim();
-      console.log(`[MODEL SWITCH] Selected: ${selectedModel} (${modelText})`);
-      showNotification(`Model: ${modelText}`, "success");
-    };
+    try {
+      const ms = document.getElementById("vtc-model-selector");
+      if (ms) {
+        ms.onchange = (e) => {
+          selectedModel = e.target.value;
+          const modelText = e.target.options[e.target.selectedIndex].text.trim();
+          console.log(`[MODEL SWITCH] Selected: ${selectedModel} (${modelText})`);
+          showNotification(`Model: ${modelText}`, "success");
+        };
+      }
+    } catch (_) {}
     
     // Phase 3B.1: Dual-send functionality (text-only vs. image)
     const sendTextBtn = document.getElementById("vtc-send-text");
@@ -1074,38 +1241,36 @@ function ensureChatUI() {
     }
     
     // Text-only send button (Phase 3B.1)
-    sendTextBtn.onclick = () => sendMessage(false);
+    if (sendTextBtn) sendTextBtn.onclick = () => sendMessage(false);
     
     // Image send button (Phase 3B.1)
-    sendImageBtn.onclick = () => sendMessage(true);
+    if (sendImageBtn) sendImageBtn.onclick = () => sendMessage(true);
     
     // Phase 4A.1: Upload image button
     const uploadBtn = document.getElementById("vtc-upload-image");
     const fileInput = document.getElementById("vtc-file-input");
     let uploadedImageData = null;
     
-    uploadBtn.onclick = () => {
-      fileInput.click();
-    };
-    
-    fileInput.onchange = (e) => {
-      const file = e.target.files[0];
-      if (file && file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          uploadedImageData = event.target.result.split(',')[1]; // Base64 without prefix
-          showNotification(`📤 Image loaded: ${file.name}`, "success");
-          uploadBtn.textContent = "✅ Ready";
-          uploadBtn.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
-        };
-        reader.readAsDataURL(file);
-      }
-    };
+    if (uploadBtn && fileInput) {
+      uploadBtn.onclick = () => { fileInput.click(); };
+      fileInput.onchange = (e) => {
+        const file = e.target.files[0];
+        if (file && file.type.startsWith('image/')) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            uploadedImageData = event.target.result.split(',')[1];
+            showNotification(`📤 Image loaded: ${file.name}`, "success");
+            uploadBtn.textContent = "✅ Ready";
+            uploadBtn.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
+          };
+          reader.readAsDataURL(file);
+        }
+      };
+    }
     
     // Phase 4A.1: Log Trade button - smart extraction with confirmation
     const logTradeBtn = document.getElementById("vtc-log-trade");
-    
-    logTradeBtn.onclick = async () => {
+    if (logTradeBtn) logTradeBtn.onclick = async () => {
       console.log("📊 [Log Trade] Button clicked");
       
       // === 5F.2 FIX ===
@@ -1615,6 +1780,9 @@ function renderMessages() {
   // Auto-scroll to bottom
   messagesEl.scrollTop = messagesEl.scrollHeight;
   
+  // Recompute layout after content changes
+  try { normalizeChatLayout(); } catch (_) {}
+  
   // Update footer
   updateFooter(chatHistory.length);
 }
@@ -1774,6 +1942,17 @@ function makeResizable(element) {
     document.removeEventListener('mousemove', handleResize);
     document.removeEventListener('mouseup', stopResize);
     element.style.transition = '';
+    // Persist new size/position
+    try {
+      const rect = {
+        width: element.style.width || `${element.offsetWidth}px`,
+        height: element.style.height || `${element.offsetHeight}px`,
+        top: element.style.top || `${element.offsetTop}px`,
+        left: element.style.left || 'auto',
+        right: element.style.right || '0'
+      };
+      localStorage.setItem('vtc_overlay_rect', JSON.stringify(rect));
+    } catch (e) { /* no-op */ }
   }
 }
 
@@ -1791,7 +1970,44 @@ function resetChatSize() {
   chatContainer.style.left = "auto";
   chatContainer.style.bottom = "auto";
   
+  // Ensure normalized layout after resetting geometry
+  try { normalizeChatLayout(); } catch (_) {}
+  
   showNotification("Chat size reset", "success");
+}
+
+/**
+ * Normalize chat layout (fix header/input/footer spacing and messages scroll area)
+ */
+function normalizeChatLayout() {
+  if (!chatContainer) return;
+  try {
+    // Container
+    chatContainer.style.position = chatContainer.style.position || "fixed";
+    chatContainer.style.display = "flex";
+    chatContainer.style.flexDirection = "column";
+    chatContainer.style.boxSizing = "border-box";
+    chatContainer.style.top = chatContainer.style.top || "0";
+    chatContainer.style.right = chatContainer.style.right || "0";
+
+    // Regions
+    const header = document.getElementById("vtc-header");
+    const inputArea = document.getElementById("vtc-input-area");
+    const footer = document.getElementById("vtc-footer");
+    const messages = document.getElementById("vtc-messages");
+
+    [header, inputArea, footer].forEach((el) => {
+      if (!el) return;
+      el.style.flex = "0 0 auto";
+      el.style.margin = "0";
+    });
+
+    if (messages) {
+      messages.style.flex = "1 1 auto";
+      messages.style.overflowY = "auto";
+      messages.style.minHeight = "0"; // allow flexbox to size correctly
+    }
+  } catch (_) {}
 }
 
 /**
@@ -4486,8 +4702,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log("🚀 Initializing Visual Trade Copilot...");
     await idbReadyPromise;
     console.log("✅ IDB ready, initializing session...");
-    await initializeSession();
+    await initializeSessionWithRetry();
     console.log("✅ Visual Trade Copilot initialized (Phase 3B)");
+    // Auto-open Overlay Home on Topstep and TradingView if enabled
+    const host = (location.hostname || '').toLowerCase();
+    const shouldAutoOpen = (() => {
+      try {
+        const raw = localStorage.getItem('vtc_auto_open');
+        return raw === null ? true : JSON.parse(raw);
+      } catch { return true; }
+    })();
+    const isTargetHost = host.includes('topstep') || host.includes('tradingview');
+    if (shouldAutoOpen && isTargetHost) {
+      try { showOverlayHome(); } catch (e) { console.warn('showOverlayHome failed', e); }
+    }
   } catch (error) {
     console.error("❌ Failed to initialize chat:", error);
   }

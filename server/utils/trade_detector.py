@@ -6,25 +6,94 @@ import json
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
+def extract_trade_index_from_text(text: str) -> Optional[int]:
+    """
+    Extract trade index/number from text (e.g., "trade #7", "trade 7").
+    Returns 1-based index (user-friendly) or None if not found.
+    
+    Phase 5F Fix: Handles both "trade #7" and "trade 7" formats.
+    """
+    if not text:
+        return None
+    
+    # Patterns for trade index (1-based, user-friendly)
+    index_patterns = [
+        r'\btrade\s*#?\s*(\d+)',  # "Trade#7" or "trade 7" or "Trade #7"
+        r'\btrade\s+(?:number\s+)?(\d+)',  # "trade number 7"
+        r'show\s+chart\s+(?:for\s+)?(?:trade\s*#?\s*)?(\d+)',  # "show chart for trade #7"
+        r'chart\s+(?:for\s+)?(?:trade\s*#?\s*)?(\d+)',  # "chart for trade #7"
+    ]
+    
+    for pattern in index_patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            try:
+                index = int(match.group(1))
+                return index  # Return 1-based index
+            except (ValueError, IndexError):
+                continue
+    
+    return None
+
+def get_trade_by_index(trade_index: int, all_trades: List[Dict[str, Any]], 
+                       sorted_order: List[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """
+    Get trade by 1-based index from sorted list.
+    
+    Phase 5F Fix: Ensures trade #7 matches displayed order from list_trades.
+    
+    Args:
+        trade_index: 1-based trade index (user-friendly)
+        all_trades: List of all trades
+        sorted_order: Optional pre-sorted list (chronological order, oldest first)
+        
+    Returns:
+        Trade dict if found, None otherwise
+    """
+    if not all_trades:
+        return None
+    
+    # Use sorted_order if provided, otherwise sort now
+    if sorted_order:
+        sorted_trades = sorted_order
+    else:
+        # Sort chronologically (oldest first) - same as list_trades
+        sorted_trades = sorted(all_trades, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=False)
+    
+    # Convert 1-based index to 0-based
+    if trade_index < 1:
+        return None
+    
+    if trade_index > len(sorted_trades):
+        return None
+    
+    return sorted_trades[trade_index - 1]  # Convert to 0-based
+
 def extract_trade_id_from_text(text: str) -> Optional[int]:
-    """Extract trade ID from text using various patterns"""
+    """
+    Extract trade ID from text using various patterns.
+    Returns full trade ID (8+ digits) or None if not found.
+    
+    Note: For trade indices (1-2 digits), use extract_trade_index_from_text() instead.
+    """
     if not text:
         return None
     
     id_patterns = [
-        r'\btrade\s*#?\s*(\d+)',  # "Trade#7" or "trade 7" or "Trade #7"
-        r'\bid\s*[:\s]+(\d{8,})',
-        r'trade\s+(?:id\s+)?(\d{8,})',
-        r'ID\s+(\d{8,})',
-        r'#(\d{8,})',
-        r'trade\s*[:\s]+(\d{8,})'
+        r'\btrade\s+(?:id\s+)?(\d{8,})',  # "trade id 1540306142"
+        r'\bid\s+(\d{8,})',  # "ID 1540306142"
+        r'#(\d{8,})',  # "#1540306142" (full ID)
+        r'trade\s*[:\s]+(\d{8,})'  # "trade: 1540306142"
     ]
     
     for pattern in id_patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
             try:
-                return int(match.group(1))
+                trade_id = int(match.group(1))
+                # Only return if it's a full trade ID (8+ digits)
+                if trade_id >= 10000000:  # At least 8 digits
+                    return trade_id
             except (ValueError, IndexError):
                 continue
     return None
@@ -53,6 +122,16 @@ def detect_trade_reference(message: str, all_trades: List[Dict[str, Any]] = None
         return None
     
     message_lower = message.lower()
+    
+    # Method 0: Trade index (NEW - Phase 5F Fix)
+    # Priority: Check for "trade #7" format first - matches displayed order
+    trade_index = extract_trade_index_from_text(message)
+    if trade_index and all_trades:
+        sorted_trades = sorted(all_trades, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=False)
+        trade = get_trade_by_index(trade_index, all_trades, sorted_trades)
+        if trade:
+            print(f"[TRADE_DETECTOR] Found trade by index #{trade_index}: {trade.get('symbol')} (ID: {trade.get('id')})")
+            return trade
     
     # Method 1: Direct trade ID
     id_patterns = [
@@ -100,31 +179,53 @@ def detect_trade_reference(message: str, all_trades: List[Dict[str, Any]] = None
                                 if any(d in date_str for d in date_match.groups()):
                                     return trade
     
-    # Method 3: Symbol + outcome (win/loss/breakeven)
-    if all_trades and symbol_match:
-        symbol = symbol_match.group(1)
-        outcome_keywords = {
-            'win': ['win', 'won', 'profit', 'positive'],
-            'loss': ['loss', 'lose', 'negative', 'red'],
-            'breakeven': ['breakeven', 'even', 'zero']
-        }
-        
-        for outcome_type, keywords in outcome_keywords.items():
-            if any(kw in message_lower for kw in keywords):
-                # Find most recent trade matching symbol and outcome
-                matching_trades = [
-                    t for t in all_trades
-                    if t.get('symbol', '').upper() == symbol and
-                    (t.get('outcome', '').lower() == outcome_type or
-                     (outcome_type == 'win' and t.get('pnl', 0) > 0) or
-                     (outcome_type == 'loss' and t.get('pnl', 0) < 0) or
-                     (outcome_type == 'breakeven' and t.get('pnl', 0) == 0))
-                ]
-                if matching_trades:
-                    # Return most recent
-                    return sorted(matching_trades, 
-                                 key=lambda t: t.get('timestamp') or t.get('entry_time') or '', 
-                                 reverse=True)[0]
+    # Method 3: Symbol + outcome (win/loss/breakeven) - ENHANCED
+    if all_trades:
+        # Extract symbol (typically 3-5 uppercase letters/numbers)
+        symbol_match = re.search(r'\b([A-Z0-9]{3,6})\b', message.upper())
+        if symbol_match:
+            symbol = symbol_match.group(1)
+            
+            # Enhanced outcome keywords - includes "big win", "biggest win", etc.
+            outcome_keywords = {
+                'win': ['win', 'won', 'profit', 'positive', 'big win', 'biggest win', 'large win', 'winner'],
+                'loss': ['loss', 'lose', 'negative', 'red', 'big loss', 'biggest loss', 'large loss', 'loser'],
+                'breakeven': ['breakeven', 'even', 'zero']
+            }
+            
+            # Check for outcome keywords in message
+            message_lower = message.lower()
+            for outcome_type, keywords in outcome_keywords.items():
+                if any(kw in message_lower for kw in keywords):
+                    # Find trades matching symbol and outcome
+                    matching_trades = [
+                        t for t in all_trades
+                        if t.get('symbol', '').upper() == symbol and
+                        (t.get('outcome', '').lower() == outcome_type or
+                         (outcome_type == 'win' and t.get('pnl', 0) > 0) or
+                         (outcome_type == 'loss' and t.get('pnl', 0) < 0) or
+                         (outcome_type == 'breakeven' and t.get('pnl', 0) == 0))
+                    ]
+                    if matching_trades:
+                        # For "big win" or "biggest win", prefer the trade with highest P&L
+                        if 'big' in message_lower or 'biggest' in message_lower:
+                            if outcome_type == 'win':
+                                # Sort by P&L descending (biggest win first)
+                                matching_trades = sorted(matching_trades, 
+                                                       key=lambda t: t.get('pnl', 0), 
+                                                       reverse=True)
+                            elif outcome_type == 'loss':
+                                # Sort by P&L ascending (biggest loss first, most negative)
+                                matching_trades = sorted(matching_trades, 
+                                                       key=lambda t: t.get('pnl', 0), 
+                                                       reverse=False)
+                        
+                        # Return most recent matching trade (or biggest if "big" keyword)
+                        trade = sorted(matching_trades, 
+                                     key=lambda t: t.get('timestamp') or t.get('entry_time') or '', 
+                                     reverse=True)[0]
+                        print(f"[TRADE_DETECTOR] Found trade {symbol} {outcome_type} from message: '{message[:100]}'")
+                        return trade
     
     # Method 4: Check conversation history for recently mentioned trades
     # (e.g., "its image", "that trade's chart", "can you see it")

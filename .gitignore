@@ -85,3 +85,6 @@ $RECYCLE.BIN/
 
 # LATv2 test logs
 server/tests/results/
+
+# LATv2 telemetry logs
+server/latv2_logs/

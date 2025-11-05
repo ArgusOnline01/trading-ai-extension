@@ -67,13 +67,19 @@ def get_chart_url_fast(trade: Dict[str, Any]) -> Optional[str]:
     """
     Fast version of get_chart_url - only checks direct chart_path field and file existence.
     Does NOT call metadata API or pattern matching to avoid slow operations.
+    Phase 5F Fix: Validates file existence before returning URL.
     Use this for bulk operations like listing trades.
     """
     chart_path = trade.get('chart_path')
     if chart_path:
         filename = _normalize_to_filename(chart_path)
-        if filename and CHARTS_DIR.exists() and (CHARTS_DIR / filename).exists():
-            return f"/charts/{filename}"
+        if filename:
+            chart_file = CHARTS_DIR / filename
+            if chart_file.exists():
+                return f"/charts/{filename}"
+            else:
+                print(f"[CHART_SERVICE] Warning: Chart file not found in fast path: {chart_file}")
+                return None
     return None
 
 
@@ -166,6 +172,7 @@ def get_chart_url(trade: Dict[str, Any]) -> Optional[str]:
     """
     Return standardized /charts/{filename} URL if chart is resolvable, else None.
     Uses TTL cache for performance [5F.2 FIX F1].
+    Phase 5F Fix: Validates file existence before returning URL.
     
     Args:
         trade: Trade dictionary
@@ -173,12 +180,19 @@ def get_chart_url(trade: Dict[str, Any]) -> Optional[str]:
     Returns:
         URL path like "/charts/MNQZ5_5m_1540306142.png" or None
     """
+    global _chart_url_cache  # Required for cache assignment inside function
+    
     trade_id = str(trade.get("id") or trade.get("trade_id") or trade.get("session_id"))
     if not trade_id:
         # No trade_id - can't cache
         fname = resolve_chart_filename(trade)
         if fname:
-            return f"/charts/{fname}"
+            # Validate file exists before returning URL
+            chart_file = CHARTS_DIR / fname
+            if chart_file.exists():
+                return f"/charts/{fname}"
+            else:
+                print(f"[CHART_SERVICE] Warning: Chart file not found: {chart_file}")
         return None
     
     current_time = time.time()
@@ -188,14 +202,37 @@ def get_chart_url(trade: Dict[str, Any]) -> Optional[str]:
         if trade_id in _chart_url_cache:
             cached_url, cache_timestamp = _chart_url_cache[trade_id]
             if (current_time - cache_timestamp) < CHART_CACHE_TTL:
-                print(f"[CHART_SERVICE] Using cached URL for trade {trade_id} (age: {current_time - cache_timestamp:.1f}s)")
-                return cached_url
+                # Validate cached URL still exists
+                if cached_url:
+                    filename = cached_url.replace("/charts/", "")
+                    chart_file = CHARTS_DIR / filename
+                    if chart_file.exists():
+                        print(f"[CHART_SERVICE] Using cached URL for trade {trade_id} (age: {current_time - cache_timestamp:.1f}s)")
+                        return cached_url
+                    else:
+                        print(f"[CHART_SERVICE] Cached URL invalid (file missing): {cached_url}")
+                        # Remove invalid cache entry
+                        del _chart_url_cache[trade_id]
+                else:
+                    # Cache hit but URL is None - still valid (no chart available)
+                    return None
         
         # Cache miss or expired - resolve
         fname = resolve_chart_filename(trade)
-        chart_url = f"/charts/{fname}" if fname else None
+        chart_url = None
         
-        # Update cache
+        if fname:
+            # Validate file exists before caching
+            chart_file = CHARTS_DIR / fname
+            if chart_file.exists():
+                chart_url = f"/charts/{fname}"
+            else:
+                print(f"[CHART_SERVICE] Warning: Chart file not found for trade {trade_id}: {chart_file}")
+                # Log diagnostic info
+                print(f"[CHART_SERVICE] Chart directory exists: {CHARTS_DIR.exists()}")
+                print(f"[CHART_SERVICE] Chart directory contents: {list(CHARTS_DIR.glob('*.png'))[:5] if CHARTS_DIR.exists() else 'N/A'}")
+        
+        # Update cache (even if None to prevent repeated lookups)
         _chart_url_cache[trade_id] = (chart_url, current_time)
         
         # Clean old cache entries (keep last 100)

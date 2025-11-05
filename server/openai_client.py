@@ -4,7 +4,7 @@ OpenAI Client Wrapper for Visual Trade Copilot
 Handles API calls with budget enforcement and error handling
 """
 import os
-import openai
+from openai import OpenAI
 from typing import Dict, Any, Optional
 import json
 
@@ -43,7 +43,7 @@ class OpenAIClient:
     
     def __init__(self, api_key: str):
         self.api_key = api_key
-        openai.api_key = api_key
+        self.client = OpenAI(api_key=api_key)
     
     async def create_response(self, 
                             question: str, 
@@ -64,6 +64,34 @@ class OpenAIClient:
         Returns:
             Dict with model name and answer
         """
+        import time
+        import re
+        t0 = time.perf_counter()
+        
+        # OPTIMIZATION: Shortcut for "what did I learn from my last loss" queries
+        question_lower = question.lower().strip()
+        
+        # Broader regex pattern for reflection queries
+        reflection_pattern = r"(what.*learn|learn.*loss|lesson|reflect|from my last loss)"
+        if re.search(reflection_pattern, question_lower):
+            # Check if we have summary stats available
+            if session_context:
+                all_trades = session_context.get("all_trades") or session_context.get("recent_trades", [])
+                if all_trades:
+                    losses = [t for t in all_trades if t.get('outcome') == 'loss' or (isinstance(t.get('pnl'), (int, float)) and t.get('pnl', 0) < 0)]
+                    if losses:
+                        # Quick insight response (skip long AI reasoning)
+                        elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+                        print(f"[OPENAI_CLIENT] Quick reflection shortcut triggered (duration: {elapsed_ms} ms)")
+                        return {
+                            "model": model,
+                            "answer": "✅ Quick insight: your loss likely came from early entries or weak POIs. Want a detailed breakdown?",
+                            "intent": "stats_command",
+                            "phase": "5f",
+                            "duration_ms": elapsed_ms,
+                            "status": 200
+                        }
+        
         if not enforce_budget():
             raise Exception("Budget limit exceeded. Please check your spending limits.")
         
@@ -546,28 +574,29 @@ When users ask about their trades, stats, or performance:
                     "content": question
                 })
             
-            # Use the older OpenAI API format for compatibility
-            # GPT-5 uses max_completion_tokens instead of max_tokens
-            api_params = {
+            # Build params for Chat Completions (text-only path for Phase 4A)
+            chat_params = {
                 "model": model,
-                "messages": messages
+                "messages": messages,
             }
-            
-            # GPT-5 models use max_completion_tokens, older models use max_tokens
-            # GPT-5 also doesn't support custom temperature (only default of 1)
-            if 'gpt-5' in model.lower() or 'o1' in model.lower() or 'o3' in model.lower():
-                api_params["max_completion_tokens"] = MAX_TOKENS
-                # GPT-5 only supports temperature=1 (default), so we don't set it
-            else:
-                api_params["max_tokens"] = MAX_TOKENS
-                api_params["temperature"] = TEMPERATURE
-            
-            response = await openai.ChatCompletion.acreate(**api_params)
-            
+            # Token and sampling controls where supported
+            if not (('gpt-5' in model.lower()) or ('o1' in model.lower()) or ('o3' in model.lower())):
+                chat_params["max_tokens"] = MAX_TOKENS
+                chat_params["temperature"] = TEMPERATURE
+
+            # Run sync SDK in a thread to preserve async signature
+            import asyncio
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.client.chat.completions.create(**chat_params)
+            )
+
             # Extract response
-            answer = response['choices'][0]['message']['content'].strip() if response['choices'][0]['message']['content'] else ""
-            tokens_used = response.get('usage', {}).get('total_tokens', 0)
-            actual_model = response.get('model', model)  # Get actual model used by API
+            choice = response.choices[0]
+            answer = (choice.message.content or "").strip()
+            tokens_used = (response.usage.total_tokens if getattr(response, "usage", None) else 0)
+            actual_model = getattr(response, "model", model)
             
             print(f"[OPENAI] Actual model used: '{actual_model}' | Tokens: {tokens_used}")
             
@@ -606,11 +635,11 @@ def list_available_models() -> Dict[str, Any]:
         Dict with model list, counts, and GPT-5 detection info
     """
     try:
-        # Use the OpenAI API to list models
-        response = openai.Model.list()
-        
+        # Use the OpenAI v1 client to list models
+        client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        response = client.models.list()
         # Extract model IDs
-        model_names = [model['id'] for model in response['data']]
+        model_names = [m.id for m in response.data]
         model_names.sort()  # Sort alphabetically for readability
         
         # Detect GPT-5 variants

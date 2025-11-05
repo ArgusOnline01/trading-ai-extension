@@ -22,56 +22,16 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("Message received:", message);
   
-  // Handle chart capture and analysis from chat panel
+  // Handle chat: pure AI (no command execution, no trade management)
   if (message.action === "captureAndAnalyze") {
     (async () => {
       try {
         const tabId = sender.tab.id;
         const question = message.question;
-        const includeImage = message.includeImage !== false; // Default to true for backward compatibility
-        
-        // Phase 3B.2: Get model from message or use default
         const model = message.model || "balanced";
-        const reasonedCommands = !!message.reasonedCommands;
         
-        // Phase 3C: Auto-route to /hybrid for text-only models with images
-        // Note: "balanced" (GPT-5 Search) uses hybrid with caching
-        //       "fast" (GPT-5 Chat) has native vision - no caching needed
-        //       "advanced" (GPT-4o) has native vision
-        const textOnlyModels = ["balanced", "gpt5-mini", "gpt-5-mini", "gpt-5-mini-2025-08-07", "gpt-5-search-api", "gpt-5-search-api-2025-10-14"];
-        const useHybrid = includeImage && textOnlyModels.includes(model);
-        
-        // Phase 3B.1 & 4A.1: Capture or use uploaded image
-        let blob = null;
-        if (includeImage) {
-          // Phase 4A.1: Use uploaded image if provided, otherwise capture
-          if (message.uploadedImage) {
-            // Convert base64 to blob
-            const base64Data = message.uploadedImage;
-            const byteCharacters = atob(base64Data);
-            const byteNumbers = new Array(byteCharacters.length);
-            for (let i = 0; i < byteCharacters.length; i++) {
-              byteNumbers[i] = byteCharacters.charCodeAt(i);
-            }
-            const byteArray = new Uint8Array(byteNumbers);
-            blob = new Blob([byteArray], { type: 'image/png' });
-            console.log("📤 Using uploaded image");
-          } else {
-            // Capture the visible tab
-            const imageDataUrl = await chrome.tabs.captureVisibleTab(sender.tab.windowId, {
-              format: "png"
-            });
-            
-            // Convert to blob
-            const response = await fetch(imageDataUrl);
-            blob = await response.blob();
-            console.log("📸 Captured visible tab");
-          }
-        }
-        
-        // Get chat history and session context (Phase 3B)
+        // Get chat history (kept for context)
         let chatHistory = [];
-        let sessionContext = {};
         try {
           const historyResponse = await chrome.tabs.sendMessage(tabId, {
             action: "getChatHistory"
@@ -79,19 +39,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (historyResponse && historyResponse.history) {
             chatHistory = historyResponse.history;
           }
-          if (historyResponse && historyResponse.context) {
-            sessionContext = historyResponse.context;
-          }
         } catch (error) {
           console.log("No history available");
         }
         
         // Prepare form data
         const formData = new FormData();
-        // Phase 3B.1: Only append image if captured
-        if (blob) {
-          formData.append("image", blob, "chart.png");
-        }
         formData.append("question", question);
         formData.append("model", model);
         
@@ -103,73 +56,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }));
           console.log("📚 Sending", recentMessages.length, "messages to backend for context");
           formData.append("messages", JSON.stringify(recentMessages));
-        } else {
-          console.log("⚠️ No chat history found - first message in session");
         }
         
-        // Phase 4D.3: Attach ALL trades from backend to system context (sorted by date, newest first)
-        try {
-          const allTrades = await fetch(`http://127.0.0.1:8765/performance/all?limit=500`).then(r => r.json());
-          if (allTrades && Array.isArray(allTrades)) {
-            // Sort by date (newest first) - use timestamp or entry_time
-            allTrades.sort((a, b) => {
-              const dateA = new Date(a.timestamp || a.entry_time || 0);
-              const dateB = new Date(b.timestamp || b.entry_time || 0);
-              return dateB - dateA; // Newest first
-            });
-            
-            sessionContext = sessionContext || {};
-            // Send all trades, but also keep last 10 for compact display
-            sessionContext.recent_trades = allTrades.slice(0, 10); // Last 10 for compact
-            sessionContext.all_trades = allTrades; // All trades for full context
-            console.log(`[Background] Loaded ${allTrades.length} trades for context (sorted by date)`);
-          }
-        } catch (e) {
-          console.warn("Failed to fetch trades for context:", e);
-        }
-        
-        // Phase 4D.4: Ensure sessions data is preserved (from content.js getChatHistory)
-        // all_sessions should already be in sessionContext from content.js, but ensure it exists
-
-        // Phase 4D.3.2: If reasoned commands are enabled, execute commands BEFORE AI call
-        // NEW APPROACH: Don't pre-filter commands when reasoned mode is ON
-        // Let the AI see ALL text first, then post-process the response to detect and execute commands
-        // This allows the AI to understand context, detect multiple commands, and combine them naturally
-
-        // Phase 5B.1: Auto-detect trade if Teach Copilot is open and trade is selected
-        let detectedTradeId = null;
-        try {
-          const teachState = await chrome.tabs.sendMessage(tabId, {
-            action: "getTeachCopilotState"
-          });
-          if (teachState && teachState.selectedTrade) {
-            detectedTradeId = teachState.selectedTrade.id || teachState.selectedTrade.trade_id || teachState.selectedTrade.session_id;
-            if (detectedTradeId) {
-              formData.append("trade_id", detectedTradeId.toString());
-              console.log(`[BACKGROUND] Auto-including trade_id ${detectedTradeId} from Teach Copilot`);
-            }
-          }
-        } catch (e) {
-          // Teach Copilot not open or no trade selected - that's fine
-        }
-        
-        // Add session context (Phase 3B + 4D.3 + command result)
-        if (Object.keys(sessionContext).length > 0) {
-          formData.append("context", JSON.stringify(sessionContext));
-        }
-        
-        // Phase 3C: Add session ID for caching
-        const sessionId = message.sessionId || "default";
-        formData.append("session_id", sessionId);
-        
-        // Phase 3C: Determine endpoint (hybrid for text-only models with images)
-        const endpoint = useHybrid ? "/hybrid" : "/ask";
-        console.log(`[ROUTE] Using ${endpoint} endpoint for model: ${model}${useHybrid ? " (HYBRID MODE)" : ""}`);
+        // Pure AI chat endpoint
+        const requestUrl = `http://127.0.0.1:8765/ask`;
         
         // Send to backend
-        const apiResponse = await fetch(`http://127.0.0.1:8765${endpoint}`, {
-          method: "POST",
-          body: formData
+        const apiResponse = await fetch(requestUrl, {
+            method: "POST",
+            body: formData
         });
         
         if (!apiResponse.ok) {
@@ -177,75 +72,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         
         let data = await apiResponse.json();
-
-        // NEW: Execute commands extracted by AI from response
-        // Commands are now extracted by AI and returned in commands_executed array
-        let executedCommands = data.commands_executed || [];
         
-        // Execute frontend actions from command results
-        for (const cmdData of executedCommands) {
-          try {
-            const cmdResult = cmdData.result;
-            
-            if (cmdResult && cmdResult.frontend_action) {
-              console.log(`[COMMAND_EXEC] Executing frontend_action: ${cmdResult.frontend_action}`, cmdResult);
-              
-              // Prepare action data - merge top-level fields with data object
-              const actionData = { ...(cmdResult.data || {}) };
-              
-              // CRITICAL: Chart URL can be at top level or in data
-              if (cmdResult.chart_url) {
-                actionData.chart_url = cmdResult.chart_url;
-              }
-              if (cmdResult.trade_id) {
-                actionData.trade_id = cmdResult.trade_id;
-              }
-              if (cmdResult.symbol) {
-                actionData.symbol = cmdResult.symbol;
-              }
-              
-              console.log(`[COMMAND_EXEC] Action data prepared:`, actionData);
-              
-              // Send frontend action to content script
-              await chrome.tabs.sendMessage(tabId, {
-                action: "executeFrontendAction",
-                frontend_action: cmdResult.frontend_action,
-                data: actionData
-              });
-            }
-          } catch (err) {
-            console.warn("[COMMAND_EXEC] Could not execute frontend action:", err);
+        // Send result back to content script via showOverlay
+        await chrome.tabs.sendMessage(tabId, {
+          action: "showOverlay",
+          payload: {
+            question: question,
+            response: data
           }
-        }
+        });
         
-        // Phase 3C: Include hybrid mode info in response
-        if (useHybrid) {
-          data.hybrid_mode = true;
-          data.vision_model = data.vision_model || "gpt-4o";
-          data.reasoning_model = data.reasoning_model || model;
-        }
-        
-        // Phase 4A.2: For Log Trade, return data directly
-        if (message.forLogTrade) {
-          sendResponse({ 
-            success: true, 
-            answer: data.answer || data.response || "",
-            model: data.model,
-            tokens: data.tokens
-          });
-        } else {
-          // Send result back to content script via showOverlay
-          await chrome.tabs.sendMessage(tabId, {
-            action: "showOverlay",
-            payload: {
-              question: question,
-              response: data,
-              hybrid_mode: useHybrid
-            }
-          });
-          
-          sendResponse({ success: true });
-        }
+        sendResponse({ success: true });
       } catch (error) {
         console.error("Capture and analyze error:", error);
         sendResponse({ success: false, error: error.message });

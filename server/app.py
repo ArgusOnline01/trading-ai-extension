@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -8,6 +8,12 @@ import io
 import json
 import os
 from dotenv import load_dotenv
+from db import Base
+from db.session import engine, SessionLocal
+from db.maintenance import backfill_trades
+from db.migrate_from_json import migrate_performance_logs
+from db.enrich_from_logs import enrich_trades_from_logs
+from db.import_from_csv import import_from_csv
 from decision import analyze_chart_with_gpt4v, get_base_prompt
 from openai_client import get_client, get_budget_status, resolve_model, list_available_models, sync_model_aliases
 from performance.routes import router as performance_router
@@ -16,12 +22,56 @@ from performance.learning import learning_router
 from memory.routes import memory_router
 from memory.utils import initialize_default_files, get_memory_status
 from trades_import.routes import router as trades_import_router
+from trades.routes import router as trades_router
+from navigation.routes import router as navigation_router
+from admin.routes import router as admin_router
 from chart_reconstruction.routes import router as chart_reconstruction_router
+from charts.routes import router as charts_router
 from trades_merge.routes import router as trades_merge_router
 from amn_teaching.routes import router as amn_teaching_router
 from copilot_bridge.routes import router as copilot_router
 from routers.teach_router import router as teach_router
 from performance.learning import generate_learning_profile
+# LATv2 removed - logging system no longer needed
+import asyncio
+import time
+from pathlib import Path
+from datetime import datetime, timezone
+import json
+
+def generate_fallback_message(question: str, confidence: float = 0.0) -> str:
+    """
+    Generate friendly fallback message for low-confidence commands or natural language.
+    Phase 5F Polishing: Distinguishes different types of fallbacks.
+    """
+    question_lower = question.lower().strip()
+    
+    # Categorize question type
+    if any(word in question_lower for word in ["hello", "hi", "hey", "greeting"]):
+        return "Hello! I'm here to help with your trading analysis. Try commands like 'list my trades', 'show my stats', or 'show chart'."
+    
+    elif any(word in question_lower for word in ["what", "how", "why", "when", "where"]):
+        if "think" in question_lower:
+            return "I can help you analyze your trades and performance. Try 'list my trades' to see your trading history, or 'show my stats' for performance metrics."
+        elif any(word in question_lower for word in ["can", "do", "help"]):
+            return "I can help you with trade analysis, chart viewing, and performance tracking. Try 'show my stats', 'list my trades', or 'show chart'."
+        else:
+            return "I can help answer questions about your trading data. Try 'list my trades' to see your trades, or 'show my stats' for performance insights."
+    
+    elif any(word in question_lower for word in ["thanks", "thank", "appreciate"]):
+        return "You're welcome! Feel free to ask me about your trades anytime. Try 'list my trades' or 'show my stats'."
+    
+    elif any(word in question_lower for word in ["not", "invalid", "wrong", "error"]):
+        return "I didn't recognize that as a trading command. Try 'list my trades', 'show chart', 'show my stats', or 'next trade' for navigation."
+    
+    elif "?" in question_lower:
+        return "I can help you with trading analysis. For specific commands, try 'list my trades', 'show chart', or 'show my stats'."
+    
+    else:
+        # Generic fallback
+        return "I can help you with trade analysis, chart viewing, and performance tracking. Try 'list my trades', 'show chart', or 'show my stats'."
+
+# write_chat_log function removed - LATv2 logging no longer needed
 
 # Try to import PIL, but make it optional for now
 try:
@@ -70,8 +120,14 @@ app.include_router(memory_router)
 # Mount trades import router (Phase 4D.0)
 app.include_router(trades_import_router)
 
+# New DB-backed trade management API
+app.include_router(trades_router)
+
 # Mount chart reconstruction router (Phase 4D.1)
 app.include_router(chart_reconstruction_router)
+
+# Charts endpoints (DB-friendly)
+app.include_router(charts_router)
 
 # Mount trades merge router (Phase 4D.2)
 app.include_router(trades_merge_router)
@@ -81,6 +137,12 @@ app.include_router(amn_teaching_router)
 
 # Mount static files for dashboard (Phase 4B.1)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Serve minimal web app for trade management UI (Phase 4A foundation)
+try:
+    app.mount("/app", StaticFiles(directory="web", html=True), name="web_app")
+except Exception as _e:
+    print(f"[WEB] Skipping /app mount (web assets missing): {_e}")
 
 # === 5F.2 FIX ===
 # Mount chart images (Phase 5A: Teach Copilot)
@@ -102,7 +164,45 @@ if charts_dir.exists():
                 await send(message)
             await super().__call__(scope, receive, send_wrapper)
     
-    app.mount("/charts", CachedStaticFiles(directory=str(charts_dir)), name="charts")
+    # Phase 5F Fix: Add explicit route handler BEFORE mount for better error diagnostics
+    @app.get("/charts/{filename}")
+    async def get_chart_file(filename: str, request: Request):
+        """
+        Serve chart files with better error handling.
+        Phase 5F Fix: Returns 404 with diagnostic info if file not found.
+        Supports both HTTP and HTTPS protocols.
+        """
+        chart_file = charts_dir / filename
+        if not chart_file.exists():
+            # Log diagnostic info
+            print(f"[CHARTS] 404 - Chart file not found: {filename}")
+            print(f"[CHARTS] Chart directory: {charts_dir}")
+            print(f"[CHARTS] Directory exists: {charts_dir.exists()}")
+            if charts_dir.exists():
+                available_files = list(charts_dir.glob("*.png"))[:10]
+                print(f"[CHARTS] Available files (sample): {[f.name for f in available_files]}")
+            
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "Chart file not found",
+                    "filename": filename,
+                    "chart_directory": str(charts_dir),
+                    "directory_exists": charts_dir.exists(),
+                    "available_files_sample": [f.name for f in (charts_dir.glob("*.png")[:10] if charts_dir.exists() else [])]
+                }
+            )
+        
+        # Use FileResponse to serve the file with proper headers
+        from fastapi.responses import FileResponse
+        return FileResponse(chart_file, media_type="image/png")
+    
+    # Phase 5F Fix: Use explicit route handler (no mount needed - route takes precedence)
+    # Mount removed to avoid conflicts - explicit route handler provides better error diagnostics
+    # app.mount("/charts", CachedStaticFiles(directory=str(charts_dir)), name="charts")  # Removed - use route handler instead
+    
+    # Add static mount for /static/charts (for backward compatibility - deprecated, use /charts/)
+    app.mount("/static/charts", StaticFiles(directory=str(charts_dir)), name="static_charts")
 
 # Phase 5C: Mount overlay images (serve from overlays directory)
 overlays_dir = Path(__file__).parent / "data" / "amn_training_examples" / "overlays"
@@ -115,6 +215,12 @@ app.include_router(copilot_router)
 # Mount teach router (Phase 5B: Conversational Teaching Engine)
 app.include_router(teach_router)
 
+# Navigation endpoints (DB-backed current/next/previous)
+app.include_router(navigation_router)
+
+# Admin endpoints
+app.include_router(admin_router)
+
 # Phase 4C.1: Startup initialization with persistent memory
 @app.on_event("startup")
 async def startup_event():
@@ -122,6 +228,39 @@ async def startup_event():
     print("=" * 60)
     print("[BOOT] Visual Trade Copilot v4.6.0")
     print("=" * 60)
+    # Initialize database
+    try:
+        from pathlib import Path as _Path
+        print("[DB] Initializing database and creating tables if missing...")
+        Base.metadata.create_all(bind=engine)
+        with SessionLocal() as _db:
+            # simple check if any trades exist
+            from db.models import Trade as _Trade
+            existing = _db.query(_Trade).count()
+        if existing == 0:
+            csv_path = (_Path(__file__).parent / "data" / "Trading-Images" / "trades_export.csv").resolve()
+            print(f"[DB] Empty database detected. Importing from CSV {csv_path.name}...")
+            with SessionLocal() as _db_csv:
+                cr = import_from_csv(_db_csv, csv_path)
+                print(f"[DB] CSV import: updated={cr['updated']}, skipped={cr['skipped']}")
+        else:
+            print(f"[DB] Existing records detected: {existing} trades")
+        # Backfill derived fields for all cases
+        with SessionLocal() as _db2:
+            bf = backfill_trades(_db2)
+            print(f"[DB] Backfill: outcome={bf['outcome']}, entry_time={bf['entry_time']}")
+        # JSON enrichment removed (DB is source of truth)
+
+        # Import/align from CSV if present
+        try:
+            csv_path = (_Path(__file__).parent / "data" / "Trading-Images" / "trades_export.csv").resolve()
+            with SessionLocal() as _db4:
+                cr = import_from_csv(_db4, csv_path)
+                print(f"[DB] CSV import: updated={cr['updated']}, skipped={cr['skipped']}")
+        except Exception as _csv_err:
+            print(f"[DB] CSV import warning: {_csv_err}")
+    except Exception as e:
+        print(f"[DB] Warning: Database initialization failed: {e}")
     
     # Initialize memory system
     try:
@@ -163,6 +302,9 @@ async def startup_event():
         print(f"[SYSTEM] Awareness layer skipped (missing key: {e})")
     except Exception as e:
         print(f"[SYSTEM] Awareness layer initialization warning: {e}")
+    
+    # LATv2 cleanup removed - no longer needed
+    
     print("=" * 60)
 
 # Pydantic models
@@ -334,331 +476,45 @@ async def get_prompt():
 
 @app.post("/ask", response_model=AskResponse)
 async def ask_about_chart(
-    image: UploadFile = File(None),  # Phase 3B.1: Optional for text-only mode
     question: str = Form(...),
     model: str = Form(None),
     messages: str = Form(None),
     context: str = Form(None),
-    trade_id: Optional[str] = Form(None)  # Phase 5B.1: Optional trade ID for auto-loading chart
 ):
     """
-    Ask a natural language question about a trading chart (Phase 3B: With session context)
-    
-    Args:
-        image: Trading chart image file
-        question: Natural language question about the chart
-        model: Optional model selection (aliases: "fast", "balanced", "advanced" or direct model names)
-        messages: Optional JSON string of previous conversation messages for context
-        context: Optional JSON string of session context (price, bias, POIs, etc.)
-        trade_id: Optional trade ID - if provided, automatically loads chart image for that trade
-        
-    Returns:
-        AskResponse with model name and conversational answer
+    Pure AI chat (natural language only).
+    - No command detection or execution
+    - No auto-chart loading
+    - Optional conversation history and lightweight context only
     """
     try:
-        # Phase 3B.1: Handle optional image (text-only mode)
-        # Phase 5B.1: Auto-detect and load chart image if trade is referenced
-        image_base64 = None
-        detected_trade = None
-        
-        # If explicit trade_id provided, load chart
-        # DISABLED: Auto-chart loading causes 500 errors with invalid image formats
-        # Use explicit chart commands instead
-        if trade_id:
-            print(f"[ASK] trade_id provided but auto-chart loading disabled - use explicit chart commands")
-            detected_trade = None
-            image_base64 = None
-        
-        # DISABLED: Auto-chart loading for non-commands causes 500 errors
-        # Users should use explicit chart commands or upload images manually
-        # Auto-detection still runs for trade detection context, but won't load charts
-        if image is None and image_base64 is None:
-            from utils.trade_detector import detect_trade_reference
-            
-            try:
-                # Parse context to get all_trades if available
-                session_context = {}
-                if context:
-                    try:
-                        session_context = json.loads(context)
-                    except:
-                        pass
-                
-                all_trades = session_context.get('all_trades')
-                if not all_trades:
-                    # Fallback: fetch all trades
-                    from performance.utils import read_logs
-                    all_trades = read_logs()
-                
-                # Detect trade reference for context (but don't load chart - causes 500 errors)
-                conversation_history_for_detection = []
-                if messages:
-                    try:
-                        parsed_messages = json.loads(messages)
-                        conversation_history_for_detection = parsed_messages[-10:]
-                    except:
-                        pass
-                
-                # Detect trade for context only (no chart loading)
-                detected_trade = detect_trade_reference(question, all_trades, conversation_history_for_detection)
-                if detected_trade:
-                    print(f"[ASK] Detected trade {detected_trade.get('id')} for context (chart loading disabled)")
-            except Exception as e:
-                print(f"[ASK] Trade auto-detection failed: {e}")
-        
-        # Process uploaded image if provided (takes precedence over auto-detected)
-        # Note: If image_base64 was auto-loaded, we skip this step
-        if image is not None and image_base64 is None:
-            # Validate file type
-            if not image.content_type or not image.content_type.startswith('image/'):
-                raise HTTPException(status_code=400, detail="File must be an image")
-            
-            # Read and process the image (reuse existing logic)
-            image_data = await image.read()
-            
-            if PIL_AVAILABLE:
-                # Full image processing with PIL
-                image_obj = Image.open(io.BytesIO(image_data))
-                
-                # Convert to RGB if necessary
-                if image_obj.mode != 'RGB':
-                    image_obj = image_obj.convert('RGB')
-                
-                # Resize if too large
-                max_size = 2048
-                if image_obj.width > max_size or image_obj.height > max_size:
-                    image_obj.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
-                
-                # Convert to base64
-                buffer = io.BytesIO()
-                image_obj.save(buffer, format='JPEG', quality=85)
-                image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-            else:
-                # Fallback to raw data
-                image_base64 = base64.b64encode(image_data).decode('utf-8')
-            
-            print(f"[INFO] Image mode: Uploaded image processed ({len(image_base64)} chars base64)")
-        elif image_base64:
-            print(f"[INFO] Image mode: Auto-loaded chart image ({len(image_base64)} chars base64)")
-        else:
-            print("[INFO] Text-only mode: No image provided")
-        
-        # Resolve the model to use
         selected_model = resolve_model(model)
-        print(f"[MODEL] Request model: '{model}' -> Resolved to: '{selected_model}'")
-        
-        # Parse conversation history if provided (Phase 3B: take last 50 messages)
         conversation_history = []
         if messages:
             try:
                 parsed_messages = json.loads(messages)
-                # Take last 50 messages for full context (Phase 3B upgrade from 5)
                 conversation_history = parsed_messages[-50:]
-                print(f"[OK] Received {len(conversation_history)} messages for context")
-                # print(f"[DEBUG] First message: {conversation_history[0] if conversation_history else 'None'}")
-            except json.JSONDecodeError as e:
-                print(f"[WARNING] Failed to parse messages: {e}")
-                # Continue without history if parsing fails
-        else:
-            print("[INFO] No messages field in request - first message in conversation")
-        
-        # Parse session context if provided (Phase 3B)
+            except json.JSONDecodeError:
+                pass
         session_context = {}
         if context:
             try:
                 session_context = json.loads(context)
-            except json.JSONDecodeError as e:
-                print(f"Warning: Failed to parse context: {e}")
-        
-        # Phase 5E: Model-Mediated Command Layer - Analyze intent BEFORE processing
-        from ai.intent_analyzer import analyze_intent
-        from utils.command_extractor import normalize_command
-        from utils.command_router import route_command, merge_multi_commands, generate_execution_summary
-        
-        # Analyze user intent FIRST (before auto-loading charts)
-        intent_analysis = analyze_intent(question, conversation_history)
-        
-        # Phase 5E: Confidence threshold (configurable)
-        CONFIDENCE_THRESHOLD = float(os.getenv('INTENT_CONFIDENCE_THRESHOLD', '0.5'))  # Lowered default from 0.6 to 0.5 for better detection
-        
-        # Log intent analysis for debugging
-        print(f"[INTENT_ANALYZER] Result: is_command={intent_analysis.get('is_command')}, confidence={intent_analysis.get('confidence')}, threshold={CONFIDENCE_THRESHOLD}")
-        
-        # If intent analyzer detected a command, DON'T auto-load charts (causes 500 errors and delays)
-        # Commands handle their own chart loading via frontend actions
-        is_command = intent_analysis.get("is_command") and intent_analysis.get("confidence", 0) >= CONFIDENCE_THRESHOLD
-        
-        # CRITICAL: Always clear image_base64 to prevent 500 errors
-        # Auto-chart loading causes invalid image format errors
-        # Users should upload images explicitly or use chart commands
-        image_base64 = None
-        if is_command:
-            print("[ASK] Command detected - skipping auto-chart loading to prevent errors")
-        else:
-            print("[ASK] Non-command mode - auto-chart loading disabled to prevent 500 errors")
-        
-        # Build context for command execution
-        all_trades_for_context = session_context.get('all_trades')
-        if not all_trades_for_context:
-            try:
-                from performance.utils import read_logs
-                all_trades_for_context = read_logs()
-            except:
-                all_trades_for_context = []
-        
-        cmd_context = {
-            **session_context,
-            'conversation_history': conversation_history,
-            'detected_trade': detected_trade,
-            'all_trades': all_trades_for_context,
-            'command_text': question
-        }
-        
-        # If intent analyzer detected a command, execute it directly
-        if is_command:
-            executed_commands = []
-            execution_log = []
-            
-            raw_commands = intent_analysis.get("commands_detected", [])
-            print(f"[INTENT_ANALYZER] Detected {len(raw_commands)} command(s) with confidence {intent_analysis.get('confidence')}")
-            
-            # Deduplicate commands
-            raw_commands = merge_multi_commands(raw_commands)
-            
-            # Route and execute each command
-            for raw_cmd in raw_commands:
-                print(f"[COMMAND_ROUTER] Routing command: {raw_cmd.get('command', 'unknown')}")
-                try:
-                    result = route_command(raw_cmd, cmd_context)
-                    execution_log.append(result)
-                    
-                    executed_commands.append({
-                        'command': result.get('command', 'unknown'),
-                        'result': result
-                    })
-                    
-                    print(f"[COMMAND_ROUTER] Result: {result.get('success')}, frontend_action: {result.get('frontend_action')}")
-                except Exception as cmd_error:
-                    import traceback
-                    error_trace = traceback.format_exc()
-                    print(f"[COMMAND_ROUTER] Error routing command: {cmd_error}")
-                    print(f"[COMMAND_ROUTER] Traceback: {error_trace}")
-                    execution_log.append({
-                        "success": False,
-                        "command": raw_cmd.get('command', 'unknown'),
-                        "message": f"Command execution error: {str(cmd_error)}",
-                        "error": str(cmd_error)
-                    })
-                    executed_commands.append({
-                        'command': raw_cmd.get('command', 'unknown'),
-                        'result': {
-                            "success": False,
-                            "command": raw_cmd.get('command', 'unknown'),
-                            "message": f"⚠️ Error executing command: {str(cmd_error)}",
-                            "error": str(cmd_error)
-                        }
-                    })
-            
-            # Generate execution summary
-            summary_text = generate_execution_summary(execution_log)
-            print(f"[COMMAND_ROUTER] Execution summary:\n{summary_text}")
-            
-            # For commands, generate a brief acknowledgment (no full AI response needed)
-            answer_text = "Command executed successfully."
-            if executed_commands:
-                first_cmd = executed_commands[0].get('result', {})
-                if first_cmd.get('message'):
-                    answer_text = first_cmd.get('message', answer_text)
-            
-            return AskResponse(
-                model="intent-analyzer",
-                answer=answer_text,
-                commands_executed=executed_commands,
-                summary=summary_text
-            )
-        
-        # Not a command - proceed with normal chat flow
-        print(f"[INTENT_ANALYZER] Not a command (confidence: {intent_analysis.get('confidence')}), proceeding with normal chat")
-        
-        # Check if there was an error in intent analysis
-        if intent_analysis.get("error"):
-            print(f"[INTENT_ANALYZER] Warning: Intent analyzer had error: {intent_analysis.get('error')}")
-            print(f"[INTENT_ANALYZER] Falling back to normal chat flow")
-        
-        # Generate AI response using normal flow
-        # IMPORTANT: Only send image_base64 if it's valid and not empty
-        # Invalid image formats cause 500 errors
+            except json.JSONDecodeError:
+                pass
+
         client = get_client()
-        
-        # Validate image_base64 before sending (prevent 500 errors)
-        if image_base64:
-            # Check if it's a valid data URL format
-            if not image_base64.startswith('data:image/'):
-                # If it's raw base64, wrap it in data URL
-                if len(image_base64) > 100:  # Basic sanity check
-                    image_base64 = f"data:image/jpeg;base64,{image_base64}"
-                else:
-                    print("[ASK] Invalid image_base64, skipping image")
-                    image_base64 = None
-        
         response = await client.create_response(
             question=question,
-            image_base64=image_base64,
+            image_base64=None,
             model=selected_model,
             conversation_history=conversation_history,
-            session_context=session_context
+            session_context=session_context,
         )
-        
-        # Phase 5E: Still check for commands in AI response (for backward compatibility)
-        # This handles cases where AI explicitly mentions commands in its response
-        answer_text = response["answer"]
-        executed_commands = []
-        execution_log = []
-        
-        try:
-            # Legacy: Extract commands from AI response (for cases where AI mentions commands)
-            from utils.command_extractor import extract_commands_from_response
-            
-            raw_commands = extract_commands_from_response(answer_text)
-            print(f"[COMMAND_EXTRACT] Found {len(raw_commands)} command(s) in AI response")
-            
-            if raw_commands:
-                raw_commands = merge_multi_commands(raw_commands)
-                
-                for raw_cmd in raw_commands:
-                    normalized = normalize_command(raw_cmd)
-                    result = route_command(normalized, cmd_context)
-                    execution_log.append(result)
-                    executed_commands.append({
-                        'command': result.get('command', 'unknown'),
-                        'result': result
-                    })
-                
-                summary_text = generate_execution_summary(execution_log)
-            else:
-                summary_text = None
-            
-        except Exception as e:
-            print(f"[COMMAND_EXEC] Error executing commands: {e}")
-            import traceback
-            traceback.print_exc()
-            summary_text = f"❌ **Error**: {str(e)}"
-        
-        # Return response with executed commands info and summary
-        return AskResponse(
-            model=response["model"],
-            answer=answer_text,
-            commands_executed=executed_commands,
-            summary=summary_text
-        )
-        
+        return AskResponse(model=response.get("model", selected_model), answer=response.get("answer", ""), commands_executed=[], summary=None)
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        print("[ERROR] Exception in /ask endpoint:")
-        print(error_details)
         raise HTTPException(status_code=500, detail=f"Ask failed: {str(e)}")
 
 @app.get("/budget")
@@ -940,6 +796,18 @@ async def clear_hybrid_cache(session_id: str):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Cache clear failed: {str(e)}")
+
+@app.post("/ui_event")
+async def log_ui_event(request: Request):
+    """Logs UI events (button clicks, toggles, etc.) - LATv2 removed, endpoint kept for compatibility"""
+    try:
+        data = await request.json()
+        # LATv2 logging removed - no longer needed
+        # Endpoint kept for backward compatibility with frontend
+        return {"status": "ok"}
+    except Exception as e:
+        print(f"[UI_EVENT] Error processing UI event: {e}")
+        return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
     import uvicorn

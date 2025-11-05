@@ -510,6 +510,9 @@ async function renameSession() {
  * Available globally for use in both normal mode and teaching mode
  */
 window.openChartPopup = function(src) {
+  // Log UI event for telemetry
+  logUIEvent("click_open_chart");
+  
   // === 5F.2 TEST ===
   console.log("[5F.2 TEST] Chart request triggered:", src);
   // === 5F.2 TEST ===
@@ -923,6 +926,7 @@ function ensureChatUI() {
     // DEPRECATED: Reasoned commands toggle removed - commands are always AI-extracted now
     // Commands are automatically extracted from AI responses regardless of toggle state
     document.getElementById("closeChat").onclick = () => {
+      logUIEvent("click_close_chat");
       chatContainer.classList.add("vtc-closing");
       setTimeout(() => {
         chatContainer.remove();
@@ -1021,7 +1025,9 @@ function ensureChatUI() {
         // Request chart capture from background/popup (Phase 3B.2: with model selection)
         // === 5F.2 TEST ===
         const t0 = performance.now();
-        // === 5F.2 TEST ===
+        
+        // LATv2 logging removed - no longer needed
+        
         const response = await chrome.runtime.sendMessage({
           action: "captureAndAnalyze",
           question: question,
@@ -1032,10 +1038,7 @@ function ensureChatUI() {
           reasonedCommands: reasonedCommandsEnabled,
           uploadedImage: uploadedImageData  // Phase 4A.1: Pre-uploaded image data
         });
-        // === 5F.2 TEST ===
-        const t1 = performance.now();
-        console.log("[5F.2 TEST] API call duration:", (t1 - t0).toFixed(1), "ms");
-        // === 5F.2 TEST ===
+        // LATv2 logging removed - no longer needed
         
         if (response && response.success) {
           // Message will be added via showOverlay action
@@ -1489,20 +1492,28 @@ function addChartButtonsToTradeRows(commands_executed) {
       });
     }
     
-    // Handle view_trade - add button to single trade
+    // Handle view_trade - add buttons to single trade
     if (result.command === 'view_trade' && (data.trade || data.chart_url)) {
       const trade = data.trade || data;
       if (trade && trade.chart_url) {
         const tradeId = trade.id || trade.trade_id || trade.session_id;
         const symbol = trade.symbol || 'UNK';
         
-        const btn = document.createElement('button');
-        btn.className = 'vtc-btn-secondary vtc-chart-btn';
-        btn.textContent = '🖼 Show Chart';
-        btn.style.marginLeft = '10px';
-        btn.style.marginTop = '5px';
-        btn.style.display = 'inline-block';
-        btn.addEventListener('click', () => {
+        // Create container for buttons
+        const buttonContainer = document.createElement('div');
+        buttonContainer.style.marginTop = '10px';
+        buttonContainer.style.display = 'flex';
+        buttonContainer.style.gap = '10px';
+        buttonContainer.style.flexWrap = 'wrap';
+        
+        // Show Chart button
+        const chartBtn = document.createElement('button');
+        chartBtn.className = 'vtc-btn-secondary vtc-chart-btn';
+        chartBtn.textContent = '🖼 Show Chart';
+        chartBtn.style.marginLeft = '0px';
+        chartBtn.style.marginTop = '0px';
+        chartBtn.style.display = 'inline-block';
+        chartBtn.addEventListener('click', () => {
           const fullUrl = trade.chart_url.startsWith('http') 
             ? trade.chart_url 
             : `http://127.0.0.1:8765${trade.chart_url}`;
@@ -1511,13 +1522,48 @@ function addChartButtonsToTradeRows(commands_executed) {
             showNotification(`📊 Opening chart for ${symbol} trade #${tradeId}`, "success");
           }
         });
+        buttonContainer.appendChild(chartBtn);
+        
+        // Next Trade button
+        const nextBtn = document.createElement('button');
+        nextBtn.className = 'vtc-btn-secondary vtc-nav-btn';
+        nextBtn.textContent = '➡️ Next Trade';
+        nextBtn.style.marginLeft = '0px';
+        nextBtn.style.marginTop = '0px';
+        nextBtn.style.display = 'inline-block';
+        nextBtn.addEventListener('click', async () => {
+          // Set input value and trigger sendMessage
+          const input = document.getElementById('vtc-input');
+          if (input) {
+            input.value = 'next trade';
+            await sendMessage(false); // false = text-only mode
+          }
+        });
+        buttonContainer.appendChild(nextBtn);
+        
+        // Previous Trade button
+        const prevBtn = document.createElement('button');
+        prevBtn.className = 'vtc-btn-secondary vtc-nav-btn';
+        prevBtn.textContent = '⬅️ Previous Trade';
+        prevBtn.style.marginLeft = '0px';
+        prevBtn.style.marginTop = '0px';
+        prevBtn.style.display = 'inline-block';
+        prevBtn.addEventListener('click', async () => {
+          // Set input value and trigger sendMessage
+          const input = document.getElementById('vtc-input');
+          if (input) {
+            input.value = 'previous trade';
+            await sendMessage(false); // false = text-only mode
+          }
+        });
+        buttonContainer.appendChild(prevBtn);
         
         // Append to message content
         const lastParagraph = messageContent.querySelector('p:last-child');
         if (lastParagraph) {
-          lastParagraph.appendChild(btn);
+          lastParagraph.appendChild(buttonContainer);
         } else {
-          messageContent.appendChild(btn);
+          messageContent.appendChild(buttonContainer);
         }
       }
     }
@@ -1753,6 +1799,7 @@ function resetChatSize() {
  */
 function toggleMinimize() {
   if (chatContainer) {
+    logUIEvent("click_minimize_chat");
     chatContainer.classList.toggle("vtc-minimized");
   }
 }
@@ -1812,6 +1859,15 @@ function showNotification(message, type = "info") {
     toast.classList.remove("vtc-toast-visible");
     setTimeout(() => toast.remove(), 300);
   }, 3000);
+}
+
+// === LATv2 Universal Telemetry Layer ===
+// Log UI events for telemetry (filtered to only meaningful command-level events)
+// LATv2 logging removed - logUIEvent function kept for backward compatibility but does nothing
+function logUIEvent(eventName, context = null) {
+  // LATv2 removed - no logging needed
+  // Function kept to prevent errors if called elsewhere
+  return;
 }
 
 // ========== Phase 4A: Performance Tracking ==========
@@ -3000,6 +3056,9 @@ let performanceTabModal = null;
  * Show Performance Tab modal (overlay popup with all trades)
  */
 async function showPerformanceTabModal() {
+  // Log UI event for telemetry
+  logUIEvent("click_show_performance_tab");
+  
   if (performanceTabModal) {
     performanceTabModal.style.display = "flex";
     performanceTabModal.style.opacity = "1";

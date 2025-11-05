@@ -62,7 +62,29 @@ def load_intent_prompt() -> str:
         raise FileNotFoundError(f"Intent prompt not found at {INTENT_PROMPT_PATH}")
     
     with open(INTENT_PROMPT_PATH, "r", encoding="utf-8") as f:
-        return f.read()
+        prompt_text = f.read()
+    
+    # Extract intent names from prompt for debugging
+    import re
+    intent_pattern = r"- (\w+):"
+    intent_names = re.findall(intent_pattern, prompt_text)
+    
+    # Filter for trade-related intents (our new ones)
+    trade_intents = [name for name in intent_names if any(x in name for x in ['trade', 'navigation', 'win', 'loss'])]
+    
+    print(f"[INTENT_ANALYZER] Loaded intents: {len(intent_names)} total")
+    if trade_intents:
+        print(f"[INTENT_ANALYZER] Trade-related intents: {', '.join(sorted(set(trade_intents)))}")
+    
+    # Check for new Phase 5F intents
+    new_intents = ['next_trade_navigation', 'random_winning_trade']
+    found_new = [name for name in new_intents if name in prompt_text]
+    if found_new:
+        print(f"[INTENT_ANALYZER] Phase 5F intents loaded: {', '.join(found_new)}")
+    else:
+        print(f"[INTENT_ANALYZER] WARNING: Phase 5F intents not found in prompt: {', '.join(new_intents)}")
+    
+    return prompt_text
 
 
 def analyze_intent(
@@ -94,6 +116,55 @@ def analyze_intent(
         }
     
     print(f"[INTENT_ANALYZER] Analyzing: '{user_text[:100]}'")
+    
+    # Explicit pattern matching for "next trade" before LLM call
+    import re
+    NEXT_TRADE_PATTERNS = [
+        r"\bnext trade\b",
+        r"\bnext one\b",
+        r"\bgo to the next\b",
+        r"\bshow next\b",
+        r"\bnext\b",
+    ]
+    
+    # Phase 5F Fix: Explicit pattern matching for "previous trade"
+    PREVIOUS_TRADE_PATTERNS = [
+        r"\bprevious trade\b",
+        r"\bprevious one\b",
+        r"\bgo to the previous\b",
+        r"\bshow previous\b",
+        r"\bgo back\b",
+        r"\bback\b",
+    ]
+    
+    user_text_lower = user_text.lower().strip()
+    for pattern in NEXT_TRADE_PATTERNS:
+        if re.search(pattern, user_text_lower):
+            print(f"[INTENT_ANALYZER] matched NEXT_TRADE_PATTERNS for text: {user_text}")
+            return {
+                "is_command": True,
+                "confidence": 0.95,
+                "commands_detected": [{
+                    "command": "next_trade_navigation",
+                    "type": "trade",
+                    "action": "next",
+                    "arguments": {}
+                }]
+            }
+    
+    for pattern in PREVIOUS_TRADE_PATTERNS:
+        if re.search(pattern, user_text_lower):
+            print(f"[INTENT_ANALYZER] matched PREVIOUS_TRADE_PATTERNS for text: {user_text}")
+            return {
+                "is_command": True,
+                "confidence": 0.95,
+                "commands_detected": [{
+                    "command": "previous_trade_navigation",
+                    "type": "trade",
+                    "action": "previous",
+                    "arguments": {}
+                }]
+            }
     
     try:
         system_prompt = load_intent_prompt()

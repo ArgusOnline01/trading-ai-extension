@@ -7,13 +7,15 @@ import statistics
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from .models import TradeRecord
+from db.session import SessionLocal
+from db.models import Trade
 import time
 import threading
 
 # === 5F.2 FIX ===
 # Phase 4D.3: Use absolute path anchored to this module to avoid CWD issues
 DATA_DIR = Path(__file__).parent.parent / "data"
-LOG_FILE = str(DATA_DIR / "performance_logs.json")
+LOG_FILE = str(DATA_DIR / "performance_logs.json")  # deprecated (DB is source of truth)
 
 # TTL cache for read_logs() [5F.2 FIX F1]
 _logs_cache = None
@@ -31,30 +33,33 @@ def ensure_data_dir():
 
 
 def read_logs() -> List[Dict[str, Any]]:
-    """Read all trade logs from JSON file with TTL cache [5F.2 FIX F1]"""
+    """Read all trades from the database (DB is source of truth)."""
     global _logs_cache, _logs_cache_timestamp
-    
     current_time = time.time()
-    
     with _logs_cache_lock:
-        # Check if cache is valid
         if _logs_cache is not None and (current_time - _logs_cache_timestamp) < LOGS_CACHE_TTL:
-            print(f"[PERFORMANCE] Using cached logs (age: {current_time - _logs_cache_timestamp:.1f}s)")
             return _logs_cache
-        
-        # Cache expired or not set - read from file
-        ensure_data_dir()
-        try:
-            with open(LOG_FILE, 'r') as f:
-                raw = json.load(f)
-                _logs_cache = [normalize_trade(trade) for trade in raw]
-                _logs_cache_timestamp = current_time
-                print(f"[PERFORMANCE] Loaded {len(_logs_cache)} trades from file (cache set)")
-                return _logs_cache
-        except (FileNotFoundError, json.JSONDecodeError):
-            _logs_cache = []
-            _logs_cache_timestamp = current_time
-            return _logs_cache
+        rows: List[Dict[str, Any]] = []
+        with SessionLocal() as db:
+            for t in db.query(Trade).order_by(Trade.id.asc()).all():
+                rows.append({
+                    "id": t.trade_id,
+                    "trade_id": t.trade_id,
+                    "symbol": t.symbol,
+                    "entry_time": t.entry_time.isoformat() if t.entry_time else None,
+                    "exit_time": t.exit_time.isoformat() if t.exit_time else None,
+                    "entry_price": t.entry_price,
+                    "exit_price": t.exit_price,
+                    "direction": t.direction,
+                    "outcome": t.outcome,
+                    "pnl": t.pnl,
+                    "r_multiple": t.r_multiple,
+                    "chart_url": t.chart_url,
+                    "session_id": t.session_id,
+                })
+        _logs_cache = [normalize_trade(tr) for tr in rows]
+        _logs_cache_timestamp = current_time
+        return _logs_cache
 
 
 def invalidate_logs_cache():
@@ -67,11 +72,8 @@ def invalidate_logs_cache():
 
 
 def write_logs(logs: List[Dict[str, Any]]):
-    """Write trade logs to JSON file"""
-    ensure_data_dir()
-    with open(LOG_FILE, 'w') as f:
-        json.dump(logs, f, indent=2)
-    invalidate_logs_cache()  # [5F.2 FIX F1] Clear cache after write
+    """Deprecated: persisted storage is DB. This function is a no-op."""
+    invalidate_logs_cache()
 
 
 def _parse_timestamp(entry_time: str) -> str:

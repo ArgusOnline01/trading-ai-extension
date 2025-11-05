@@ -101,8 +101,9 @@ def record_lesson(trade_id: int = Form(...), lesson_text: str = Form(...)):
         raise HTTPException(400, "Lesson text cannot be empty")
     
     # Load performance logs to find trade
-    perf_path = DATA_DIR / "performance_logs.json"
-    perf = load_json(str(perf_path))
+    # DB is source of truth now; load from performance.utils (DB-backed)
+    from performance.utils import read_logs
+    perf = read_logs()
     
     if not isinstance(perf, list):
         perf = []
@@ -206,8 +207,8 @@ def flag_invalid(trade_id: int = Form(...), reason: str = Form("undisciplined"))
     Returns:
         Status confirmation
     """
-    perf_path = DATA_DIR / "performance_logs.json"
-    trades = load_json(str(perf_path))
+    from performance.utils import read_logs
+    trades = read_logs()
     
     if not isinstance(trades, list):
         trades = []
@@ -341,7 +342,7 @@ async def teach_stream(request: Request):
         
         # Get current trade from index
         trade_index = ctx.get("current_trade_index", 0)
-        perf_path = DATA_DIR / "performance_logs.json"
+        from performance.utils import read_logs
         perf = load_json(str(perf_path))
         
         if not isinstance(perf, list) or trade_index >= len(perf):

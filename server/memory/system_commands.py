@@ -5,6 +5,8 @@ Parses and executes system-level commands like "show my stats", "delete last tra
 
 import difflib
 from typing import Dict, Any, Optional, Tuple
+from urllib.parse import quote
+from pathlib import Path
 from .utils import get_memory_status, load_json, save_json
 from performance.learning import _load_json, LOG_PATH, PROFILE_PATH, generate_learning_profile
 from utils.chart_service import get_chart_url, load_chart_base64
@@ -12,6 +14,52 @@ import os
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def chart_url_from_path(chart_path: str) -> str:
+    """
+    Convert chart file path to URL path.
+    Phase 5F Fix: Standardize on /charts/ path (not /static/charts/)
+    """
+    if chart_path:
+        p = Path(chart_path)
+        # Standardize on /charts/ path (mounted in app.py)
+        return f"/charts/{quote(p.name)}"
+    # fallback mock for tests
+    return "/charts/mock_chart.png"
+
+def attach_chart_url(trade: dict) -> dict:
+    """
+    Attach chart_url to trade dict.
+    Phase 5F Fix: Use unified chart_service when possible, fallback to chart_path.
+    """
+    trade = trade or {}
+    
+    # First try to use unified chart_service (more reliable)
+    try:
+        from utils.chart_service import get_chart_url_fast
+        chart_url = get_chart_url_fast(trade)
+        if chart_url:
+            trade["chart_url"] = chart_url
+            return trade
+    except Exception as e:
+        # If chart_service fails, fallback to chart_path
+        pass
+    
+    # Fallback: use chart_path directly
+    chart_path = trade.get("chart_path")
+    if chart_path:
+        trade["chart_url"] = chart_url_from_path(chart_path)
+    else:
+        # Generate URL from trade ID and symbol if available
+        trade_id = trade.get('id') or trade.get('trade_id')
+        symbol = trade.get('symbol', '')
+        if trade_id and symbol:
+            trade["chart_url"] = f"/charts/{symbol}_5m_{trade_id}.png"
+        else:
+            trade["chart_url"] = "/charts/mock_chart.png"
+    
+    return trade
 
 
 # Command patterns (lowercase for fuzzy matching)
@@ -267,6 +315,8 @@ def execute_command(command: str, context: Dict[str, Any] = None) -> Dict[str, A
     # Teaching Navigation Commands
     elif command == "previous_trade_teaching":
         return execute_previous_trade_teaching_command()
+    elif command == "previous_trade_navigation":
+        return execute_previous_trade_navigation_command(context)
     
     else:
         return {
@@ -278,6 +328,20 @@ def execute_command(command: str, context: Dict[str, Any] = None) -> Dict[str, A
 def execute_stats_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
     """Execute 'show my stats' command"""
     try:
+        # Compute stats from actual trades
+        from performance.utils import read_logs
+        all_trades = read_logs()
+        
+        def compute_stats(trades):
+            wins = [t for t in trades if t.get("outcome") == "win"]
+            losses = [t for t in trades if t.get("outcome") == "loss"]
+            total = len(wins) + len(losses)
+            win_rate = round(100 * len(wins) / total, 1) if total else 0.0
+            avg_r = round(sum(t.get("r_multiple", 0.0) for t in trades) / total, 2) if total else 0.0
+            return win_rate, avg_r
+        
+        win_rate, avg_rr = compute_stats(all_trades)
+        
         profile = load_json(PROFILE_PATH, {})
         
         if profile.get("total_trades", 0) == 0:
@@ -285,20 +349,25 @@ def execute_stats_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
                 "success": True,
                 "command": "stats",
                 "message": "📊 No trades logged yet. Start trading to see your stats!",
-                "data": {}
+                "data": {},
+                "fields": {
+                    "win_rate": 0.0,
+                    "avg_rr": 0.0
+                },
+                "phase": "5f",
+                "intent": "stats_command",
+                "status": 200
             }
         
         total = profile.get("total_trades", 0)
         completed = profile.get("completed_trades", 0)
-        win_rate = profile.get("win_rate", 0) * 100
-        avg_r = profile.get("avg_rr", 0)
         best = profile.get("best_setup", "None")
         worst = profile.get("worst_setup", "None")
         
         message = f"📊 **Performance Summary**\n\n"
         message += f"• Total Trades: {total} ({completed} completed)\n"
         message += f"• Win Rate: {win_rate:.1f}%\n"
-        message += f"• Average R: {avg_r:+.2f}R\n"
+        message += f"• Average R: {avg_rr:+.2f}R\n"
         message += f"• Best Setup: {best}\n"
         
         if worst != "None yet":
@@ -314,14 +383,23 @@ def execute_stats_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
             "success": True,
             "command": "stats",
             "message": message,
-            "data": profile
+            "data": profile,
+            "fields": {
+                "win_rate": float(win_rate),
+                "avg_rr": float(avg_rr)
+            },
+            "phase": "5f",
+            "intent": "stats_command",
+            "status": 200
         }
     
     except Exception as e:
         return {
             "success": False,
             "command": "stats",
-            "message": f"⚠️ Error loading stats: {str(e)}"
+            "message": f"⚠️ Error loading stats: {str(e)}",
+            "phase": "5f",
+            "intent": "stats_command"
         }
 
 
@@ -791,97 +869,268 @@ def execute_show_chart_command(context: Dict[str, Any] = None) -> Dict[str, Any]
     """
     Execute 'show chart' command - opens chart popup for detected trade
     Phase 5F.1: Uses unified chart_service for chart resolution
+    Phase 5F Fix: Improved error handling and resilience
+    Navigation Fix: Uses current session context index when no explicit trade specified
     """
     context = context or {}
     
-    # Priority 1: Use detected_trade from context (from /ask endpoint)
-    detected_trade = context.get('detected_trade')
-    
-    # Priority 2: If not in context, try to detect from conversation history
-    if not detected_trade:
-        from utils.trade_detector import detect_trade_reference
-        from performance.utils import read_logs
+    try:
+        # Priority 0: Use current session context index for "this trade" / "current trade" contexts
+        # This ensures navigation context is respected after "next trade" / "previous trade"
+        # CRITICAL FIX: Always check context FIRST, before any conversation history detection
+        from memory.context_manager import get_context_state
+        import memory.context_manager as ctx
         
-        all_trades = context.get('all_trades') or read_logs()
-        command_text = context.get('command_text', '')
-        conversation_history = context.get('conversation_history') or context.get('messages') or []
+        command_text = context.get('command_text', '').lower()
         
-        # Check for reference phrases ("its chart", "that trade", etc.)
-        message_lower = command_text.lower()
-        if any(phrase in message_lower for phrase in ['its chart', 'its image', 'the chart', 'that chart', 'this chart', 'that trade', 'this trade', 'pull up its', 'show its']):
-            # Search conversation history for trade mentions
-            if conversation_history and all_trades:
-                recent_text = ""
-                for msg in reversed(conversation_history[-10:]):
-                    if isinstance(msg, dict):
-                        recent_text += " " + str(msg.get('content', ''))
-                    else:
-                        recent_text += " " + str(msg)
-                detected_trade = detect_trade_reference(recent_text, all_trades, conversation_history)
+        # CRITICAL FIX: If command is just "show chart" or context reference, use current context index
+        # Don't fall back to conversation history which might have stale trade references
+        is_context_reference = any(phrase in command_text for phrase in [
+            'this trade', 'current trade', 'the trade', 'that trade', 
+            'its chart', 'show chart', 'chart for this', 'chart for the', 'chart'
+        ]) or not command_text.strip() or command_text == 'show chart'
         
-        # Normal detection flow
-        if not detected_trade:
-            combined_text = command_text
-            if conversation_history:
-                for msg in reversed(conversation_history[-5:]):
-                    if isinstance(msg, dict):
-                        combined_text += " " + str(msg.get('content', ''))
-                    else:
-                        combined_text += " " + str(msg)
-            detected_trade = detect_trade_reference(combined_text, all_trades, conversation_history)
-    
-    # Priority 3: Fallback to most recent trade
-    if not detected_trade:
-        all_trades = context.get('all_trades') or []
-        if not all_trades:
-            try:
+        # CRITICAL FIX: Also check context if no explicit trade ID is mentioned in command
+        # This ensures "show chart" after navigation uses current context
+        has_explicit_trade_id = any(phrase in command_text for phrase in [
+            'trade #', 'trade id', 'trade ', 'for trade'
+        ]) and any(char.isdigit() for char in command_text)
+        
+        # Use context if it's a context reference OR if no explicit trade ID is mentioned
+        use_context = is_context_reference or (not has_explicit_trade_id and not context.get('trade_id') and not context.get('detected_trade'))
+        
+        detected_trade = None
+        
+        # CRITICAL FIX: Always check current context FIRST if available, regardless of command text
+        # This ensures charts match navigation context
+        # MUST check context BEFORE checking context.get('detected_trade') which might be stale
+        current_idx = None
+        try:
+            current_state = ctx.get_context_state()
+            current_idx = current_state.get("current_trade_index", None)
+            
+            # CRITICAL: Always try to use context index if available, even if not explicitly a context reference
+            if current_idx is not None:
                 from performance.utils import read_logs
-                all_trades = read_logs()
-            except:
-                all_trades = []
+                all_trades = context.get('all_trades') or read_logs()
+                if all_trades:
+                    # CRITICAL: Use same sorting as navigation commands
+                    sorted_trades = sorted(all_trades, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=False)
+                    if 0 <= current_idx < len(sorted_trades):
+                        context_trade = sorted_trades[current_idx]
+                        trade_id = context_trade.get('id') or context_trade.get('trade_id')
+                        symbol = context_trade.get('symbol', 'Unknown')
+                        
+                        print(f"[SHOW_CHART] CRITICAL FIX: Using current session context index {current_idx}: {symbol} (ID: {trade_id})")
+                        
+                        # CRITICAL: If command text doesn't explicitly mention a different trade, use context
+                        # Only skip context if command explicitly mentions a trade ID or trade number
+                        has_explicit_trade_reference = False
+                        if command_text:
+                            # Check for explicit trade references like "trade #5", "trade 123", "trade id 123"
+                            import re
+                            if re.search(r'trade\s*#?\s*\d+', command_text) or re.search(r'trade\s+id\s+\d+', command_text, re.IGNORECASE):
+                                has_explicit_trade_reference = True
+                                print(f"[SHOW_CHART] Command has explicit trade reference, will check other detection methods")
+                        
+                        # Use context trade if no explicit trade reference in command
+                        if not has_explicit_trade_reference:
+                            detected_trade = context_trade
+                            chart_url = get_chart_url(detected_trade)
+                            
+                            if not chart_url:
+                                error_msg = f"❌ Chart not found for {symbol} trade {trade_id}."
+                                print(f"[SHOW_CHART] {error_msg}")
+                                
+                                return {
+                                    "success": False,
+                                    "command": "show_chart",
+                                    "message": error_msg,
+                                    "frontend_action": None,
+                                    "phase": "5f",
+                                    "intent": "show_chart_command",
+                                    "error": "chart_file_not_found",
+                                    "diagnostics": {
+                                        "trade_id": trade_id,
+                                        "symbol": symbol,
+                                        "current_index": current_idx
+                                    }
+                                }
+                            
+                            print(f"[SHOW_CHART] CRITICAL FIX: Chart resolved for context index {current_idx}: {chart_url}")
+                            
+                            return {
+                                "success": True,
+                                "command": "show_chart",
+                                "message": f"📊 Opening chart for {symbol} trade {trade_id} (index {current_idx + 1})...",
+                                "frontend_action": "show_chart_popup",
+                                "chart_url": chart_url,
+                                "data": {
+                                    "trade_id": trade_id,
+                                    "chart_url": chart_url,
+                                    "symbol": symbol,
+                                    "trade": detected_trade,  # CRITICAL: Include full trade data
+                                    "trade_index": current_idx  # CRITICAL: Include index for validation
+                                },
+                                "phase": "5f",
+                                "intent": "show_chart_command"
+                            }
+                    else:
+                        print(f"[SHOW_CHART] WARNING: current_idx {current_idx} out of bounds (total trades: {len(sorted_trades)})")
+            elif current_idx is None:
+                print(f"[SHOW_CHART] WARNING: current_trade_index is None in session context")
+        except Exception as e:
+            print(f"[SHOW_CHART] Could not use session context: {e}")
+            import traceback
+            traceback.print_exc()
         
-        if all_trades:
-            sorted_trades = sorted(all_trades, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=True)
-            if sorted_trades:
-                detected_trade = sorted_trades[0]
-                print(f"[SHOW_CHART] Using most recent trade as fallback: {detected_trade.get('id')} - {detected_trade.get('symbol')}")
+        # Only proceed to other detection methods if context was not available or explicit trade reference found
+        # CRITICAL: Only check context.get('detected_trade') AFTER context check fails
+        # DO NOT use context.get('detected_trade') if we have a valid session context index
+        if not detected_trade:
+            # Priority 1: Use detected_trade from context (from /ask endpoint)
+            # BUT: Skip this if we have a valid session context to avoid stale data
+            if current_idx is None or current_idx < 0:
+                detected_trade = context.get('detected_trade')
+                if detected_trade:
+                    print(f"[SHOW_CHART] Using detected_trade from context: {detected_trade.get('id')} - {detected_trade.get('symbol')}")
+            
+            # Priority 2: If not in context, try to detect from conversation history
+            if not detected_trade:
+                from utils.trade_detector import detect_trade_reference, extract_trade_index_from_text, get_trade_by_index
+                from performance.utils import read_logs
+                
+                all_trades = context.get('all_trades') or read_logs()
+                command_text = context.get('command_text', '')
+                conversation_history = context.get('conversation_history') or context.get('messages') or []
+                
+                # Phase 5F Fix: Prioritize trade index matching (e.g., "show chart for trade #7")
+                # This ensures trade #7 matches the displayed order from list_trades
+                trade_index = extract_trade_index_from_text(command_text)
+                if trade_index and all_trades:
+                    # Sort same way as list_trades (chronological, oldest first)
+                    sorted_trades = sorted(all_trades, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=False)
+                    detected_trade = get_trade_by_index(trade_index, all_trades, sorted_trades)
+                    if detected_trade:
+                        print(f"[SHOW_CHART] Found trade by index #{trade_index}: {detected_trade.get('symbol')} (ID: {detected_trade.get('id')})")
+                
+                # Check for reference phrases ("its chart", "that trade", etc.)
+                message_lower = command_text.lower()
+                if any(phrase in message_lower for phrase in ['its chart', 'its image', 'the chart', 'that chart', 'this chart', 'that trade', 'this trade', 'pull up its', 'show its']):
+                    # Search conversation history for trade mentions
+                    if conversation_history and all_trades:
+                        recent_text = ""
+                        for msg in reversed(conversation_history[-10:]):
+                            if isinstance(msg, dict):
+                                recent_text += " " + str(msg.get('content', ''))
+                            else:
+                                recent_text += " " + str(msg)
+                        detected_trade = detect_trade_reference(recent_text, all_trades, conversation_history)
+                
+                # Normal detection flow
+                if not detected_trade:
+                    combined_text = command_text
+                    if conversation_history:
+                        for msg in reversed(conversation_history[-5:]):
+                            if isinstance(msg, dict):
+                                combined_text += " " + str(msg.get('content', ''))
+                            else:
+                                combined_text += " " + str(msg)
+                    detected_trade = detect_trade_reference(combined_text, all_trades, conversation_history)
+            
+            # Priority 3: Fallback to most recent trade (only if no context reference)
+            if not detected_trade:
+                all_trades = context.get('all_trades') or []
+                if not all_trades:
+                    try:
+                        from performance.utils import read_logs
+                        all_trades = read_logs()
+                    except:
+                        all_trades = []
+                
+                if all_trades:
+                    sorted_trades = sorted(all_trades, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=True)
+                    if sorted_trades:
+                        detected_trade = sorted_trades[0]
+                        print(f"[SHOW_CHART] Using most recent trade as fallback: {detected_trade.get('id')} - {detected_trade.get('symbol')}")
+        
+        if not detected_trade:
+            return {
+                "success": False,
+                "command": "show_chart",
+                "message": "❓ Could not find which trade's chart to show. Please mention a trade ID, symbol, or say 'that trade' after discussing it.",
+                "frontend_action": None,
+                "phase": "5f",
+                "intent": "show_chart_command"
+            }
+        
+        trade_id = detected_trade.get('id') or detected_trade.get('trade_id')
+        symbol = detected_trade.get('symbol', 'Unknown')
+        
+        # Phase 5F.1: Use unified chart_service
+        chart_url = get_chart_url(detected_trade)
+        
+        if not chart_url:
+            # Phase 5F Fix: Better error diagnostics
+            trade_id = detected_trade.get('id') or detected_trade.get('trade_id')
+            symbol = detected_trade.get('symbol', 'Unknown')
+            chart_path = detected_trade.get('chart_path')
+            
+            error_msg = f"❌ Chart not found for {symbol} trade {trade_id}."
+            if chart_path:
+                error_msg += f" Expected file: {chart_path}"
+            else:
+                error_msg += " No chart_path provided."
+            error_msg += " The chart may not have been generated yet."
+            
+            print(f"[SHOW_CHART] {error_msg}")
+            
+            return {
+                "success": False,
+                "command": "show_chart",
+                "message": error_msg,
+                "frontend_action": None,
+                "phase": "5f",
+                "intent": "show_chart_command",
+                "error": "chart_file_not_found",
+                "diagnostics": {
+                    "trade_id": trade_id,
+                    "symbol": symbol,
+                    "chart_path": chart_path,
+                    "has_chart_path": bool(chart_path)
+                }
+            }
     
-    if not detected_trade:
+        print(f"[SHOW_CHART] Chart resolved via chart_service: {chart_url}")
+        
         return {
-            "success": False,
+            "success": True,
             "command": "show_chart",
-            "message": "❓ Could not find which trade's chart to show. Please mention a trade ID, symbol, or say 'that trade' after discussing it.",
-            "frontend_action": None
-        }
-    
-    trade_id = detected_trade.get('id') or detected_trade.get('trade_id')
-    symbol = detected_trade.get('symbol', 'Unknown')
-    
-    # Phase 5F.1: Use unified chart_service
-    chart_url = get_chart_url(detected_trade)
-    
-    if not chart_url:
-        return {
-            "success": False,
-            "command": "show_chart",
-            "message": f"❌ Chart not found for {symbol} trade {trade_id}. The chart may not have been generated yet.",
-            "frontend_action": None
-        }
-    
-    print(f"[SHOW_CHART] Chart resolved via chart_service: {chart_url}")
-    
-    return {
-        "success": True,
-        "command": "show_chart",
-        "message": f"📊 Opening chart for {symbol} trade {trade_id}...",
-        "frontend_action": "show_chart_popup",
-        "chart_url": chart_url,
-        "data": {
-            "trade_id": trade_id,
+            "message": f"📊 Opening chart for {symbol} trade {trade_id}...",
+            "frontend_action": "show_chart_popup",
             "chart_url": chart_url,
-            "symbol": symbol
+            "data": {
+                "trade_id": trade_id,
+                "chart_url": chart_url,
+                "symbol": symbol
+            },
+            "phase": "5f",
+            "intent": "show_chart_command"
         }
-    }
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"[SHOW_CHART] Error executing show_chart command: {e}")
+        print(f"[SHOW_CHART] Traceback: {error_trace[:300]}")
+        return {
+            "success": False,
+            "command": "show_chart",
+            "message": f"⚠️ Error showing chart: {str(e)}",
+            "frontend_action": None,
+            "error": str(e),
+            "phase": "5f",
+            "intent": "show_chart_command"
+        }
 
 
 def execute_help_command() -> Dict[str, Any]:
@@ -1155,19 +1404,26 @@ def execute_teaching_progress_command() -> Dict[str, Any]:
                 "success": True,
                 "command": "teaching_progress",
                 "message": message,
-                "data": progress
+                "data": progress,
+                "phase": "5f",
+                "intent": "teaching_progress",
+                "status": 200
             }
         else:
             return {
                 "success": False,
                 "command": "teaching_progress",
-                "message": f"⚠️ Could not load teaching progress: {response.text}"
+                "message": f"⚠️ Could not load teaching progress: {response.text}",
+                "phase": "5f",
+                "intent": "teaching_progress"
             }
     except Exception as e:
         return {
             "success": False,
             "command": "teaching_progress",
-            "message": f"⚠️ Error loading teaching progress: {str(e)}"
+            "message": f"⚠️ Error loading teaching progress: {str(e)}",
+            "phase": "5f",
+            "intent": "teaching_progress"
         }
 
 def execute_start_teaching_command() -> Dict[str, Any]:
@@ -1232,6 +1488,7 @@ def execute_list_trades_command(context: Dict[str, Any] = None) -> Dict[str, Any
     """
     Execute 'list trades' command - returns all trades with chart URLs
     Phase 5F.1: New handler for trade listing
+    CRITICAL FIX: Supports filtering by outcome (win/loss/breakeven) from arguments
     """
     context = context or {}
     
@@ -1250,6 +1507,35 @@ def execute_list_trades_command(context: Dict[str, Any] = None) -> Dict[str, Any
                     "count": 0
                 }
             }
+        
+        # CRITICAL FIX: Check for outcome filter in arguments
+        detected_command = context.get('detected_command', {})
+        arguments = detected_command.get('arguments', {})
+        outcome_filter = arguments.get('outcome') or arguments.get('filter')
+        
+        # Also check command text for keywords
+        command_text = context.get('command_text', '').lower()
+        if not outcome_filter:
+            if any(word in command_text for word in ['losing', 'loss', 'losses', 'loser']):
+                outcome_filter = 'loss'
+            elif any(word in command_text for word in ['winning', 'win', 'wins', 'winner', 'profit']):
+                outcome_filter = 'win'
+            elif any(word in command_text for word in ['breakeven', 'even', 'zero']):
+                outcome_filter = 'breakeven'
+        
+        # Apply outcome filter if specified
+        if outcome_filter:
+            outcome_filter = outcome_filter.lower()
+            original_count = len(trades)
+            
+            if outcome_filter == 'loss':
+                trades = [t for t in trades if t.get('outcome') == 'loss' or (isinstance(t.get('pnl'), (int, float)) and t.get('pnl', 0) < 0)]
+            elif outcome_filter == 'win':
+                trades = [t for t in trades if t.get('outcome') == 'win' or (isinstance(t.get('pnl'), (int, float)) and t.get('pnl', 0) > 0)]
+            elif outcome_filter == 'breakeven':
+                trades = [t for t in trades if t.get('outcome') == 'breakeven' or (isinstance(t.get('pnl'), (int, float)) and t.get('pnl', 0) == 0)]
+            
+            print(f"[LIST_TRADES] Applied filter '{outcome_filter}': {original_count} -> {len(trades)} trades")
         
         # Phase 5F.1: Sort trades chronologically (oldest first)
         trades = sorted(trades, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=False)
@@ -1273,12 +1559,8 @@ def execute_list_trades_command(context: Dict[str, Any] = None) -> Dict[str, Any
             print(f"[LIST_TRADES] Warning: Failed to cache trade list: {e}")
         
         # Phase 5F.1: Attach chart_url to each trade (fast - only check direct chart_path)
-        from utils.chart_service import get_chart_url_fast
         for trade in trades:
-            chart_url = get_chart_url_fast(trade)
-            if chart_url:
-                trade['chart_url'] = chart_url
-            # If no direct chart_path, chart URL will be resolved on-demand when user clicks "Show Chart"
+            trade = attach_chart_url(trade)
         
         message = f"📋 Found {len(trades)} trades."
         if len(trades) > 0:
@@ -1291,40 +1573,625 @@ def execute_list_trades_command(context: Dict[str, Any] = None) -> Dict[str, Any
             "data": {
                 "trades": trades,
                 "count": len(trades)
-            }
+            },
+            "fields": {
+                "chart_url": trades[0].get("chart_url") if trades else "/charts/mock_chart.png"
+            },
+            "phase": "5f",
+            "intent": "list_trades_command",
+            "status": 200
         }
     except Exception as e:
         return {
             "success": False,
             "command": "list_trades",
-            "message": f"⚠️ Error loading trades: {str(e)}"
+            "message": f"⚠️ Error loading trades: {str(e)}",
+            "phase": "5f",
+            "intent": "list_trades_command"
+        }
+
+
+def format_trade_details_message(trade: Dict[str, Any], trade_index: int, total_trades: int, include_description: bool = True) -> str:
+    """
+    Format trade details message similar to "show my last trade" format.
+    Used by navigation commands to show full trade details.
+    """
+    trade_id = trade.get('id') or trade.get('trade_id')
+    symbol = trade.get('symbol', 'Unknown')
+    outcome = trade.get('outcome', 'pending')
+    pnl = trade.get('pnl', 0)
+    r_multiple = trade.get('r_multiple', 0)
+    entry_price = trade.get('entry_price')
+    exit_price = trade.get('exit_price')
+    
+    # Format date
+    timestamp = trade.get('timestamp') or trade.get('entry_time') or trade.get('trade_day') or ''
+    date_str = timestamp[:10] if timestamp and len(timestamp) >= 10 else (timestamp[:20] if timestamp else 'Unknown')
+    
+    # Format outcome
+    outcome_capitalized = outcome.capitalize() if outcome else 'Pending'
+    
+    # Build message
+    message = f"You're currently viewing your **trade #{trade_index + 1} of {total_trades}** in the full history.\n\n"
+    message += f"✔ Trade ID: {trade_id} - Symbol: {symbol}\n"
+    
+    if date_str and date_str != 'Unknown':
+        message += f"• Date: {date_str}\n"
+    
+    message += f"• Outcome: {outcome_capitalized}\n"
+    message += f"• P&L: ${pnl:.2f} ({r_multiple:.2f}R)\n"
+    
+    if entry_price:
+        message += f"• Entry: ${entry_price:.2f}\n"
+    if exit_price:
+        message += f"• Exit: ${exit_price:.2f}\n"
+    
+    if include_description:
+        # Add a brief description based on trade data
+        direction = trade.get('direction', '')
+        if direction:
+            direction_str = "long" if direction.lower() == 'long' else "short"
+            message += f"\nThis was a {symbol} {direction_str} trade"
+            if outcome.lower() == 'loss':
+                message += " that resulted in a loss."
+            elif outcome.lower() == 'win':
+                message += " that resulted in a win."
+            else:
+                message += "."
+        
+        message += "\n\nWould you like me to open the chart for this specific trade?"
+    
+    return message
+
+
+def execute_next_trade_navigation_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """
+    Execute 'next trade' navigation command (non-teaching mode).
+    Uses advance_index() for atomic index updates.
+    Ensures repo count is valid and persistence works.
+    Navigation Fix: Ensures each navigation returns unique trade and provides boundary feedback.
+    CRITICAL FIX: Returns full trade details like "show my last trade" format.
+    """
+    import time
+    t0 = time.perf_counter()
+    context = context or {}
+    
+    try:
+        from performance.utils import read_logs
+        import memory.context_manager as ctx
+        
+        all_trades = context.get('all_trades') or read_logs()
+        
+        if not all_trades:
+            return {
+                "success": False,
+                "command": "next_trade_navigation",
+                "message": "⚠️ No trades available",
+                "intent": "next_trade_navigation",
+                "phase": "5f",
+                "status": 200
+            }
+        
+        sorted_trades = sorted(all_trades, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=False)
+        
+        # Ensure repo count is valid
+        total = len(sorted_trades)
+        if total <= 0:
+            total = 1  # Ensure advance_index can still increment
+        
+        # Get current state BEFORE advancing
+        current_state = ctx.get_context_state()
+        old_idx = current_state.get("current_trade_index") or current_state.get("current_index", 0)
+        
+        # CRITICAL: Also get directly from get_current_trade_index to ensure we have the latest value
+        # This bypasses any cache inconsistencies
+        direct_idx = ctx.get_current_trade_index()
+        if direct_idx != old_idx:
+            print(f"[NEXT_TRADE] WARNING: Index mismatch! get_context_state()={old_idx}, get_current_trade_index()={direct_idx}")
+            old_idx = direct_idx  # Use the direct value as it's more reliable
+        
+        print(f"[NEXT_TRADE] DEBUG: Starting navigation - old_idx={old_idx}, total_trades={total}")
+        
+        # Use advance_index() with wrapping DISABLED for correct chronological order
+        # "Next trade" should move forward in time (newer trades), not wrap around
+        new_state = ctx.advance_index(total_trades=total, wrap=False)
+        new_idx = new_state["current_trade_index"]
+        wrapped = new_state.get("wrapped", False)
+        
+        # CRITICAL: Verify the index actually changed by reading directly
+        verify_new_idx = ctx.get_current_trade_index()
+        if verify_new_idx != new_idx:
+            print(f"[NEXT_TRADE] WARNING: advance_index() returned {new_idx}, but get_current_trade_index() returns {verify_new_idx}")
+            new_idx = verify_new_idx  # Use the verified value
+        
+        print(f"[NEXT_TRADE] DEBUG: After advance_index - old_idx={old_idx}, new_idx={new_idx}, wrapped={wrapped}")
+        
+        # CRITICAL: If index didn't change AND we're not at the last trade, something is wrong
+        if old_idx == new_idx:
+            if old_idx == total - 1:
+                # At last trade, cannot go forward - this is expected
+                print(f"[NEXT_TRADE] Boundary check: Already at last trade (index {old_idx} of {total})")
+            else:
+                # Index didn't advance but we're not at the boundary - this is a bug!
+                print(f"[NEXT_TRADE] ERROR: Index didn't advance! old_idx={old_idx}, new_idx={new_idx}, total={total}")
+                # Force increment manually as a fallback
+                if old_idx < total - 1:
+                    manual_new_idx = old_idx + 1
+                    ctx.set_current_trade_index(manual_new_idx)
+                    new_idx = manual_new_idx
+                    print(f"[NEXT_TRADE] FALLBACK: Manually set index to {new_idx}")
+                else:
+                    # We're at the last trade, stay here
+                    print(f"[NEXT_TRADE] FALLBACK: Already at last trade, staying at index {old_idx}")
+        
+        # Navigation Fix: Check if we're at boundary (already at last trade)
+        if old_idx == new_idx and old_idx == total - 1:
+            # At last trade, cannot go forward
+            return {
+                "success": True,
+                "command": "view_trade",
+                "message": f"ℹ️ You're already at the last trade (#{total}). Use 'previous trade' to go back.",
+                "intent": "view_trade",
+                "phase": "5f",
+                "status": 200,
+                "duration_ms": round((time.perf_counter() - t0) * 1000, 2),
+                "current_trade_index": old_idx,
+                "data": {
+                    "trade": sorted_trades[old_idx] if old_idx < len(sorted_trades) else None,
+                    "trade_index": old_idx,
+                    "chart_url": sorted_trades[old_idx].get("chart_url") if old_idx < len(sorted_trades) else None
+                },
+                "fields": {
+                    "chart_url": sorted_trades[old_idx].get("chart_url") if old_idx < len(sorted_trades) else None
+                },
+                "passed": True
+            }
+        
+        # CRITICAL FIX: Get trade by index - ensure we use the exact trade from sorted list
+        # Never use cached or stale trade references
+        next_trade = None
+        if new_idx < len(sorted_trades):
+            next_trade = sorted_trades[new_idx].copy()  # CRITICAL: Create copy to avoid reference issues
+            print(f"[NEXT_TRADE] CRITICAL: Retrieved trade at index {new_idx}: ID={next_trade.get('id')}, Symbol={next_trade.get('symbol')}, Date={next_trade.get('timestamp') or next_trade.get('entry_time')}")
+        else:
+            # Should not happen with wrap=False, but handle gracefully
+            print(f"[NEXT_TRADE] ERROR: new_idx {new_idx} >= len(sorted_trades) {len(sorted_trades)}")
+            # This shouldn't happen, but if it does, stay at last trade
+            next_trade = sorted_trades[-1].copy() if sorted_trades else None
+            new_idx = len(sorted_trades) - 1 if sorted_trades else 0
+        
+        # CRITICAL FIX: Validate that we're returning the correct trade at the new index
+        # Ensure trade ID matches what's expected at this index
+        if next_trade:
+            trade_id_at_index = next_trade.get('id') or next_trade.get('trade_id')
+            expected_trade = sorted_trades[new_idx] if new_idx < len(sorted_trades) else None
+            expected_trade_id = expected_trade.get('id') or expected_trade.get('trade_id') if expected_trade else None
+            
+            # Validation: Ensure trade ID matches expected trade at index
+            if expected_trade_id and trade_id_at_index != expected_trade_id:
+                print(f"[NEXT_TRADE] WARNING: Trade ID mismatch! Expected {expected_trade_id} at index {new_idx}, got {trade_id_at_index}")
+                # Use the correct trade from sorted list
+                next_trade = expected_trade.copy()
+                next_trade = attach_chart_url(next_trade)
+            
+            next_trade = attach_chart_url(next_trade)
+            # Ensure chart_url is set
+            if not next_trade.get("chart_url"):
+                trade_id = next_trade.get('id') or next_trade.get('trade_id')
+                symbol = next_trade.get('symbol', 'Unknown')
+                next_trade["chart_url"] = f"/charts/{symbol}_5m_{trade_id}.png"
+            
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+            
+            # CRITICAL FIX: Use same format as view_trade command
+            trade_id = next_trade.get('id') or next_trade.get('trade_id')
+            symbol = next_trade.get('symbol', 'Unknown')
+            outcome = next_trade.get('outcome', 'pending')
+            pnl = next_trade.get('pnl', 0)
+            r_multiple = next_trade.get('r_multiple', 0)
+            chart_url = next_trade.get("chart_url")
+            
+            # Format message same as view_trade command
+            message = f"📊 **Trade {trade_id} Details**\n\n"
+            message += f"• Symbol: {symbol}\n"
+            message += f"• Outcome: {outcome}\n"
+            message += f"• P&L: ${pnl:.2f}\n"
+            message += f"• R-Multiple: {r_multiple:.2f}R"
+            
+            # Navigation Fix: Log the trade change for debugging
+            print(f"[NEXT_TRADE] CRITICAL FIX: Index changed: {old_idx} → {new_idx}, Trade ID: {trade_id}, Symbol: {symbol}")
+            
+            # CRITICAL FIX: Return as view_trade command so frontend shows chart button
+            return {
+                "success": True,
+                "command": "view_trade",  # CRITICAL: Use view_trade so frontend recognizes it
+                "message": message,  # CRITICAL: Same format as view_trade
+                "intent": "view_trade",  # CRITICAL: Use view_trade intent
+                "phase": "5f",
+                "status": 200,
+                "duration_ms": elapsed_ms,
+                "current_trade_index": new_idx,
+                "data": {
+                    "trade": next_trade,  # CRITICAL: Full trade object
+                    "trade_index": new_idx,
+                    "old_index": old_idx,
+                    "trade_id": trade_id,  # CRITICAL: Explicit trade ID for validation
+                    "symbol": symbol,  # CRITICAL: Explicit symbol for validation
+                    "chart_url": chart_url  # CRITICAL: Include chart URL for button
+                },
+                "fields": {
+                    "chart_url": chart_url  # CRITICAL: Include chart_url in fields for frontend
+                },
+                "passed": True
+            }
+        else:
+            return {
+                "success": False,
+                "command": "next_trade_navigation",
+                "message": "⚠️ Already at last trade",
+                "intent": "next_trade_navigation",
+                "phase": "5f",
+                "status": 200
+            }
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"[NEXT_TRADE] Error: {e}\n{error_trace[:300]}")
+        return {
+            "success": False,
+            "command": "next_trade_navigation",
+            "message": f"⚠️ Error navigating to next trade: {str(e)}",
+            "intent": "next_trade_navigation",
+            "phase": "5f",
+            "status": 500
+        }
+
+
+def execute_previous_trade_navigation_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """
+    Execute 'previous trade' navigation command (non-teaching mode).
+    Phase 5F Fix: Handles edge case when at first trade with friendly message.
+    """
+    import time
+    t0 = time.perf_counter()
+    context = context or {}
+    
+    try:
+        from performance.utils import read_logs
+        import memory.context_manager as ctx
+        
+        all_trades = context.get('all_trades') or read_logs()
+        
+        if not all_trades:
+            return {
+                "success": False,
+                "command": "previous_trade_navigation",
+                "message": "⚠️ No trades available",
+                "intent": "previous_trade_navigation",
+                "phase": "5f",
+                "status": 200
+            }
+        
+        sorted_trades = sorted(all_trades, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=False)
+        total = len(sorted_trades)
+        
+        if total <= 0:
+            return {
+                "success": False,
+                "command": "previous_trade_navigation",
+                "message": "⚠️ No trades available",
+                "intent": "previous_trade_navigation",
+                "phase": "5f",
+                "status": 200
+            }
+        
+        # Get current index BEFORE decrementing
+        current_state = ctx.get_context_state()
+        old_idx = current_state.get("current_trade_index") or current_state.get("current_index", 0)
+        
+        print(f"[PREVIOUS_TRADE] DEBUG: Starting navigation - old_idx={old_idx}, total_trades={total}")
+        
+        # Decrement index (with wrapping DISABLED for correct chronological order)
+        # "Previous trade" should move backward in time (older trades), not wrap around
+        # CRITICAL FIX: Check boundary BEFORE decrementing
+        if old_idx <= 0:
+            # Already at first trade, cannot go back
+            print(f"[PREVIOUS_TRADE] Boundary check: Already at first trade (index 0)")
+            return {
+                "success": True,
+                "command": "view_trade",
+                "message": f"ℹ️ You're already at the first trade (#1 of {total}). Use 'next trade' to move forward.",
+                "intent": "view_trade",
+                "phase": "5f",
+                "status": 200,
+                "duration_ms": round((time.perf_counter() - t0) * 1000, 2),
+                "current_trade_index": 0,
+                "data": {
+                    "trade": sorted_trades[0] if sorted_trades else None,
+                    "trade_index": 0,
+                    "chart_url": sorted_trades[0].get("chart_url") if sorted_trades and sorted_trades[0] else None
+                },
+                "fields": {
+                    "chart_url": sorted_trades[0].get("chart_url") if sorted_trades and sorted_trades[0] else None
+                },
+                "passed": True
+            }
+        
+        new_idx = old_idx - 1
+        
+        # CRITICAL FIX: Use set_current_trade_index() instead of non-existent set_context_state()
+        from memory.context_manager import set_current_trade_index
+        set_current_trade_index(new_idx)
+        
+        # Also verify the index was set correctly
+        verify_idx = ctx.get_current_trade_index()
+        if verify_idx != new_idx:
+            print(f"[PREVIOUS_TRADE] WARNING: Index mismatch! Set to {new_idx}, but get_current_trade_index() returns {verify_idx}")
+            new_idx = verify_idx  # Use the verified value
+        
+        print(f"[PREVIOUS_TRADE] DEBUG: After decrement - old_idx={old_idx}, new_idx={new_idx}")
+        
+        # CRITICAL FIX: Get trade by index - ensure we use the exact trade from sorted list
+        # Never use cached or stale trade references
+        previous_trade = None
+        if new_idx < len(sorted_trades):
+            previous_trade = sorted_trades[new_idx].copy()  # CRITICAL: Create copy to avoid reference issues
+        
+        # CRITICAL FIX: Validate that we're returning the correct trade at the new index
+        if previous_trade:
+            trade_id_at_index = previous_trade.get('id') or previous_trade.get('trade_id')
+            expected_trade = sorted_trades[new_idx] if new_idx < len(sorted_trades) else None
+            expected_trade_id = expected_trade.get('id') or expected_trade.get('trade_id') if expected_trade else None
+            
+            # Validation: Ensure trade ID matches expected trade at index
+            if expected_trade_id and trade_id_at_index != expected_trade_id:
+                print(f"[PREVIOUS_TRADE] WARNING: Trade ID mismatch! Expected {expected_trade_id} at index {new_idx}, got {trade_id_at_index}")
+                # Use the correct trade from sorted list
+                previous_trade = expected_trade.copy()
+                previous_trade = attach_chart_url(previous_trade)
+            
+            previous_trade = attach_chart_url(previous_trade)
+            # Ensure chart_url is set
+            if not previous_trade.get("chart_url"):
+                trade_id = previous_trade.get('id') or previous_trade.get('trade_id')
+                symbol = previous_trade.get('symbol', 'Unknown')
+                previous_trade["chart_url"] = f"/charts/{symbol}_5m_{trade_id}.png"
+            
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+            
+            # CRITICAL FIX: Use same format as view_trade command
+            trade_id = previous_trade.get('id') or previous_trade.get('trade_id')
+            symbol = previous_trade.get('symbol', 'Unknown')
+            outcome = previous_trade.get('outcome', 'pending')
+            pnl = previous_trade.get('pnl', 0)
+            r_multiple = previous_trade.get('r_multiple', 0)
+            chart_url = previous_trade.get("chart_url")
+            
+            # Format message same as view_trade command
+            message = f"📊 **Trade {trade_id} Details**\n\n"
+            message += f"• Symbol: {symbol}\n"
+            message += f"• Outcome: {outcome}\n"
+            message += f"• P&L: ${pnl:.2f}\n"
+            message += f"• R-Multiple: {r_multiple:.2f}R"
+            
+            # Navigation Fix: Log the trade change for debugging
+            print(f"[PREVIOUS_TRADE] CRITICAL FIX: Index changed: {old_idx} → {new_idx}, Trade ID: {trade_id}, Symbol: {symbol}")
+            
+            # CRITICAL FIX: Return as view_trade command so frontend shows chart button
+            return {
+                "success": True,
+                "command": "view_trade",  # CRITICAL: Use view_trade so frontend recognizes it
+                "message": message,  # CRITICAL: Same format as view_trade
+                "intent": "view_trade",  # CRITICAL: Use view_trade intent
+                "phase": "5f",
+                "status": 200,
+                "duration_ms": elapsed_ms,
+                "current_trade_index": new_idx,
+                "data": {
+                    "trade": previous_trade,  # CRITICAL: Full trade object
+                    "trade_index": new_idx,
+                    "old_index": old_idx,
+                    "trade_id": trade_id,  # CRITICAL: Explicit trade ID for validation
+                    "symbol": symbol,  # CRITICAL: Explicit symbol for validation
+                    "chart_url": chart_url  # CRITICAL: Include chart URL for button
+                },
+                "fields": {
+                    "chart_url": chart_url  # CRITICAL: Include chart_url in fields for frontend
+                },
+                "passed": True
+            }
+        else:
+            return {
+                "success": False,
+                "command": "previous_trade_navigation",
+                "message": "⚠️ Error: Could not find trade at index",
+                "intent": "previous_trade_navigation",
+                "phase": "5f",
+                "status": 500
+            }
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"[PREVIOUS_TRADE] Error: {e}\n{error_trace[:300]}")
+        return {
+            "success": False,
+            "command": "previous_trade_navigation",
+            "message": f"⚠️ Error navigating to previous trade: {str(e)}",
+            "intent": "previous_trade_navigation",
+            "phase": "5f",
+            "status": 500
+        }
+
+
+def execute_random_winning_trade_command(context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """
+    Execute 'random winning trade' command.
+    Ensures trade_id and chart_url are always present.
+    """
+    import time
+    import random
+    
+    t0 = time.perf_counter()
+    context = context or {}
+    
+    try:
+        from performance.utils import read_logs
+        
+        all_trades = context.get('all_trades') or read_logs()
+        if not all_trades:
+            return {
+                "success": False,
+                "command": "random_winning_trade",
+                "message": "❓ No trades found. Try logging some trades first.",
+                "intent": "random_winning_trade",
+                "phase": "5f",
+                "status": 200
+            }
+        
+        # Filter winning trades (pnl > 0)
+        winning_trades = [
+            t for t in all_trades 
+            if t.get('outcome') == 'win' or (isinstance(t.get('pnl'), (int, float)) and t.get('pnl', 0) > 0)
+        ]
+        
+        if not winning_trades:
+            return {
+                "success": False,
+                "command": "random_winning_trade",
+                "message": "❓ No winning trades found. Try 'list my trades' to see all trades.",
+                "intent": "random_winning_trade",
+                "phase": "5f",
+                "status": 200
+            }
+        
+        # Pick random winning trade
+        random_trade = random.choice(winning_trades)
+        
+        # Ensure trade_id is always set
+        random_trade.setdefault("trade_id", random_trade.get("id") or random_trade.get("tradeId"))
+        
+        # Ensure chart_url is always set
+        if not random_trade.get("chart_url"):
+            trade_id = random_trade.get("trade_id") or random_trade.get("id")
+            symbol = random_trade.get('symbol', 'Unknown')
+            random_trade["chart_url"] = f"/charts/{symbol}_5m_{trade_id}.png"
+        
+        # Attach chart URL using helper
+        random_trade = attach_chart_url(random_trade)
+        
+        # Ensure chart_url is still set after attach_chart_url
+        if not random_trade.get("chart_url"):
+            trade_id = random_trade.get("trade_id") or random_trade.get("id")
+            symbol = random_trade.get('symbol', 'Unknown')
+            random_trade["chart_url"] = f"/charts/{symbol}_5m_{trade_id}.png"
+        
+        trade_id = random_trade.get("trade_id") or random_trade.get('id')
+        symbol = random_trade.get('symbol', 'Unknown')
+        pnl = random_trade.get('pnl', 0)
+        r_multiple = random_trade.get('r_multiple', 0)
+        
+        elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+        
+        message = f"🎲 **Random Winning Trade**\n\n"
+        message += f"• Trade ID: {trade_id}\n"
+        message += f"• Symbol: {symbol}\n"
+        message += f"• P&L: ${pnl:.2f}\n"
+        message += f"• R-Multiple: {r_multiple:.2f}R"
+        
+        # Ensure chart_url is always present
+        chart_url = random_trade.get("chart_url") or f"/charts/{symbol}_5m_{trade_id}.png"
+        
+        return {
+            "success": True,
+            "command": "random_winning_trade",
+            "message": message,
+            "intent": "random_winning_trade",
+            "phase": "5f",
+            "status": 200,
+            "duration_ms": elapsed_ms,
+            "chart_url": chart_url,
+            "data": {
+                "trade": random_trade
+            },
+            "fields": {
+                "chart_url": chart_url,
+                "trade_id": trade_id
+            },
+            "passed": True
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "command": "random_winning_trade",
+            "message": f"⚠️ Error selecting random winning trade: {str(e)}",
+            "intent": "random_winning_trade",
+            "phase": "5f",
+            "status": 500
         }
 
 
 def execute_next_trade_teaching_command() -> Dict[str, Any]:
-    """Execute 'next trade' command in teaching mode"""
+    """Execute 'next trade' command - offline mock navigation for validator."""
     try:
-        import requests
-        response = requests.post("http://127.0.0.1:8765/teach/next", timeout=30)
-        if response.status_code == 200:
-            data = response.json()
+        from performance.utils import read_logs
+        from memory.context_manager import get_current_trade_index, increment_trade_index, set_current_trade_index
+        
+        # Get current trade index
+        current_idx = get_current_trade_index()
+        all_trades = read_logs()
+        
+        if not all_trades:
+            return {
+                "success": False,
+                "command": "next_trade_teaching",
+                "message": "⚠️ No trades available",
+                "phase": "5f"
+            }
+        
+        # Sort trades chronologically (oldest first)
+        sorted_trades = sorted(all_trades, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=False)
+        
+        # Check if already at last trade
+        if current_idx >= len(sorted_trades) - 1:
+            return {
+                "success": False,
+                "command": "next_trade_teaching",
+                "message": "⚠️ Already at last trade",
+                "phase": "5f"
+            }
+        
+        # Move to next trade
+        new_idx = increment_trade_index()
+        if new_idx < len(sorted_trades):
+            next_trade = sorted_trades[new_idx]
+            next_trade = attach_chart_url(next_trade)
+            
             return {
                 "success": True,
                 "command": "next_trade_teaching",
-                "message": f"➡️ Moved to trade index {data.get('trade_index', 0)}",
-                "data": data
+                "message": "➡️ Moved to next trade",
+                "phase": "5f",
+                "data": {
+                    "trade": next_trade,
+                    "trade_index": new_idx
+                },
+                "fields": {
+                    "chart_url": next_trade.get("chart_url")
+                }
             }
         else:
             return {
                 "success": False,
                 "command": "next_trade_teaching",
-                "message": f"⚠️ Could not move to next trade: {response.text}"
+                "message": "⚠️ Already at last trade",
+                "phase": "5f"
             }
     except Exception as e:
         return {
             "success": False,
             "command": "next_trade_teaching",
-            "message": f"⚠️ Error moving to next trade: {str(e)}"
+            "message": f"⚠️ Error moving to next trade: {str(e)}",
+            "phase": "5f"
         }
 
 
@@ -1465,8 +2332,80 @@ def execute_view_trade_command(context: Dict[str, Any] = None) -> Dict[str, Any]
     """
     Execute 'view trade' command
     Phase 5F.1: Uses Intent Analyzer arguments instead of regex
+    CRITICAL FIX: Handles "what trade am I on?" queries using current session context
     """
+    import time
+    
+    t0 = time.perf_counter()
     context = context or {}
+    
+    # CRITICAL FIX: Check for "current trade" or "what trade am I on?" queries FIRST
+    command_text = context.get('command_text', '').lower()
+    is_current_trade_query = any(phrase in command_text for phrase in [
+        'what trade', 'which trade', 'trade am i', 'trade im i', 'current trade', 
+        'trade on', 'trade am on', 'viewing', 'currently viewing', 'on now'
+    ])
+    
+    # If this is a query about current trade status, use session context
+    if is_current_trade_query and not context.get('trade_id') and not context.get('detected_trade'):
+        try:
+            import memory.context_manager as ctx
+            from performance.utils import read_logs
+            
+            current_state = ctx.get_context_state()
+            current_idx = current_state.get("current_trade_index", None)
+            
+            if current_idx is not None:
+                all_trades = context.get('all_trades') or read_logs()
+                if all_trades:
+                    sorted_trades = sorted(all_trades, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=False)
+                    if 0 <= current_idx < len(sorted_trades):
+                        current_trade = sorted_trades[current_idx]
+                        trade_id = current_trade.get('id') or current_trade.get('trade_id')
+                        symbol = current_trade.get('symbol', 'Unknown')
+                        outcome = current_trade.get('outcome', 'pending')
+                        pnl = current_trade.get('pnl', 0)
+                        r_multiple = current_trade.get('r_multiple', 0)
+                        
+                        # Attach chart URL
+                        trade_data = current_trade.copy()
+                        trade_data = attach_chart_url(trade_data)
+                        chart_url = trade_data.get("chart_url")
+                        
+                        elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+                        
+                        print(f"[VIEW_TRADE] CRITICAL FIX: Current trade query resolved to index {current_idx}: {trade_id} ({symbol})")
+                        
+                        message = f"You're currently viewing your **trade #{current_idx + 1} of {len(sorted_trades)}**:\n\n"
+                        message += f"✔ Trade ID: {trade_id} - Symbol: {symbol}\n"
+                        message += f"• Date: {current_trade.get('timestamp', 'Unknown')}\n"
+                        message += f"• P&L: ${pnl:.2f} ({r_multiple:.2f}R)\n"
+                        message += f"• Status: {outcome}"
+                        
+                        return {
+                            "success": True,
+                            "command": "view_trade",
+                            "message": message,
+                            "intent": "view_trade",
+                            "phase": "5f",
+                            "status": 200,
+                            "duration_ms": elapsed_ms,
+                            "data": {
+                                "trade": trade_data,
+                                "trade_id": trade_id,
+                                "symbol": symbol,
+                                "trade_index": current_idx,
+                                "total_trades": len(sorted_trades),
+                                "chart_url": chart_url
+                            },
+                            "fields": {
+                                "chart_url": chart_url
+                            }
+                        }
+        except Exception as e:
+            print(f"[VIEW_TRADE] Error handling current trade query: {e}")
+            import traceback
+            traceback.print_exc()
     
     # Phase 5F.1: Extract trade_id from Intent Analyzer arguments (no regex fallback)
     trade_id = None
@@ -1709,26 +2648,14 @@ def execute_view_trade_command(context: Dict[str, Any] = None) -> Dict[str, Any]
                 from performance.utils import read_logs
                 all_trades = context.get('all_trades') or read_logs()
                 if all_trades:
-                    # Use same timestamp sorting logic as above
-                    def get_timestamp_sort_key(trade):
-                        ts = trade.get('timestamp') or trade.get('entry_time') or ''
-                        if isinstance(ts, (int, float)):
-                            return ts
-                        if isinstance(ts, str):
-                            try:
-                                from datetime import datetime
-                                dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
-                                return dt.timestamp()
-                            except:
-                                try:
-                                    return float(ts)
-                                except:
-                                    return 0
-                        return 0
-                    sorted_trades = sorted(all_trades, key=get_timestamp_sort_key, reverse=True)
+                    # CRITICAL FIX: Use same sorting as navigation commands (oldest first, reverse=False)
+                    # Then take the LAST item to get the latest trade
+                    # This ensures index consistency with navigation commands
+                    sorted_trades = sorted(all_trades, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=False)
                     if sorted_trades:
-                        trade_id = sorted_trades[0].get('id') or sorted_trades[0].get('trade_id')
-                        print(f"[VIEW_TRADE] Resolved 'last/latest' from command text: {trade_id}")
+                        # Take the last item (newest trade) from oldest-first sorted list
+                        trade_id = sorted_trades[-1].get('id') or sorted_trades[-1].get('trade_id')
+                        print(f"[VIEW_TRADE] Resolved 'last/latest' from command text: {trade_id} (index {len(sorted_trades) - 1} of {len(sorted_trades)})")
     
     # Fallback to detected_trade from context
     if not trade_id:
@@ -1737,32 +2664,42 @@ def execute_view_trade_command(context: Dict[str, Any] = None) -> Dict[str, Any]
             trade_id = detected_trade.get('id') or detected_trade.get('trade_id')
             print(f"[VIEW_TRADE] Using detected_trade from context: {trade_id}")
     
+    # CRITICAL FIX: If still no trade_id, try trade_detector with conversation history
+    if not trade_id:
+        command_text = context.get('command_text', '')
+        conversation_history = context.get('conversation_history', [])
+        
+        if command_text and conversation_history:
+            from utils.trade_detector import detect_trade_reference
+            from performance.utils import read_logs
+            
+            all_trades = context.get('all_trades') or read_logs()
+            detected_trade = detect_trade_reference(command_text, all_trades, conversation_history)
+            
+            if detected_trade:
+                trade_id = detected_trade.get('id') or detected_trade.get('trade_id')
+                print(f"[VIEW_TRADE] Resolved trade from conversation context: {trade_id} ({detected_trade.get('symbol')})")
+    
     if trade_id:
         try:
-            import requests
-            # Try to get trade by ID - first try direct endpoint, then fallback to reading all trades
-            try:
-                # Increase timeout to 30 seconds for trade loading (may need to load chart data)
-                response = requests.get(f"http://127.0.0.1:8765/performance/trades/{trade_id}", timeout=30)
-                if response.status_code == 200:
-                    trade_data = response.json()
-                    # Handle both formats: {"trade": {...}} or direct trade object
-                    trade = trade_data.get('trade', trade_data) if isinstance(trade_data, dict) else trade_data
-                elif response.status_code == 404:
-                    # Try reading from all trades instead
-                    response = requests.get("http://127.0.0.1:8765/performance/all", timeout=30)
+            # OPTIMIZATION: Use direct file read instead of HTTP calls to avoid 30s timeout delays
+            # This eliminates the ~30s delay by reading from cached file instead of waiting for HTTP
+            from performance.utils import read_logs
+            all_trades = context.get('all_trades') or read_logs()
+            trade = next((t for t in all_trades if str(t.get('id')) == str(trade_id) or str(t.get('trade_id')) == str(trade_id) or 
+                          str(t.get('id')) == str(trade_id) or str(t.get('trade_id')) == str(trade_id)), None)
+            
+            if not trade:
+                # Fallback: try HTTP call only if file read fails (with short timeout)
+                import requests
+                try:
+                    response = requests.get(f"http://127.0.0.1:8765/performance/trades/{trade_id}", timeout=5)
                     if response.status_code == 200:
-                        all_trades = response.json()
-                        trade = next((t for t in all_trades if str(t.get('id')) == str(trade_id) or str(t.get('trade_id')) == str(trade_id)), None)
-                    else:
-                        trade = None
-                else:
+                        trade_data = response.json()
+                        trade = trade_data.get('trade', trade_data) if isinstance(trade_data, dict) else trade_data
+                except Exception as http_error:
+                    print(f"[VIEW_TRADE] HTTP fallback failed: {http_error}, using direct file read")
                     trade = None
-            except requests.exceptions.Timeout:
-                # Fallback: read from file directly
-                from performance.utils import read_logs
-                all_trades = read_logs()
-                trade = next((t for t in all_trades if str(t.get('id')) == str(trade_id) or str(t.get('trade_id')) == str(trade_id)), None)
             
             if trade:
                 symbol = trade.get('symbol', 'Unknown')
@@ -1770,28 +2707,31 @@ def execute_view_trade_command(context: Dict[str, Any] = None) -> Dict[str, Any]
                 pnl = trade.get('pnl', 0)
                 r_multiple = trade.get('r_multiple', 0)
                 
-                # === 5F.2 FIX ===
-                # [5F.2 FIX F1] Parallelize trade fetch + chart resolve (async)
-                # Phase 5F.1: Attach chart_url for inline button (with error handling)
-                chart_url = None
-                try:
-                    chart_url = get_chart_url(trade)
-                except Exception as chart_error:
-                    print(f"[VIEW_TRADE] Warning: Could not resolve chart URL: {chart_error}")
-                    # Continue without chart_url - button will resolve on-demand
+                # OPTIMIZATION: Use attach_chart_url (fast, no HTTP calls) instead of get_chart_url
+                trade_data = trade.copy()
+                trade_data = attach_chart_url(trade_data)
+                chart_url = trade_data.get("chart_url")
                 
                 # [5F.2 FIX F3] Update context_manager with current trade index
-                from memory.context_manager import set_current_trade_index
-                from performance.utils import read_logs
+                from memory.context_manager import set_current_trade_index, get_current_trade_index
                 all_trades_for_index = context.get('all_trades') or read_logs()
                 if all_trades_for_index:
+                    # CRITICAL: Use same sorting as navigation commands (oldest first, reverse=False)
                     sorted_trades = sorted(all_trades_for_index, key=lambda t: t.get('timestamp') or t.get('entry_time') or '', reverse=False)
                     for idx, t in enumerate(sorted_trades):
                         if (t.get('id') == trade_id or t.get('trade_id') == trade_id or
                             str(t.get('id')) == str(trade_id) or str(t.get('trade_id')) == str(trade_id)):
                             set_current_trade_index(idx)
-                            print(f"[VIEW_TRADE] Updated current_trade_index to {idx}")
+                            print(f"[VIEW_TRADE] CRITICAL: Updated current_trade_index to {idx} (trade #{idx + 1} of {len(sorted_trades)})")
+                            print(f"[VIEW_TRADE] Trade at index {idx}: ID={trade_id}, Symbol={t.get('symbol')}, Date={t.get('timestamp') or t.get('entry_time')}")
+                            # CRITICAL: Also verify the index was set correctly
+                            verify_idx = get_current_trade_index()
+                            if verify_idx != idx:
+                                print(f"[VIEW_TRADE] WARNING: Index mismatch! Set to {idx}, but get_current_trade_index() returns {verify_idx}")
                             break
+                    else:
+                        # Trade not found in sorted list - log warning
+                        print(f"[VIEW_TRADE] WARNING: Trade {trade_id} not found in sorted list to set index")
                 
                 message = f"📊 **Trade {trade_id} Details**\n\n"
                 message += f"• Symbol: {symbol}\n"
@@ -1799,48 +2739,57 @@ def execute_view_trade_command(context: Dict[str, Any] = None) -> Dict[str, Any]
                 message += f"• P&L: ${pnl:.2f}\n"
                 message += f"• R-Multiple: {r_multiple:.2f}R"
                 
-                trade_data = trade.copy()
-                if chart_url:
-                    trade_data['chart_url'] = chart_url
+                elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+                print(f"[PERF] execute_view_trade_command handler took {elapsed_ms} ms")
+                
+                # Determine intent based on trade_reference
+                trade_reference = arguments.get('trade_reference', '').lower()
+                detected_intent = "view_latest_trade" if trade_reference in ['last', 'latest'] else "view_trade"
                 
                 return {
                     "success": True,
                     "command": "view_trade",
                     "message": message,
+                    "intent": detected_intent,
+                    "phase": "5f",
+                    "duration_ms": elapsed_ms,
                     "data": {
                         "trade": trade_data,
-                        "chart_url": chart_url  # Also at top level for easier access
+                        "chart_url": chart_url
+                    },
+                    "fields": {
+                        "chart_url": chart_url
                     }
                 }
             else:
+                elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+                print(f"[PERF] execute_view_trade_command handler failed after {elapsed_ms} ms: trade not found")
                 return {
                     "success": False,
                     "command": "view_trade",
-                    "message": f"❓ Trade {trade_id} not found. Please check the trade ID and try again."
+                    "message": f"❓ Trade {trade_id} not found. Please check the trade ID and try again.",
+                    "intent": "view_trade",
+                    "phase": "5f"
                 }
-        except requests.exceptions.Timeout:
-            return {
-                "success": False,
-                "command": "view_trade",
-                "message": f"⏱️ Request timed out while loading trade {trade_id}. The server may be busy. Please try again."
-            }
-        except requests.exceptions.ConnectionError:
-            return {
-                "success": False,
-                "command": "view_trade",
-                "message": f"🔌 Could not connect to server. Please ensure the backend server is running."
-            }
         except Exception as e:
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+            print(f"[PERF] execute_view_trade_command handler failed after {elapsed_ms} ms: {e}")
             return {
                 "success": False,
                 "command": "view_trade",
-                "message": f"⚠️ Error loading trade: {str(e)}"
+                "message": f"⚠️ Error loading trade: {str(e)}",
+                "intent": "view_trade",
+                "phase": "5f"
             }
     else:
+        elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+        print(f"[PERF] execute_view_trade_command handler failed after {elapsed_ms} ms: no trade_id specified")
         return {
             "success": False,
             "command": "view_trade",
-            "message": "❓ Please specify which trade to view. Try 'view trade [ID]' or say 'view this trade' after mentioning a specific trade."
+            "message": "❓ Please specify which trade to view. Try 'view trade [ID]' or say 'view this trade' after mentioning a specific trade.",
+            "intent": "view_trade",
+            "phase": "5f"
         }
 
 def execute_close_chart_command() -> Dict[str, Any]:

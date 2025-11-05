@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Visual Trade Copilot - Trades</title>
+  <link rel="stylesheet" href="/app/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Visual Trade Copilot</h1>
+    <nav>
+      <a href="/app/">Trades</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="filters">
+      <input id="symbol" placeholder="Symbol (e.g. 6EZ5)" />
+      <select id="outcome">
+        <option value="">Any outcome</option>
+        <option>win</option>
+        <option>loss</option>
+        <option>breakeven</option>
+      </select>
+      <select id="direction">
+        <option value="">Any direction</option>
+        <option>long</option>
+        <option>short</option>
+      </select>
+      <input id="start_time" type="date" />
+      <input id="end_time" type="date" />
+      <select id="sort_by">
+        <option>entry_time</option>
+        <option>pnl</option>
+        <option>r_multiple</option>
+        <option>id</option>
+      </select>
+      <select id="sort_dir">
+        <option>asc</option>
+        <option selected>desc</option>
+      </select>
+      <button id="apply">Apply</button>
+    </section>
+
+    <section>
+      <table id="trades">
+        <thead>
+          <tr>
+            <th>Trade ID</th>
+            <th>Symbol</th>
+            <th>Entry Time</th>
+            <th>Exit Time</th>
+            <th>Direction</th>
+            <th>Outcome</th>
+            <th>PnL</th>
+            <th>R</th>
+            <th>Chart</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="/app/app.js"></script>
+</body>
+<!-- Minimal Phase 4A web UI -->
+</html>
+
+

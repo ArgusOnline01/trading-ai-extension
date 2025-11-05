@@ -205,11 +205,33 @@ def route_command(raw_cmd: Dict[str, Any], context: Dict[str, Any]) -> Dict[str,
     handler = getattr(system_commands, handler_name, None)
     
     if not handler:
+        # Phase 5F Fix: Friendly error message for unmapped commands
+        friendly_commands = {
+            "greeting": "Hello! I'm here to help with your trading analysis. Try 'list my trades' or 'show my stats'.",
+            "info": "I can help you with trade analysis, chart viewing, and performance tracking. Try 'show my stats' or 'list my trades'.",
+            "question": "I understand you're asking a question. For trading commands, try 'list my trades', 'show chart', or 'show my stats'.",
+            "unknown": "I didn't recognize that as a trading command. Try 'list my trades', 'show chart', or 'show my stats'."
+        }
+        
+        # Determine if this is a greeting/info request vs unknown command
+        cmd_lower = cmd_name.lower()
+        if any(word in cmd_lower for word in ["hello", "hi", "hey", "greeting"]):
+            friendly_msg = friendly_commands["greeting"]
+        elif any(word in cmd_lower for word in ["what", "how", "info", "information"]):
+            friendly_msg = friendly_commands["info"]
+        elif "?" in str(raw_cmd):
+            friendly_msg = friendly_commands["question"]
+        else:
+            friendly_msg = friendly_commands["unknown"]
+        
         return {
-            "success": False,
-            "command": cmd_name,
-            "message": f"No handler found for '{cmd_name}'. Available handlers: {[attr for attr in dir(system_commands) if attr.startswith('execute_') and attr.endswith('_command')]}",
-            "frontend_action": None
+            "success": True,  # Success = True to indicate friendly response, not error
+            "command": cmd_name or "unknown",
+            "message": friendly_msg,
+            "frontend_action": None,
+            "intent": "fallback_unmapped_handler",  # Phase 5F Polishing: Distinct intent for fallbacks
+            "phase": "5f",
+            "is_fallback": True  # Mark as fallback response
         }
     
     # Step 5: Execute command with enhanced context

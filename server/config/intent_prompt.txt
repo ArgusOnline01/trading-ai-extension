@@ -45,11 +45,13 @@ PERFORMANCE COMMANDS:
 - stats: "show my stats", "my performance", "how am I doing"
 
 TRADE COMMANDS:
-- list_trades: "list my trades", "what trades do I have", "show my trades", "list all trades"
+- list_trades: "list my trades", "what trades do I have", "show my trades", "list all trades", "show me my losing trades", "show me my winning trades"
 - view_trade: "view trade", "show trade details", "what was trade #13", "show me my first trade", "what was my last trade", "go to my third trade", "show my second trade", "pull up my latest trade", "show me a random winning trade", "random win", "pick a random winner"
 - delete_trade: "delete trade", "remove trade"
 - next_trade_teaching: "next trade", "next", "go to next trade"
 - previous_trade_teaching: "previous trade", "previous", "go back", "back", "previous one"
+- next_trade_navigation: "next trade", "next one", "go to the next", "open the next one please"
+- random_winning_trade: "random win", "random winning trade", "show random win", "pick a random winner", "show me a random winning trade"
 
 Guidelines:
 
@@ -57,6 +59,11 @@ Guidelines:
 - Identify multiple commands if needed. ("create MNQ then delete 6E" → two commands)
 - Extract arguments from context. ("delete the MNQ session" → arguments: {"name": "MNQ"})
 - Use conversation history for context. ("both" after listing sessions → delete both)
+- **CRITICAL: Distinguish questions from commands**
+  - Questions seeking information (e.g., "can you tell me...", "what are...", "how many...") should be is_command=false UNLESS they explicitly request an action
+  - Commands are requests for actions (e.g., "show me...", "list...", "delete...")
+  - "can you tell me what are my winning trades?" → is_command=false (question, not action)
+  - "show me my winning trades" → is_command=true (action request)
 - If message is not actionable, return is_command=false.
 - Confidence should reflect certainty: 0.9+ for clear commands, 0.6-0.8 for ambiguous, <0.6 for likely conversation
 - Never output anything except valid JSON.
@@ -189,6 +196,12 @@ User: "random win"
 {
   "is_command": true,
   "confidence": 0.9,
-  "commands_detected": [{"command": "view_trade", "type": "trade", "action": "view", "arguments": {"trade_reference": "random_win"}}]
+  "commands_detected": [{"command": "random_winning_trade", "type": "trade", "action": "view", "arguments": {}}]
 }
 
+User: "next trade"
+{
+  "is_command": true,
+  "confidence": 0.9,
+  "commands_detected": [{"command": "next_trade_navigation", "type": "trade", "action": "next", "arguments": {}}]
+}

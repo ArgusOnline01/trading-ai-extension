@@ -1,0 +1,51 @@
+# Docker Compose for Visual Trade Copilot
+# Phase 4A: Backend only (hybrid approach)
+
+services:
+  backend:
+    build: ./server
+    container_name: vtc-backend
+    ports:
+      - "8765:8765"
+    volumes:
+      # Mount code for development (hot reload)
+      - ./server:/app
+      # Mount data directory (for SQLite database and files)
+      - ./server/data:/app/data
+      # Mount logs directory if needed
+      - ./server/logs:/app/logs
+    environment:
+      # OpenAI API key (from .env file)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Other environment variables
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - vtc-network
+
+# Future services (for later phases):
+# webapp:
+#   build: ./web-app
+#   ports:
+#     - "3000:3000"
+#   volumes:
+#     - ./web-app:/app
+#   depends_on:
+#     - backend
+
+# postgres:
+#   image: postgres:15
+#   environment:
+#     - POSTGRES_DB=vtc_db
+#     - POSTGRES_USER=vtc_user
+#     - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+#   volumes:
+#     - postgres_data:/var/lib/postgresql/data
+
+networks:
+  vtc-network:
+    driver: bridge
+
+# volumes:
+#   postgres_data:
+

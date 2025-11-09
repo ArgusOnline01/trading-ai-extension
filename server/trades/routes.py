@@ -204,3 +204,40 @@ def delete_trade(trade_id: str, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+@router.post("/{trade_id}/link-setup")
+def link_trade_to_setup(
+    trade_id: str,
+    setup_id: Optional[int] = Query(None),
+    entry_method_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db)
+):
+    """Phase 4B: Link a trade to a setup and/or entry method"""
+    trade = db.query(Trade).filter(Trade.trade_id == trade_id).first()
+    if not trade:
+        raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
+    
+    if setup_id is not None:
+        from db.models import Setup
+        setup = db.query(Setup).filter(Setup.id == setup_id).first()
+        if not setup:
+            raise HTTPException(status_code=404, detail=f"Setup {setup_id} not found")
+        trade.setup_id = setup_id
+    
+    if entry_method_id is not None:
+        from db.models import EntryMethod
+        entry_method = db.query(EntryMethod).filter(EntryMethod.id == entry_method_id).first()
+        if not entry_method:
+            raise HTTPException(status_code=404, detail=f"Entry method {entry_method_id} not found")
+        trade.entry_method_id = entry_method_id
+    
+    db.commit()
+    db.refresh(trade)
+    
+    return {
+        "message": "Trade linked successfully",
+        "trade_id": trade_id,
+        "setup_id": trade.setup_id,
+        "entry_method_id": trade.entry_method_id
+    }
+
+

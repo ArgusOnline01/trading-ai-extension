@@ -46,7 +46,10 @@
         <td>${t.outcome ?? ''}</td>
         <td>${(t.pnl==null)?'':('$' + Number(t.pnl).toFixed(2))}</td>
         <td>${t.r_multiple ?? '-'}</td>
-        <td><a class="btn" target="_blank" href="/charts/by-trade/${t.trade_id}">Open Chart</a></td>
+        <td>
+          <a class="btn" target="_blank" href="/charts/by-trade/${t.trade_id}" style="margin-right: 8px;">View Chart</a>
+          <a class="btn" href="/app/annotate.html?trade_id=${t.trade_id}" style="background: #26a69a;">Annotate</a>
+        </td>
       `;
       tbody.appendChild(tr);
     }

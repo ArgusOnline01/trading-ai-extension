@@ -40,6 +40,8 @@ def list_trades(
     min_r: Optional[float] = Query(None),
     max_r: Optional[float] = Query(None),
     session_id: Optional[str] = Query(None),
+    setup_id: Optional[int] = Query(None, description="Filter by setup ID"),
+    entry_method_id: Optional[int] = Query(None, description="Filter by entry method ID"),
     sort_by: Optional[str] = Query("entry_time", description="id|entry_time|exit_time|pnl|r_multiple"),
     sort_dir: Optional[str] = Query("asc", description="asc|desc"),
 ):
@@ -73,6 +75,10 @@ def list_trades(
         q = q.filter(Trade.r_multiple != None).filter(Trade.r_multiple >= min_r)
     if max_r is not None:
         q = q.filter(Trade.r_multiple != None).filter(Trade.r_multiple <= max_r)
+    if setup_id is not None:
+        q = q.filter(Trade.setup_id == setup_id)
+    if entry_method_id is not None:
+        q = q.filter(Trade.entry_method_id == entry_method_id)
     # Sorting
     sort_map = {
         "id": Trade.id,
@@ -103,6 +109,8 @@ def list_trades(
                 "outcome": r.outcome,
                 "pnl": r.pnl,
                 "r_multiple": r.r_multiple,
+                "setup_id": r.setup_id,
+                "entry_method_id": r.entry_method_id,
             }
             for r in rows
         ],
@@ -128,6 +136,8 @@ def get_trade(trade_id: str, db: Session = Depends(get_db)):
         "chart_url": trade.chart_url,
         "session_id": trade.session_id,
         "created_at": trade.created_at,
+        "setup_id": trade.setup_id,
+        "entry_method_id": trade.entry_method_id,
     }
 
 

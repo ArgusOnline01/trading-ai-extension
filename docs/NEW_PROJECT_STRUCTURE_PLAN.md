@@ -348,6 +348,11 @@ trading-ai-platform/
 - Feedback loop: AI detects → You confirm/correct → AI learns
 - Setup verification system
 - "Can AI recreate this setup?" testing
+- **Interactive Annotation in Chat:** AI can view and annotate charts during chat sessions
+  - User can ask: "Can you show me where the POI is on this chart?"
+  - AI can draw annotations (POI, BOS) directly on charts during chat
+  - User can correct AI's annotations in real-time
+  - AI learns from corrections immediately
 
 **Teaching Process:**
 1. Load your 60-70 trades via chart recreation
@@ -356,6 +361,21 @@ trading-ai-platform/
 4. AI learns from corrections and improves
 5. After X trades, AI can detect setups on its own
 6. Test with new charts: "Can AI find the setup?"
+
+**Interactive Annotation Feature:**
+- **Location:** Extension chat + Web app annotation page
+- **How It Works:**
+  1. User asks AI in chat: "Show me the POI on this chart"
+  2. AI analyzes chart and draws annotations (POI, BOS) on annotation page
+  3. User can see AI's annotations and correct them if needed
+  4. AI learns from corrections and improves
+  5. User can explain by annotating: "The BOS is here because..."
+  6. AI can reference annotations: "Based on your POI annotation here..."
+- **Benefits:**
+  - Natural conversation flow with visual feedback
+  - Real-time learning from corrections
+  - Context-aware: AI understands your annotations
+  - Two-way: You annotate → AI learns, AI annotates → You correct
 
 **Timeline:** 3-4 weeks
 

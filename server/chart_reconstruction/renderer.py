@@ -44,6 +44,18 @@ def render_trade_chart(trade, data, output_dir):
         exit_price = trade.get("exit_price")
         entry_time = pd.to_datetime(trade.get("entry_time"))
         exit_time = pd.to_datetime(trade.get("exit_time")) if trade.get("exit_time") else None
+        
+        # Fix timezone issues - ensure both entry_time and data.index are timezone-aware or naive
+        if entry_time.tz is not None:
+            entry_time = entry_time.tz_localize(None) if entry_time.tz is not None else entry_time
+        if exit_time is not None and exit_time.tz is not None:
+            exit_time = exit_time.tz_localize(None)
+        
+        # Ensure data index is timezone-naive for comparison
+        if data.index.tz is not None:
+            data = data.copy()
+            data.index = data.index.tz_localize(None)
+        
         addplots = []
         # DO NOT draw horizontal price lines
         # Mark entry/exit candles with triangle markers below
@@ -74,19 +86,34 @@ def render_trade_chart(trade, data, output_dir):
                 'ytick.color': '#787B86',
                 'text.color': '#D1D4DC',
                 'font.size': 10,
+                'lines.antialiased': True,
+                'patch.antialiased': True,
             }
         )
+        # Original zoom logic: Use data as-is, let mplfinance handle the display
+        # Clean data: remove duplicates and sort
+        data = data[~data.index.duplicated(keep='first')].sort_index()
+        
+        # Use all available data (original behavior)
+        focused_data = data.copy()
+        
+        # Print debug info
+        hours_span = (focused_data.index[-1] - focused_data.index[0]).total_seconds() / 3600
+        print(f"[CHART] Rendering {len(focused_data)} candles ({hours_span:.1f} hours span)")
+        
+        # Render without volume panel to avoid jagged appearance
         fig, axlist = mpf.plot(
-            data,
+            focused_data,
             type="candle",
             style=s,
             title=title,
-            volume=True,
+            volume=False,  # Remove volume to fix jagged rendering
             returnfig=True,
             figsize=(16, 9),
-            warn_too_much_data=2000,
+            warn_too_much_data=2500,  # Set threshold higher than our max (2000 candles)
             tight_layout=True
         )
+        
         ax = axlist[0] if isinstance(axlist, list) else axlist
         # Triangle marker for entry/exit
         for tval, color in [
@@ -95,12 +122,25 @@ def render_trade_chart(trade, data, output_dir):
         ]:
             if tval is None:
                 continue
+            # Ensure timezone-naive for comparison
+            if hasattr(tval, 'tz') and tval.tz is not None:
+                tval = tval.tz_localize(None)
             idx = data.index.get_indexer([pd.to_datetime(tval)], method='nearest')[0]
             bar = data.iloc[idx]
             x = idx
             y = bar['Low'] - (bar['High']-bar['Low'])*0.11
             ax.scatter(x, y, marker='^', color=color, s=55, zorder=25, edgecolors='#fff', linewidths=1.4)
-        fig.savefig(str(chart_path), dpi=150, bbox_inches='tight', facecolor='#131722')
+        # Save with high DPI and anti-aliasing for crisp rendering
+        fig.savefig(
+            str(chart_path), 
+            dpi=300,  # High DPI for crisp rendering (was 150)
+            bbox_inches='tight', 
+            facecolor='#131722',
+            edgecolor='none',
+            pad_inches=0.1,
+            transparent=False,
+            format='png'
+        )
         import matplotlib.pyplot as plt
         plt.close(fig)
         print(f"[RENDERED] {chart_path}")

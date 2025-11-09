@@ -19,8 +19,9 @@ router = APIRouter(prefix="/annotations", tags=["annotations"])
 class AnnotationCreate(BaseModel):
     trade_id: str
     chart_id: Optional[int] = None
-    poi_locations: Optional[List[dict]] = None  # [{x, y, price, timestamp}]
-    bos_locations: Optional[List[dict]] = None  # [{x, y, price, timestamp}]
+    poi_locations: Optional[List[dict]] = None  # [{left, top, width, height, price, color, timestamp}]
+    bos_locations: Optional[List[dict]] = None  # [{x1, y1, x2, y2, price, color, timestamp}]
+    circle_locations: Optional[List[dict]] = None  # [{x, y, radius, color, timestamp}]
     notes: Optional[str] = None
     ai_detected: bool = False
     user_corrected: bool = False
@@ -29,6 +30,7 @@ class AnnotationCreate(BaseModel):
 class AnnotationUpdate(BaseModel):
     poi_locations: Optional[List[dict]] = None
     bos_locations: Optional[List[dict]] = None
+    circle_locations: Optional[List[dict]] = None
     notes: Optional[str] = None
     user_corrected: Optional[bool] = None
 
@@ -39,6 +41,7 @@ class AnnotationResponse(BaseModel):
     chart_id: Optional[int]
     poi_locations: Optional[List[dict]]
     bos_locations: Optional[List[dict]]
+    circle_locations: Optional[List[dict]] = None
     notes: Optional[str]
     ai_detected: bool
     user_corrected: bool
@@ -61,6 +64,7 @@ def create_annotation(annotation: AnnotationCreate, db: Session = Depends(get_db
         chart_id=annotation.chart_id,
         poi_locations=annotation.poi_locations,
         bos_locations=annotation.bos_locations,
+        circle_locations=annotation.circle_locations,
         notes=annotation.notes,
         ai_detected=annotation.ai_detected,
         user_corrected=annotation.user_corrected
@@ -75,6 +79,7 @@ def create_annotation(annotation: AnnotationCreate, db: Session = Depends(get_db
         chart_id=new_annotation.chart_id,
         poi_locations=new_annotation.poi_locations,
         bos_locations=new_annotation.bos_locations,
+        circle_locations=new_annotation.circle_locations,
         notes=new_annotation.notes,
         ai_detected=new_annotation.ai_detected,
         user_corrected=new_annotation.user_corrected,
@@ -99,6 +104,7 @@ def get_annotations_by_trade(trade_id: str, db: Session = Depends(get_db)):
             chart_id=a.chart_id,
             poi_locations=a.poi_locations,
             bos_locations=a.bos_locations,
+            circle_locations=a.circle_locations,
             notes=a.notes,
             ai_detected=a.ai_detected,
             user_corrected=a.user_corrected,
@@ -121,6 +127,7 @@ def get_annotation(annotation_id: int, db: Session = Depends(get_db)):
         chart_id=annotation.chart_id,
         poi_locations=annotation.poi_locations,
         bos_locations=annotation.bos_locations,
+        circle_locations=annotation.circle_locations,
         notes=annotation.notes,
         ai_detected=annotation.ai_detected,
         user_corrected=annotation.user_corrected,
@@ -139,6 +146,8 @@ def update_annotation(annotation_id: int, update: AnnotationUpdate, db: Session 
         annotation.poi_locations = update.poi_locations
     if update.bos_locations is not None:
         annotation.bos_locations = update.bos_locations
+    if update.circle_locations is not None:
+        annotation.circle_locations = update.circle_locations
     if update.notes is not None:
         annotation.notes = update.notes
     if update.user_corrected is not None:
@@ -153,6 +162,7 @@ def update_annotation(annotation_id: int, update: AnnotationUpdate, db: Session 
         chart_id=annotation.chart_id,
         poi_locations=annotation.poi_locations,
         bos_locations=annotation.bos_locations,
+        circle_locations=annotation.circle_locations,
         notes=annotation.notes,
         ai_detected=annotation.ai_detected,
         user_corrected=annotation.user_corrected,

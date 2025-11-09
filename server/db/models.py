@@ -75,8 +75,9 @@ class Annotation(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     trade_id = Column(String, ForeignKey("trades.trade_id"), index=True, nullable=True)
     chart_id = Column(Integer, ForeignKey("charts.id"), nullable=True)
-    poi_locations = Column(JSON, nullable=True)  # [{x, y, price, timestamp}]
-    bos_locations = Column(JSON, nullable=True)  # [{x, y, price, timestamp}]
+    poi_locations = Column(JSON, nullable=True)  # [{left, top, width, height, price, color, timestamp}]
+    bos_locations = Column(JSON, nullable=True)  # [{x1, y1, x2, y2, price, color, timestamp}]
+    circle_locations = Column(JSON, nullable=True)  # [{x, y, radius, color, timestamp}]
     notes = Column(String, nullable=True)
     ai_detected = Column(Boolean, default=False, nullable=False)
     user_corrected = Column(Boolean, default=False, nullable=False)

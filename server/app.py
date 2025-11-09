@@ -149,7 +149,23 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Serve minimal web app for trade management UI (Phase 4A foundation)
 try:
-    app.mount("/app", StaticFiles(directory="web", html=True), name="web_app")
+    # Mount web app with no-cache headers to ensure updates are visible
+    class NoCacheStaticFiles(StaticFiles):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+        
+        async def __call__(self, scope, receive, send):
+            async def send_wrapper(message):
+                if message["type"] == "http.response.start":
+                    message.setdefault("headers", [])
+                    # Add no-cache headers
+                    message["headers"].append([b"cache-control", b"no-cache, no-store, must-revalidate"])
+                    message["headers"].append([b"pragma", b"no-cache"])
+                    message["headers"].append([b"expires", b"0"])
+                await send(message)
+            await super().__call__(scope, receive, send_wrapper)
+    
+    app.mount("/app", NoCacheStaticFiles(directory="web", html=True), name="web_app")
 except Exception as _e:
     print(f"[WEB] Skipping /app mount (web assets missing): {_e}")
 

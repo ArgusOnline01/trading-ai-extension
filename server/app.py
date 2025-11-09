@@ -27,6 +27,10 @@ from navigation.routes import router as navigation_router
 from admin.routes import router as admin_router
 from chart_reconstruction.routes import router as chart_reconstruction_router
 from charts.routes import router as charts_router
+# Phase 4B: Strategy Documentation
+from setups.routes import router as setups_router
+from annotations.routes import router as annotations_router
+from entry_methods.routes import router as entry_methods_router
 from trades_merge.routes import router as trades_merge_router
 from amn_teaching.routes import router as amn_teaching_router
 from copilot_bridge.routes import router as copilot_router
@@ -128,6 +132,11 @@ app.include_router(chart_reconstruction_router)
 
 # Charts endpoints (DB-friendly)
 app.include_router(charts_router)
+
+# Phase 4B: Strategy Documentation routers
+app.include_router(setups_router)
+app.include_router(annotations_router)
+app.include_router(entry_methods_router)
 
 # Mount trades merge router (Phase 4D.2)
 app.include_router(trades_merge_router)

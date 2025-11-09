@@ -35,10 +35,14 @@ class Trade(Base):
     r_multiple = Column(Float, nullable=True)
     chart_url = Column(String, nullable=True)
     session_id = Column(String, nullable=True)
+    setup_id = Column(Integer, ForeignKey("setups.id"), index=True, nullable=True)  # Phase 4B: link to setup
+    entry_method_id = Column(Integer, ForeignKey("entry_methods.id"), index=True, nullable=True)  # Phase 4B: link to entry method
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     charts = relationship("Chart", back_populates="trade", cascade="all, delete-orphan")
     annotations = relationship("Annotation", back_populates="trade", cascade="all, delete-orphan")
+    setup = relationship("Setup")
+    entry_method = relationship("EntryMethod")
 
 
 class Chart(Base):
@@ -80,6 +84,18 @@ class Annotation(Base):
 
     trade = relationship("Trade", back_populates="annotations")
     chart = relationship("Chart")
+
+
+class EntryMethod(Base):
+    __tablename__ = "entry_methods"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False, unique=True)
+    description = Column(String, nullable=True)
+    setup_id = Column(Integer, ForeignKey("setups.id"), nullable=True)  # Optional link to setup
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    setup = relationship("Setup")
 
 
 class TeachingSession(Base):

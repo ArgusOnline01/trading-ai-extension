@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case, and_, or_
 from typing import Optional, List, Dict, Any
-from datetime import datetime, time, timezone, timezone
+from datetime import datetime, time, timezone
 from db.session import get_db
 from db.models import Trade, EntryMethod, Setup
 

@@ -77,17 +77,56 @@
         },
         options: {
           responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              labels: {
+                color: '#eaeaea'
+              }
+            },
+            title: {
+              display: false
+            }
+          },
           scales: {
+            x: {
+              ticks: {
+                color: '#eaeaea'
+              },
+              grid: {
+                color: '#1f1f1f'
+              }
+            },
             y: {
               beginAtZero: true,
-              title: { display: true, text: 'Win Rate (%)' }
+              title: { 
+                display: true, 
+                text: 'Win Rate (%)',
+                color: '#eaeaea'
+              },
+              ticks: {
+                color: '#eaeaea'
+              },
+              grid: {
+                color: '#1f1f1f'
+              }
             },
             y1: {
               type: 'linear',
               display: true,
               position: 'right',
-              title: { display: true, text: 'Avg R Multiple' },
-              grid: { drawOnChartArea: false }
+              title: { 
+                display: true, 
+                text: 'Avg R Multiple',
+                color: '#eaeaea'
+              },
+              ticks: {
+                color: '#eaeaea'
+              },
+              grid: { 
+                drawOnChartArea: false,
+                color: '#1f1f1f'
+              }
             }
           }
         }
@@ -158,10 +197,39 @@
         },
         options: {
           responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              labels: {
+                color: '#eaeaea'
+              }
+            },
+            title: {
+              display: false
+            }
+          },
           scales: {
+            x: {
+              ticks: {
+                color: '#eaeaea'
+              },
+              grid: {
+                color: '#1f1f1f'
+              }
+            },
             y: {
               beginAtZero: true,
-              title: { display: true, text: 'Win Rate (%)' }
+              title: { 
+                display: true, 
+                text: 'Win Rate (%)',
+                color: '#eaeaea'
+              },
+              ticks: {
+                color: '#eaeaea'
+              },
+              grid: {
+                color: '#1f1f1f'
+              }
             }
           }
         }
@@ -207,10 +275,39 @@
         },
         options: {
           responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              labels: {
+                color: '#eaeaea'
+              }
+            },
+            title: {
+              display: false
+            }
+          },
           scales: {
+            x: {
+              ticks: {
+                color: '#eaeaea'
+              },
+              grid: {
+                color: '#1f1f1f'
+              }
+            },
             y: {
               beginAtZero: true,
-              title: { display: true, text: 'Win Rate (%)' }
+              title: { 
+                display: true, 
+                text: 'Win Rate (%)',
+                color: '#eaeaea'
+              },
+              ticks: {
+                color: '#eaeaea'
+              },
+              grid: {
+                color: '#1f1f1f'
+              }
             }
           }
         }

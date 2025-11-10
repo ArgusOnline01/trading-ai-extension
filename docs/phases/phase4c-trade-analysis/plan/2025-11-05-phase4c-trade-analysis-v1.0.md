@@ -58,7 +58,7 @@ As a trader, I want to analyze my trades by entry method so that:
   - [ ] Identify best/worst performing entry methods
   - [ ] Time-based patterns (London session vs NY session vs Asian session)
   - [ ] Direction-based patterns (bullish vs bearish entry method performance)
-  - [ ] "Stopped out but went in direction" analysis (why entry was wrong)
+  - [ ] "Stopped out but went in direction" tracking (user can add this in notes for now)
   - [ ] Entry method success rate by market conditions (if data available)
 
 ### Frontend Changes (Web App)
@@ -70,7 +70,7 @@ As a trader, I want to analyze my trades by entry method so that:
   - [ ] Charts: Entry method performance by direction (bullish vs bearish)
   - [ ] Trade count by entry method
   - [ ] Best/worst performing entry methods
-  - [ ] "Stopped out but went in direction" analysis (why entry was wrong)
+  - [ ] "Stopped out but went in direction" tracking (user can add this in notes for now)
   - [ ] Both charts AND tables for visualization
 
 - [ ] **Enhanced Trade List** (`/app/`)

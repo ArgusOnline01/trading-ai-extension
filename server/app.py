@@ -31,6 +31,8 @@ from charts.routes import router as charts_router
 from setups.routes import router as setups_router
 from annotations.routes import router as annotations_router
 from entry_methods.routes import router as entry_methods_router
+# Phase 4C: Trade Analysis
+from analytics.routes import router as analytics_router
 from trades_merge.routes import router as trades_merge_router
 from amn_teaching.routes import router as amn_teaching_router
 from copilot_bridge.routes import router as copilot_router
@@ -137,6 +139,8 @@ app.include_router(charts_router)
 app.include_router(setups_router)
 app.include_router(annotations_router)
 app.include_router(entry_methods_router)
+# Phase 4C: Trade Analysis router
+app.include_router(analytics_router)
 
 # Mount trades merge router (Phase 4D.2)
 app.include_router(trades_merge_router)

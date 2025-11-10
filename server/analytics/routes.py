@@ -17,29 +17,43 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 def detect_trading_session(entry_time: datetime) -> Optional[str]:
     """
     Detect trading session from entry_time timestamp.
+    Assumes entry_time is already in EST/EDT (local time).
     Returns: 'london', 'ny', 'asian', or None
+    
+    Session times (EST/EDT):
+    - Asia: 5 PM - 2 AM (17:00 - 2:00)
+    - London: 2 AM - 11 AM (2:00 - 11:00)
+    - NY: 8 AM - 4 PM (8:00 - 16:00)
     """
     if not entry_time:
         return None
     
-    # Convert to UTC if timezone-aware
+    # Assume entry_time is already in EST/EDT (local time)
+    # If timezone-aware, convert to naive datetime (assume it's already EST/EDT)
     if entry_time.tzinfo:
-        entry_time = entry_time.astimezone(timezone.utc).replace(tzinfo=None)
-    
-    hour = entry_time.hour
-    
-    # London session: 8:00 - 16:00 UTC (3:00 - 11:00 EST)
-    # NY session: 13:00 - 21:00 UTC (8:00 - 16:00 EST)
-    # Asian session: 22:00 - 6:00 UTC (17:00 - 1:00 EST)
-    
-    if 8 <= hour < 13:
-        return "london"
-    elif 13 <= hour < 22:
-        return "ny"
-    elif hour >= 22 or hour < 6:
-        return "asian"
+        # Remove timezone info, assume it's already in EST/EDT
+        entry_time_local = entry_time.replace(tzinfo=None)
     else:
-        return "london"  # Default to London for 6-8 UTC overlap
+        # Already timezone-naive, assume it's in EST/EDT
+        entry_time_local = entry_time
+    
+    hour = entry_time_local.hour
+    
+    # Asia session: 5 PM - 2 AM (17:00 - 23:59 and 0:00 - 2:00)
+    # London session: 2 AM - 11 AM (2:00 - 11:00)
+    # NY session: 8 AM - 4 PM (8:00 - 16:00)
+    # Note: 8 AM - 11 AM overlaps between London and NY, NY takes priority
+    
+    if hour >= 17 or hour < 2:
+        return "asian"
+    elif 2 <= hour < 8:
+        return "london"  # London session (2 AM - 8 AM)
+    elif 8 <= hour < 16:
+        return "ny"  # NY session (8 AM - 4 PM) - takes priority over London
+    elif 16 <= hour < 17:
+        return "asian"  # 4 PM - 5 PM, transition to Asian
+    else:
+        return "london"  # Default fallback
 
 
 def calculate_entry_method_stats(trades: List[Trade]) -> Dict[str, Any]:

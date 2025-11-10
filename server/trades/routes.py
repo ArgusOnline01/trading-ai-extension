@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -12,6 +12,48 @@ from db.models import Trade
 
 
 router = APIRouter(prefix="/trades", tags=["trades"])
+
+
+def detect_trading_session(entry_time: datetime) -> Optional[str]:
+    """
+    Detect trading session from entry_time timestamp.
+    Assumes entry_time is already in EST/EDT (local time).
+    Returns: 'london', 'ny', 'asian', or None
+    
+    Session times (EST/EDT):
+    - Asia: 5 PM - 2 AM (17:00 - 2:00)
+    - London: 2 AM - 11 AM (2:00 - 11:00)
+    - NY: 8 AM - 4 PM (8:00 - 16:00)
+    """
+    if not entry_time:
+        return None
+    
+    # Assume entry_time is already in EST/EDT (local time)
+    # If timezone-aware, convert to naive datetime (assume it's already EST/EDT)
+    if entry_time.tzinfo:
+        # Remove timezone info, assume it's already in EST/EDT
+        entry_time_local = entry_time.replace(tzinfo=None)
+    else:
+        # Already timezone-naive, assume it's in EST/EDT
+        entry_time_local = entry_time
+    
+    hour = entry_time_local.hour
+    
+    # Asia session: 5 PM - 2 AM (17:00 - 23:59 and 0:00 - 2:00)
+    # London session: 2 AM - 11 AM (2:00 - 11:00)
+    # NY session: 8 AM - 4 PM (8:00 - 16:00)
+    # Note: 8 AM - 11 AM overlaps between London and NY, NY takes priority
+    
+    if hour >= 17 or hour < 2:
+        return "asian"
+    elif 2 <= hour < 8:
+        return "london"  # London session (2 AM - 8 AM)
+    elif 8 <= hour < 16:
+        return "ny"  # NY session (8 AM - 4 PM) - takes priority over London
+    elif 16 <= hour < 17:
+        return "asian"  # 4 PM - 5 PM, transition to Asian
+    else:
+        return "london"  # Default fallback
 
 
 def _parse_dt(val: Optional[str]) -> Optional[datetime]:
@@ -40,8 +82,10 @@ def list_trades(
     min_r: Optional[float] = Query(None),
     max_r: Optional[float] = Query(None),
     session_id: Optional[str] = Query(None),
+    session: Optional[str] = Query(None, description="Filter by trading session: london|ny|asian"),
     setup_id: Optional[int] = Query(None, description="Filter by setup ID"),
     entry_method_id: Optional[int] = Query(None, description="Filter by entry method ID"),
+    has_entry_method: Optional[bool] = Query(None, description="Filter trades with/without entry method"),
     sort_by: Optional[str] = Query("entry_time", description="id|entry_time|exit_time|pnl|r_multiple"),
     sort_dir: Optional[str] = Query("asc", description="asc|desc"),
 ):
@@ -79,6 +123,18 @@ def list_trades(
         q = q.filter(Trade.setup_id == setup_id)
     if entry_method_id is not None:
         q = q.filter(Trade.entry_method_id == entry_method_id)
+    if has_entry_method is not None:
+        if has_entry_method:
+            q = q.filter(Trade.entry_method_id.isnot(None))
+        else:
+            q = q.filter(Trade.entry_method_id.is_(None))
+    if session:
+        # Filter by trading session (London, NY, Asian)
+        session_lower = session.lower()
+        if session_lower in ['london', 'ny', 'asian']:
+            # Filter trades based on entry_time hour
+            # We'll apply this filter after fetching results
+            pass  # Will filter after query
     # Sorting
     sort_map = {
         "id": Trade.id,
@@ -94,7 +150,25 @@ def list_trades(
     else:
         q = q.order_by((sort_col.is_(None)).asc(), sort_col.asc())
     total = q.count()
-    rows = q.offset(offset).limit(limit).all()
+    rows = q.offset(offset).limit(limit * 2 if session else limit).all()  # Fetch more if session filtering needed
+    
+    # Filter by session if requested (post-query filtering)
+    if session:
+        session_lower = session.lower()
+        if session_lower in ['london', 'ny', 'asian']:
+            filtered_rows = []
+            for trade in rows:
+                if trade.entry_time:
+                    trade_session = detect_trading_session(trade.entry_time)
+                    if trade_session == session_lower:
+                        filtered_rows.append(trade)
+                else:
+                    # If no entry_time, skip session filtering for this trade
+                    if session_lower == 'london':  # Default behavior
+                        filtered_rows.append(trade)
+            rows = filtered_rows[:limit]  # Apply limit after filtering
+            total = len(filtered_rows)  # Update total count
+    
     return {
         "total": total,
         "limit": limit,
@@ -217,28 +291,44 @@ def delete_trade(trade_id: str, db: Session = Depends(get_db)):
 @router.post("/{trade_id}/link-setup")
 def link_trade_to_setup(
     trade_id: str,
-    setup_id: Optional[int] = Query(None),
-    entry_method_id: Optional[int] = Query(None),
+    setup_id: Optional[str] = Query(None),  # Changed to str to handle empty string
+    entry_method_id: Optional[str] = Query(None),  # Changed to str to handle empty string
     db: Session = Depends(get_db)
 ):
-    """Phase 4B: Link a trade to a setup and/or entry method"""
+    """Phase 4B: Link a trade to a setup and/or entry method. Pass empty string to unlink."""
     trade = db.query(Trade).filter(Trade.trade_id == trade_id).first()
     if not trade:
         raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
     
+    # Handle setup_id: empty string or "None" means unlink, otherwise link
     if setup_id is not None:
-        from db.models import Setup
-        setup = db.query(Setup).filter(Setup.id == setup_id).first()
-        if not setup:
-            raise HTTPException(status_code=404, detail=f"Setup {setup_id} not found")
-        trade.setup_id = setup_id
+        if setup_id == "" or setup_id.lower() == "none":
+            trade.setup_id = None  # Unlink
+        else:
+            try:
+                setup_id_int = int(setup_id)
+                from db.models import Setup
+                setup = db.query(Setup).filter(Setup.id == setup_id_int).first()
+                if not setup:
+                    raise HTTPException(status_code=404, detail=f"Setup {setup_id_int} not found")
+                trade.setup_id = setup_id_int
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid setup_id: {setup_id}")
     
+    # Handle entry_method_id: empty string or "None" means unlink, otherwise link
     if entry_method_id is not None:
-        from db.models import EntryMethod
-        entry_method = db.query(EntryMethod).filter(EntryMethod.id == entry_method_id).first()
-        if not entry_method:
-            raise HTTPException(status_code=404, detail=f"Entry method {entry_method_id} not found")
-        trade.entry_method_id = entry_method_id
+        if entry_method_id == "" or entry_method_id.lower() == "none":
+            trade.entry_method_id = None  # Unlink
+        else:
+            try:
+                entry_method_id_int = int(entry_method_id)
+                from db.models import EntryMethod
+                entry_method = db.query(EntryMethod).filter(EntryMethod.id == entry_method_id_int).first()
+                if not entry_method:
+                    raise HTTPException(status_code=404, detail=f"Entry method {entry_method_id_int} not found")
+                trade.entry_method_id = entry_method_id_int
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid entry_method_id: {entry_method_id}")
     
     db.commit()
     db.refresh(trade)

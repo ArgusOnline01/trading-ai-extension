@@ -84,6 +84,11 @@
         e.preventDefault();
         await linkTradeToSetup();
       });
+      
+      // Setup unlink button
+      $('unlink-btn').addEventListener('click', () => {
+        unlinkTrade();
+      });
 
       // Setup clear all button
       $('clear-all-btn').addEventListener('click', () => {
@@ -1061,8 +1066,9 @@
 
     try {
       const params = new URLSearchParams();
-      if (setupId) params.append('setup_id', setupId);
-      if (entryMethodId) params.append('entry_method_id', entryMethodId);
+      // Always send both parameters, even if empty (to allow unlinking)
+      params.append('setup_id', setupId || '');
+      params.append('entry_method_id', entryMethodId || '');
 
       const res = await fetch(`${API_BASE}/trades/${tradeId}/link-setup?${params.toString()}`, {
         method: 'POST'
@@ -1075,8 +1081,38 @@
 
       $('link-modal').style.display = 'none';
       alert('Trade linked successfully!');
+      // Reload trade data to show updated links
+      await init();
     } catch (err) {
       alert('Error linking trade: ' + err.message);
+      console.error(err);
+    }
+  }
+
+  async function unlinkTrade() {
+    if (!confirm('Are you sure you want to unlink this trade from all setups and entry methods?')) {
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams();
+      params.append('setup_id', '');
+      params.append('entry_method_id', '');
+
+      const res = await fetch(`${API_BASE}/trades/${tradeId}/link-setup?${params.toString()}`, {
+        method: 'POST'
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.detail || 'Failed to unlink trade');
+      }
+
+      alert('Trade unlinked successfully!');
+      // Reload trade data to show updated links
+      await init();
+    } catch (err) {
+      alert('Error unlinking trade: ' + err.message);
       console.error(err);
     }
   }

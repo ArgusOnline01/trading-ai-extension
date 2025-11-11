@@ -1,0 +1,103 @@
+[
+  {
+    "trade_id": "1296936136",
+    "entry_time": "2025-09-02 06:51:40",
+    "entry_price": 41.59,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "SILZ5",
+    "profit": null,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1296921143",
+    "entry_time": "2025-09-02 06:41:48",
+    "entry_price": 3553.20,
+    "direction": "sell",
+    "size": 3.00,
+    "product": "MGCZ5",
+    "profit": null,
+    "fees": -1.86
+  },
+  {
+    "trade_id": "1296835227",
+    "entry_time": "2025-09-02 06:00:43",
+    "entry_price": 3555.60,
+    "direction": "sell",
+    "size": 3.00,
+    "product": "MGCZ5",
+    "profit": 225.00,
+    "fees": -1.86
+  },
+  {
+    "trade_id": "1296764403",
+    "entry_time": "2025-09-02 05:28:10",
+    "entry_price": 3548.10,
+    "direction": "buy",
+    "size": 3.00,
+    "product": "MGCZ5",
+    "profit": null,
+    "fees": -1.86
+  },
+  {
+    "trade_id": "1296726241",
+    "entry_time": "2025-09-02 05:08:38",
+    "entry_price": 3549.60,
+    "direction": "buy",
+    "size": 3.00,
+    "product": "MGCZ5",
+    "profit": -66.00,
+    "fees": -1.86
+  },
+  {
+    "trade_id": "1296648884",
+    "entry_time": "2025-09-02 04:02:16",
+    "entry_price": 3547.40,
+    "direction": "sell",
+    "size": 3.00,
+    "product": "MGCZ5",
+    "profit": null,
+    "fees": -1.86
+  },
+  {
+    "trade_id": "1296482535",
+    "entry_time": "2025-09-02 02:50:57",
+    "entry_price": 41.57,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "SILZ5",
+    "profit": -170.00,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1296272757",
+    "entry_time": "2025-09-02 01:42:57",
+    "entry_price": 41.66,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "SILZ5",
+    "profit": null,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1296229555",
+    "entry_time": "2025-09-02 01:18:04",
+    "entry_price": 41.63,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "SILZ5",
+    "profit": -170.00,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1296144027",
+    "entry_time": "2025-09-02 00:27:41",
+    "entry_price": 1.17,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "6EU5",
+    "profit": -200.00,
+    "fees": -3.24
+  }
+]
+

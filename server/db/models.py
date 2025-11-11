@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
 )
 from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.sql import func
 
 
 Base = declarative_base()
@@ -110,3 +111,42 @@ class TeachingSession(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+# Phase 4D: AI Learning System Tables
+
+class AILesson(Base):
+    __tablename__ = "ai_lessons"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    trade_id = Column(String, ForeignKey("trades.trade_id"), index=True, nullable=True)
+    ai_annotations = Column(JSON, nullable=True)  # AI's original annotations
+    corrected_annotations = Column(JSON, nullable=True)  # User's corrections
+    corrected_reasoning = Column(String, nullable=True)  # User's correction to AI's reasoning
+    questions = Column(JSON, nullable=True)  # AI's questions
+    answers = Column(JSON, nullable=True)  # User's answers
+    accuracy_score = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    trade = relationship("Trade")
+
+
+class AIProgress(Base):
+    __tablename__ = "ai_progress"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    total_lessons = Column(Integer, default=0, nullable=False)
+    poi_accuracy = Column(Float, default=0.0, nullable=False)
+    bos_accuracy = Column(Float, default=0.0, nullable=False)
+    setup_type_accuracy = Column(Float, default=0.0, nullable=False)
+    overall_accuracy = Column(Float, default=0.0, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class AIVerificationTest(Base):
+    __tablename__ = "ai_verification_tests"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    test_chart_url = Column(String, nullable=True)
+    ai_annotations = Column(JSON, nullable=True)  # AI's annotations
+    ground_truth = Column(JSON, nullable=True)  # User's annotations (ground truth)
+    accuracy_score = Column(Float, nullable=True)
+    test_date = Column(DateTime, default=datetime.utcnow, nullable=False)

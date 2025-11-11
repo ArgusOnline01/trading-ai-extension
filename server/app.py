@@ -38,6 +38,8 @@ from amn_teaching.routes import router as amn_teaching_router
 from copilot_bridge.routes import router as copilot_router
 from routers.teach_router import router as teach_router
 from performance.learning import generate_learning_profile
+# Phase 4D: AI Learning System
+from ai.routes import router as ai_router
 # LATv2 removed - logging system no longer needed
 import asyncio
 import time
@@ -141,6 +143,9 @@ app.include_router(annotations_router)
 app.include_router(entry_methods_router)
 # Phase 4C: Trade Analysis router
 app.include_router(analytics_router)
+
+# Phase 4D: AI Learning System router
+app.include_router(ai_router)
 
 # Mount trades merge router (Phase 4D.2)
 app.include_router(trades_merge_router)

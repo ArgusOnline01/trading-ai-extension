@@ -1,0 +1,103 @@
+[
+  {
+    "trade_id": "1433753170",
+    "entry_time": "2025-10-07 01:24:37",
+    "entry_price": 25148.00,
+    "direction": "buy",
+    "size": 5.00,
+    "product": "MNQZ5",
+    "profit": 20.00,
+    "fees": -1.85
+  },
+  {
+    "trade_id": "1433752819",
+    "entry_time": "2025-10-07 01:24:34",
+    "entry_price": 25150.00,
+    "direction": "sell",
+    "size": 5.00,
+    "product": "MNQZ5",
+    "profit": null,
+    "fees": -1.85
+  },
+  {
+    "trade_id": "1433727202",
+    "entry_time": "2025-10-07 01:14:19",
+    "entry_price": 25167.00,
+    "direction": "buy",
+    "size": 5.00,
+    "product": "MNQZ5",
+    "profit": 10.00,
+    "fees": -1.85
+  },
+  {
+    "trade_id": "1433726547",
+    "entry_time": "2025-10-07 01:14:09",
+    "entry_price": 25168.00,
+    "direction": "sell",
+    "size": 5.00,
+    "product": "MNQZ5",
+    "profit": null,
+    "fees": -1.85
+  },
+  {
+    "trade_id": "1433708258",
+    "entry_time": "2025-10-07 01:03:48",
+    "entry_price": 48.42,
+    "direction": "sell",
+    "size": 3.00,
+    "product": "SILZ5",
+    "profit": 45.00,
+    "fees": -3.06
+  },
+  {
+    "trade_id": "1433707435",
+    "entry_time": "2025-10-07 01:03:04",
+    "entry_price": 48.40,
+    "direction": "buy",
+    "size": 3.00,
+    "product": "SILZ5",
+    "profit": null,
+    "fees": -3.06
+  },
+  {
+    "trade_id": "1433636654",
+    "entry_time": "2025-10-07 00:16:34",
+    "entry_price": 25174.00,
+    "direction": "sell",
+    "size": 4.00,
+    "product": "MNQZ5",
+    "profit": -38.00,
+    "fees": -1.48
+  },
+  {
+    "trade_id": "1433633567",
+    "entry_time": "2025-10-07 00:15:13",
+    "entry_price": 25178.75,
+    "direction": "buy",
+    "size": 4.00,
+    "product": "MNQZ5",
+    "profit": null,
+    "fees": -1.48
+  },
+  {
+    "trade_id": "1433628162",
+    "entry_time": "2025-10-07 00:12:51",
+    "entry_price": 1.17,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "6EZ5",
+    "profit": 400.00,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1433118696",
+    "entry_time": "2025-10-06 19:51:42",
+    "entry_price": 1.18,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "6EZ5",
+    "profit": null,
+    "fees": -3.24
+  }
+]
+

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Visual Trade Copilot - Teach AI</title>
+  <link rel="stylesheet" href="/app/styles.css" />
+  <link rel="stylesheet" href="/app/teach.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+  <style>
+    .teaching-container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      height: calc(100vh - 200px);
+    }
+    
+    .chart-section {
+      flex: 1;
+      background: var(--panel);
+      border: 1px solid #1f1f1f;
+      border-radius: 6px;
+      padding: 16px;
+      overflow: auto;
+      position: relative;
+    }
+    
+    #chart-canvas {
+      border: 1px solid #333;
+      max-width: 100%;
+      display: block;
+    }
+    
+    .controls-section {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 12px;
+      background: var(--panel);
+      border-radius: 6px;
+    }
+    
+    .ai-annotations-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .similar-trades {
+      max-height: 200px;
+      overflow-y: auto;
+      padding: 12px;
+      background: var(--panel);
+      border-radius: 6px;
+      border: 1px solid #1f1f1f;
+    }
+    
+    .similar-trade-item {
+      padding: 8px;
+      margin-bottom: 8px;
+      background: #1a1a1a;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    
+    .ai-annotation {
+      stroke-dasharray: 5, 5;
+    }
+    
+    .user-annotation {
+      stroke-dasharray: none;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Visual Trade Copilot - Teach AI</h1>
+    <nav>
+      <a href="/app/">Trades</a>
+      <a href="/app/annotate.html">Annotate</a>
+      <a href="/app/setups.html">Setups</a>
+      <a href="/app/entry-methods.html">Entry Methods</a>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Trade Selector (shown when no trade_id in URL) -->
+    <div id="trade-selector" style="display: none; max-width: 800px; margin: 40px auto; padding: 24px; background: var(--panel); border-radius: 8px;">
+      <h2 style="color: var(--text); margin-bottom: 16px;">Select a Trade to Teach AI</h2>
+      <p style="color: var(--muted); margin-bottom: 16px;">Choose a trade from the list below to start teaching the AI about trading setups.</p>
+      <div style="margin-bottom: 16px;">
+        <label for="trade-select" style="display: block; color: var(--text); margin-bottom: 8px;">Trade:</label>
+        <select id="trade-select" style="width: 100%; padding: 8px; background: var(--bg); color: var(--text); border: 1px solid #333; border-radius: 4px; font-size: 14px;">
+          <option value="">Loading trades...</option>
+        </select>
+      </div>
+      <button id="load-trade-btn" style="padding: 10px 20px; background: var(--accent); color: #111; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">
+        Load Trade
+      </button>
+      <p style="margin-top: 16px; text-align: center;">
+        <a href="/app/" style="color: var(--accent);">Or go back to trades list</a>
+      </p>
+    </div>
+
+    <div id="loading" style="text-align: center; padding: 40px; color: var(--muted);">
+      Loading trade and analyzing chart...
+    </div>
+
+    <div id="content" style="display: none;">
+      <section style="margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <div>
+            <h2 id="trade-info" style="margin: 0; color: var(--accent);"></h2>
+            <p id="trade-details" style="margin: 4px 0 0 0; color: var(--muted); font-size: 14px;"></p>
+          </div>
+          <div>
+            <button id="analyze-btn" style="padding: 8px 16px; background: var(--accent); color: #111; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
+              🔄 Re-analyze Chart
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Controls -->
+      <div class="controls-section">
+        <div style="display: flex; gap: 16px; align-items: center;">
+          <div class="ai-annotations-toggle">
+            <input type="checkbox" id="show-ai-annotations" checked>
+            <label for="show-ai-annotations" style="color: var(--text); cursor: pointer;">Show AI Annotations (Blue Dashed)</label>
+          </div>
+          <div class="ai-annotations-toggle">
+            <input type="checkbox" id="show-user-annotations">
+            <label for="show-user-annotations" style="color: var(--text); cursor: pointer;">Show My Annotations (Solid)</label>
+          </div>
+        </div>
+        <div style="margin-left: auto; display: flex; gap: 8px;">
+          <button id="reset-zoom-btn" style="padding: 8px 16px; background: var(--panel); color: var(--text); border: 1px solid #333; border-radius: 4px; cursor: pointer;">
+            🔍 Reset Zoom
+          </button>
+          <button id="save-corrections-btn" style="padding: 8px 16px; background: #4caf50; color: white; border: none; border-radius: 4px; cursor: pointer;">
+            ✅ Save Corrections
+          </button>
+        </div>
+      </div>
+
+      <!-- Chart Section -->
+      <div class="teaching-container">
+        <div class="chart-section">
+          <canvas id="chart-canvas"></canvas>
+        </div>
+      </div>
+
+      <!-- Similar Trades Section -->
+      <section id="similar-trades-section" style="display: none;">
+        <h3 style="color: var(--text); margin-bottom: 8px;">Similar Trades (RAG)</h3>
+        <div class="similar-trades" id="similar-trades-list"></div>
+      </section>
+
+      <!-- AI Reasoning Section -->
+      <section id="reasoning-section" style="display: none; margin-top: 16px;">
+        <h3 style="color: var(--text); margin-bottom: 8px;">AI Reasoning</h3>
+        <div style="padding: 12px; background: var(--panel); border-radius: 6px; border: 1px solid #1f1f1f; color: var(--text); font-size: 14px; margin-bottom: 8px;" id="ai-reasoning">
+        </div>
+        <label for="corrected-reasoning" style="display: block; color: var(--text); margin-bottom: 8px; font-size: 14px;">Correct AI's Reasoning (optional):</label>
+        <textarea id="corrected-reasoning" rows="4" style="width: 100%; padding: 8px; background: var(--bg); color: var(--text); border: 1px solid #333; border-radius: 4px; font-size: 14px; font-family: inherit;" placeholder="If the AI's reasoning is incorrect, explain what it should be..."></textarea>
+      </section>
+
+      <!-- User Notes Section (if trade has annotations) -->
+      <section id="user-notes-section" style="display: none; margin-top: 16px;">
+        <h3 style="color: var(--text); margin-bottom: 8px;">My Original Notes</h3>
+        <div style="padding: 12px; background: var(--panel); border-radius: 6px; border: 1px solid #1f1f1f; color: var(--text); font-size: 14px; font-style: italic;" id="user-notes">
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="teach.js"></script>
+</body>
+</html>
+

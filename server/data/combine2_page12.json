@@ -1,0 +1,103 @@
+[
+  {
+    "trade_id": "1302236468",
+    "entry_time": "2025-09-03 04:36:55",
+    "entry_price": 1.17,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "6EU5",
+    "profit": 237.50,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1302236467",
+    "entry_time": "2025-09-03 04:36:55",
+    "entry_price": 1.17,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "6EU5",
+    "profit": null,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1301530125",
+    "entry_time": "2025-09-02 21:38:01",
+    "entry_price": 1.16,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "6EU5",
+    "profit": -112.50,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1301530124",
+    "entry_time": "2025-09-02 21:38:01",
+    "entry_price": 1.16,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "6EU5",
+    "profit": null,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1301530123",
+    "entry_time": "2025-09-02 21:38:01",
+    "entry_price": 23425.50,
+    "direction": "sell",
+    "size": 3.00,
+    "product": "MNQU5",
+    "profit": null,
+    "fees": -1.11
+  },
+  {
+    "trade_id": "1301530122",
+    "entry_time": "2025-09-02 21:38:01",
+    "entry_price": 23425.50,
+    "direction": "buy",
+    "size": 3.00,
+    "product": "MNQU5",
+    "profit": null,
+    "fees": -1.11
+  },
+  {
+    "trade_id": "1301530121",
+    "entry_time": "2025-09-02 21:38:01",
+    "entry_price": 41.18,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "SILZ5",
+    "profit": null,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1297168570",
+    "entry_time": "2025-09-02 07:39:29",
+    "entry_price": 41.18,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "SILZ5",
+    "profit": 820.00,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1297168571",
+    "entry_time": "2025-09-02 07:39:29",
+    "entry_price": 41.18,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "SILZ5",
+    "profit": null,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1296937014",
+    "entry_time": "2025-09-02 06:51:59",
+    "entry_price": 3556.10,
+    "direction": "buy",
+    "size": 3.00,
+    "product": "MGCZ5",
+    "profit": -87.00,
+    "fees": -1.86
+  }
+]
+

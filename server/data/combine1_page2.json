@@ -1,0 +1,103 @@
+[
+  {
+    "trade_id": "1430169983",
+    "entry_time": "2025-10-06 09:12:43",
+    "entry_price": 48.60,
+    "direction": "sell",
+    "size": 1.00,
+    "product": "SILZ5",
+    "profit": 500.00,
+    "fees": -1.02
+  },
+  {
+    "trade_id": "1429018155",
+    "entry_time": "2025-10-06 07:58:27",
+    "entry_price": 48.10,
+    "direction": "buy",
+    "size": 1.00,
+    "product": "SILZ5",
+    "profit": null,
+    "fees": -1.02
+  },
+  {
+    "trade_id": "1428549688",
+    "entry_time": "2025-10-06 05:06:13",
+    "entry_price": 25139.50,
+    "direction": "buy",
+    "size": 3.00,
+    "product": "MNQZ5",
+    "profit": -58.50,
+    "fees": -1.11
+  },
+  {
+    "trade_id": "1428536945",
+    "entry_time": "2025-10-06 04:51:29",
+    "entry_price": 25129.75,
+    "direction": "sell",
+    "size": 3.00,
+    "product": "MNQZ5",
+    "profit": null,
+    "fees": -1.11
+  },
+  {
+    "trade_id": "1428162362",
+    "entry_time": "2025-10-06 01:14:15",
+    "entry_price": 1.18,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "6EZ5",
+    "profit": 562.50,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1427794157",
+    "entry_time": "2025-10-05 21:55:11",
+    "entry_price": 1.18,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "6EZ5",
+    "profit": null,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1422558777",
+    "entry_time": "2025-10-03 04:45:33",
+    "entry_price": 60.98,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "CLX5",
+    "profit": -180.00,
+    "fees": -3.04
+  },
+  {
+    "trade_id": "1422542011",
+    "entry_time": "2025-10-03 04:27:50",
+    "entry_price": 61.07,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "CLX5",
+    "profit": null,
+    "fees": -3.04
+  },
+  {
+    "trade_id": "1422541179",
+    "entry_time": "2025-10-03 04:26:04",
+    "entry_price": 61.10,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "CLX5",
+    "profit": -160.00,
+    "fees": -3.04
+  },
+  {
+    "trade_id": "1422539770",
+    "entry_time": "2025-10-03 04:23:50",
+    "entry_price": 61.18,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "CLX5",
+    "profit": null,
+    "fees": -3.04
+  }
+]
+

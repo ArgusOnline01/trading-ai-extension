@@ -1,0 +1,103 @@
+[
+  {
+    "trade_id": "1411197910",
+    "entry_time": "2025-10-01 03:15:18",
+    "entry_price": 62.86,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "CLX5",
+    "profit": 240.00,
+    "fees": -3.04
+  },
+  {
+    "trade_id": "1411169996",
+    "entry_time": "2025-10-01 03:02:03",
+    "entry_price": 62.74,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "CLX5",
+    "profit": null,
+    "fees": -3.04
+  },
+  {
+    "trade_id": "1410833001",
+    "entry_time": "2025-10-01 00:56:15",
+    "entry_price": 24763.50,
+    "direction": "sell",
+    "size": 3.00,
+    "product": "MNQZ5",
+    "profit": -46.50,
+    "fees": -1.11
+  },
+  {
+    "trade_id": "1410827507",
+    "entry_time": "2025-10-01 00:51:14",
+    "entry_price": 24771.25,
+    "direction": "buy",
+    "size": 3.00,
+    "product": "MNQZ5",
+    "profit": null,
+    "fees": -1.11
+  },
+  {
+    "trade_id": "1410746684",
+    "entry_time": "2025-10-01 00:00:10",
+    "entry_price": 1.18,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "6EZ5",
+    "profit": 712.50,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1410129223",
+    "entry_time": "2025-09-30 19:30:05",
+    "entry_price": 1.18,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "6EZ5",
+    "profit": null,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1410090928",
+    "entry_time": "2025-09-30 19:19:03",
+    "entry_price": 62.40,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "CLX5",
+    "profit": -160.00,
+    "fees": -3.04
+  },
+  {
+    "trade_id": "1409840418",
+    "entry_time": "2025-09-30 17:26:12",
+    "entry_price": 62.48,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "CLX5",
+    "profit": null,
+    "fees": -3.04
+  },
+  {
+    "trade_id": "1409509086",
+    "entry_time": "2025-09-30 14:21:43",
+    "entry_price": 24845.75,
+    "direction": "buy",
+    "size": 3.00,
+    "product": "MNQZ5",
+    "profit": -7.50,
+    "fees": -1.11
+  },
+  {
+    "trade_id": "1409507827",
+    "entry_time": "2025-09-30 14:21:27",
+    "entry_price": 24844.50,
+    "direction": "sell",
+    "size": 3.00,
+    "product": "MNQZ5",
+    "profit": 573.00,
+    "fees": -1.11
+  }
+]
+

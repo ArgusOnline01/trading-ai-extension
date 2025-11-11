@@ -1,0 +1,103 @@
+[
+  {
+    "trade_id": "1284132739",
+    "entry_time": "2025-08-27 20:04:30",
+    "entry_price": 3446.90,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "MGCZ5",
+    "profit": 68.00,
+    "fees": -1.24
+  },
+  {
+    "trade_id": "1283859454",
+    "entry_time": "2025-08-27 17:41:04",
+    "entry_price": 3450.30,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "MGCZ5",
+    "profit": null,
+    "fees": -1.24
+  },
+  {
+    "trade_id": "1280294249",
+    "entry_time": "2025-08-27 07:39:23",
+    "entry_price": 38.36,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "SILU5",
+    "profit": -170.00,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1280241841",
+    "entry_time": "2025-08-27 07:29:37",
+    "entry_price": 38.45,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "SILU5",
+    "profit": null,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1280150879",
+    "entry_time": "2025-08-27 06:43:18",
+    "entry_price": 63.36,
+    "direction": "sell",
+    "size": 5.00,
+    "product": "MCLV5",
+    "profit": 95.00,
+    "fees": -2.60
+  },
+  {
+    "trade_id": "1280046227",
+    "entry_time": "2025-08-27 05:00:55",
+    "entry_price": 63.17,
+    "direction": "buy",
+    "size": 5.00,
+    "product": "MCLV5",
+    "profit": null,
+    "fees": -2.60
+  },
+  {
+    "trade_id": "1280039026",
+    "entry_time": "2025-08-27 04:52:08",
+    "entry_price": 38.26,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "SILU5",
+    "profit": -170.00,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1280037370",
+    "entry_time": "2025-08-27 04:50:57",
+    "entry_price": 38.34,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "SILU5",
+    "profit": null,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1280034376",
+    "entry_time": "2025-08-27 04:47:09",
+    "entry_price": 63.04,
+    "direction": "sell",
+    "size": 5.00,
+    "product": "MCLV5",
+    "profit": -40.00,
+    "fees": -2.60
+  },
+  {
+    "trade_id": "1279726898",
+    "entry_time": "2025-08-27 00:54:17",
+    "entry_price": 63.12,
+    "direction": "buy",
+    "size": 5.00,
+    "product": "MCLV5",
+    "profit": null,
+    "fees": -2.60
+  }
+]
+

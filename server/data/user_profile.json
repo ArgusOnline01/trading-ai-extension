@@ -1,22 +1,20 @@
 {
-  "total_trades": 31,
-  "completed_trades": 29,
-  "win_rate": 0.207,
+  "total_trades": 297,
+  "completed_trades": 145,
+  "win_rate": 0.366,
   "best_setup": "Unknown",
   "worst_setup": "Unknown",
-  "avg_rr": -0.34,
+  "avg_rr": 0.24,
   "setup_performance": {
-    "Unknown": -0.34
+    "Unknown": 0.24
   },
   "bias_performance": {
-    "Bullish": -0.34
+    "Bullish": 0.24
   },
-  "common_mistakes": [
-    "Unknown (-0.34R avg)"
-  ],
+  "common_mistakes": [],
   "recent_trend": {
-    "win_rate_change": -18.9,
+    "win_rate_change": -6.7,
     "rr_change": 0.0
   },
-  "last_updated": "2025-11-10T04:27:16.686758"
+  "last_updated": "2025-11-11T09:18:58.404331"
 }

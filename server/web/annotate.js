@@ -12,8 +12,10 @@
   let bosLines = [];
   let circles = [];
   let annotationId = null;
+  let hudEl = null;
   let defaultZoom = 1.0; // Store default zoom level
   let defaultViewportTransform = null; // Store default viewport transform
+  let chartScale = 1; // Store the scale factor for coordinate conversion (same as teach page)
   
   // Drawing state
   let isDrawing = false;
@@ -102,6 +104,12 @@
 
       loading.style.display = 'none';
       content.style.display = 'block';
+
+      // Create HUD (coordinate overlay)
+      hudEl = document.createElement('div');
+      hudEl.className = 'coords-hud-panel';
+      hudEl.innerHTML = '<strong>Coordinates</strong><br/>coords: -';
+      document.body.appendChild(hudEl);
     } catch (err) {
       loading.innerHTML = `<p style="color: #ef5350;">Error: ${err.message}. <a href="/app/">Go back to trades</a></p>`;
       console.error(err);
@@ -281,11 +289,20 @@
 
         // Scale image to fit canvas (max width 1200px)
         const maxWidth = 1200;
-        const scale = img.width > maxWidth ? maxWidth / img.width : 1;
-        img.scale(scale);
+        // Store original dimensions BEFORE scaling
+        const originalWidth = img.width;
+        const originalHeight = img.height;
         
-        canvas.setWidth(img.width * scale);
-        canvas.setHeight(img.height * scale);
+        chartScale = originalWidth > maxWidth ? maxWidth / originalWidth : 1;
+        img.scale(chartScale);
+        
+        canvas.setWidth(originalWidth * chartScale);
+        canvas.setHeight(originalHeight * chartScale);
+        
+        // Store scale and original dimensions on canvas for coordinate conversion
+        canvas.chartScale = chartScale;
+        canvas.originalImageWidth = originalWidth;
+        canvas.originalImageHeight = originalHeight;
         
         // Make chart image non-selectable and non-movable (background layer)
         img.selectable = false;
@@ -361,180 +378,158 @@
   }
 
   function setupCanvasHandlers() {
-    // Mouse down - handle two-click drawing (like TradingView)
-    canvas.on('mouse:down', (e) => {
-      if (currentTool === 'cursor' || currentTool === 'delete') {
-        return; // Let Fabric.js handle selection/deletion
-      }
-      
-      // When drawing tools are active, prevent selection/moving of existing objects
-      // Only allow drawing - ignore clicks on existing annotations
-      if (e.target && e.target !== canvas.chartImage && e.target.type !== 'image') {
-        // Clicked on existing annotation - prevent selection, allow drawing at that point
-        // Don't return - continue to drawing logic below
-        // This allows drawing on top of existing annotations
-      }
-      
-      // Prevent Fabric.js from selecting objects when drawing tools are active
-      if (e.target && e.target !== canvas.chartImage && e.target.type !== 'image') {
-        // Deselect any selected objects
-        canvas.discardActiveObject();
-        canvas.renderAll();
-      }
-      
-      const pointer = canvas.getPointer(e.e);
-      const color = getColorForTool();
-      
-      if (currentTool === 'poi') {
-        // POI Box: First click = corner 1, Second click = corner 2
-        if (clickCount === 0) {
-          // First click - set start point and show preview
-          startPoint = pointer;
-          clickCount = 1;
-          
-          // Create preview rectangle
-          previewRect = new fabric.Rect({
-            left: pointer.x,
-            top: pointer.y,
-            width: 0,
-            height: 0,
-            fill: `rgba(${currentColor === 'bullish' ? '41, 98, 255' : '242, 54, 69'}, 0.2)`,
-            stroke: color,
-            strokeWidth: 2,
-            strokeDashArray: [5, 5],
-            selectable: false,
-            evented: false
-          });
-          canvas.add(previewRect);
-          canvas.renderAll();
-        } else if (clickCount === 1) {
-          // Second click - create box
-          endPoint = pointer;
-          if (previewRect) canvas.remove(previewRect);
-          createPOIBox(startPoint, endPoint, color);
-          clickCount = 0;
-          startPoint = null;
-          endPoint = null;
-          previewRect = null;
-        }
-      } else if (currentTool === 'bos') {
-        // BOS Line: First click = start point, Second click = end point
-        if (clickCount === 0) {
-          // First click - set start point and show preview
-          startPoint = pointer;
-          clickCount = 1;
-          
-          // Create preview line
-          previewLine = new fabric.Line([pointer.x, pointer.y, pointer.x, pointer.y], {
-            stroke: color,
-            strokeWidth: 2,
-            strokeDashArray: [5, 5],
-            selectable: false,
-            evented: false
-          });
-          canvas.add(previewLine);
-          canvas.renderAll();
-        } else if (clickCount === 1) {
-          // Second click - create line
-          endPoint = pointer;
-          if (previewLine) canvas.remove(previewLine);
-          createBOSLine(startPoint, endPoint, color);
-          clickCount = 0;
-          startPoint = null;
-          endPoint = null;
-          previewLine = null;
-        }
-      } else if (currentTool === 'circle') {
-        // Circle: First click = center, Second click = edge (radius)
-        if (clickCount === 0) {
-          // First click - set center and show preview
-          startPoint = pointer;
-          clickCount = 1;
-          
-          // Create preview circle
-          previewCircle = new fabric.Circle({
-            left: pointer.x,
-            top: pointer.y,
-            radius: 0,
-            fill: `rgba(${currentColor === 'bullish' ? '41, 98, 255' : '242, 54, 69'}, 0.2)`,
-            stroke: color,
-            strokeWidth: 2,
-            strokeDashArray: [5, 5],
-            selectable: false,
-            evented: false,
-            originX: 'center',
-            originY: 'center'
-          });
-          canvas.add(previewCircle);
-          canvas.renderAll();
-        } else if (clickCount === 1) {
-          // Second click - create circle
-          endPoint = pointer;
-          const radius = Math.sqrt(Math.pow(endPoint.x - startPoint.x, 2) + Math.pow(endPoint.y - startPoint.y, 2));
-          if (previewCircle) canvas.remove(previewCircle);
-          createCircle(startPoint, radius, color);
-          clickCount = 0;
-          startPoint = null;
-          endPoint = null;
-          previewCircle = null;
+    if (!canvas) return;
+    canvas.on('object:moving', updateHUD);
+    canvas.on('object:scaling', updateHUD);
+    canvas.on('object:modified', updateHUD);
+    canvas.on('selection:created', updateHUD);
+    canvas.on('selection:updated', updateHUD);
+    canvas.on('selection:cleared', () => { if (hudEl) hudEl.innerHTML = '<strong>Coordinates</strong><br/>coords: -'; });
+
+    // Drawing interactions
+    canvas.on('mouse:down', handleMouseDown);
+    canvas.on('mouse:move', handleMouseMove);
+    canvas.on('mouse:up', handleMouseUp);
+  }
+  
+  function updateHUD() {
+    if (!hudEl) return;
+    const objs = canvas.getActiveObjects();
+    const scale = canvas.chartScale || 1;
+    if (!objs || objs.length === 0) { hudEl.innerHTML = '<strong>Coordinates</strong><br/>coords: -'; return; }
+    const obj = objs[0];
+    let text = `scale=${scale.toFixed(6)}`;
+    // Determine logical type
+    const dataType = (obj.data && obj.data.type) || obj.get('annotationType');
+    const type = dataType || obj.type;
+    text += ` | type=${type}`;
+    if (type === 'circle' || obj.type === 'circle') {
+      const center = obj.getCenterPoint();
+      const r = (obj.radius * (obj.scaleX || 1));
+      text += ` | x=${(center.x/scale).toFixed(1)} y=${(center.y/scale).toFixed(1)} r=${(r/scale).toFixed(1)}`;
+    } else if (type === 'poi') {
+      // POI is a group: use its bounding rect
+      const bounds = obj.getBoundingRect(true);
+      text += ` | left=${(bounds.left/scale).toFixed(1)} top=${(bounds.top/scale).toFixed(1)} w=${(bounds.width/scale).toFixed(1)} h=${(bounds.height/scale).toFixed(1)}`;
+    } else if (type === 'bos') {
+      // BOS is a group containing a line. Prefer stored original coords
+      if (obj.data && obj.data.originalX1 !== undefined) {
+        const x1 = obj.data.originalX1/scale;
+        const y1 = obj.data.originalY1/scale;
+        const x2 = obj.data.originalX2/scale;
+        const y2 = obj.data.originalY2/scale;
+        text += ` | x1=${x1.toFixed(1)} y1=${y1.toFixed(1)} x2=${x2.toFixed(1)} y2=${y2.toFixed(1)}`;
+      } else {
+        const lineObj = obj.getObjects().find(o => o.type === 'line');
+        if (lineObj) {
+          const p1 = new fabric.Point(lineObj.x1||0, lineObj.y1||0);
+          const p2 = new fabric.Point(lineObj.x2||0, lineObj.y2||0);
+          const m = obj.calcTransformMatrix();
+          const a1 = fabric.util.transformPoint(p1, m);
+          const a2 = fabric.util.transformPoint(p2, m);
+          text += ` | x1=${(a1.x/scale).toFixed(1)} y1=${(a1.y/scale).toFixed(1)} x2=${(a2.x/scale).toFixed(1)} y2=${(a2.y/scale).toFixed(1)}`;
         }
       }
-    });
-    
-    // Mouse move - update preview
-    canvas.on('mouse:move', (e) => {
-      if (clickCount === 0) return;
-      
-      const pointer = canvas.getPointer(e.e);
-      const color = getColorForTool();
-      
-      if (currentTool === 'poi' && previewRect && startPoint) {
-        const width = pointer.x - startPoint.x;
-        const height = pointer.y - startPoint.y;
-        previewRect.set({
-          width: Math.abs(width),
-          height: Math.abs(height),
-          left: width < 0 ? pointer.x : startPoint.x,
-          top: height < 0 ? pointer.y : startPoint.y
-        });
-        canvas.renderAll();
-      } else if (currentTool === 'bos' && previewLine && startPoint) {
-        previewLine.set({
-          x2: pointer.x,
-          y2: pointer.y
-        });
-        canvas.renderAll();
-      } else if (currentTool === 'circle' && previewCircle && startPoint) {
-        const radius = Math.sqrt(Math.pow(pointer.x - startPoint.x, 2) + Math.pow(pointer.y - startPoint.y, 2));
-        previewCircle.set({
-          radius: radius
-        });
-        canvas.renderAll();
+    } else if (obj.type === 'rect') {
+      text += ` | left=${(obj.left/scale).toFixed(1)} top=${(obj.top/scale).toFixed(1)} w=${((obj.width*(obj.scaleX||1))/scale).toFixed(1)} h=${((obj.height*(obj.scaleY||1))/scale).toFixed(1)}`;
+    } else if (obj.type === 'line') {
+      const x1 = (obj.x1 + (obj.left||0))/scale;
+      const y1 = (obj.y1 + (obj.top||0))/scale;
+      const x2 = (obj.x2 + (obj.left||0))/scale;
+      const y2 = (obj.y2 + (obj.top||0))/scale;
+      text += ` | x1=${x1.toFixed(1)} y1=${y1.toFixed(1)} x2=${x2.toFixed(1)} y2=${y2.toFixed(1)}`;
+    }
+    hudEl.innerHTML = `<strong>Coordinates</strong><br/>${text}`;
+  }
+
+  function getPointer(opt) {
+    const e = opt ? opt.e : null;
+    return canvas.getPointer(e);
+  }
+
+  function handleMouseDown(opt) {
+    if (!canvas) return;
+    if (currentTool === 'cursor' || currentTool === 'delete') return;
+    const pointer = getPointer(opt);
+    isDrawing = true;
+    startPoint = { x: pointer.x, y: pointer.y };
+    endPoint = { x: pointer.x, y: pointer.y };
+    const color = getColorForTool();
+    if (currentTool === 'poi') {
+      // Create preview rect
+      previewRect = new fabric.Rect({
+        left: startPoint.x, top: startPoint.y, width: 1, height: 1,
+        fill: color === '#2962FF' ? 'rgba(41,98,255,0.1)' : 'rgba(242,54,69,0.1)',
+        stroke: color, strokeWidth: 1, selectable: false, evented: false
+      });
+      canvas.add(previewRect);
+    } else if (currentTool === 'bos') {
+      previewLine = new fabric.Line([startPoint.x, startPoint.y, startPoint.x, startPoint.y], {
+        stroke: color, strokeWidth: 1, selectable: false, evented: false
+      });
+      canvas.add(previewLine);
+    } else if (currentTool === 'circle') {
+      previewCircle = new fabric.Circle({
+        left: startPoint.x, top: startPoint.y, radius: 1,
+        fill: color === '#2962FF' ? 'rgba(41,98,255,0.1)' : 'rgba(242,54,69,0.1)',
+        stroke: color, strokeWidth: 1, originX: 'center', originY: 'center', selectable: false, evented: false
+      });
+      canvas.add(previewCircle);
+    }
+  }
+
+  function handleMouseMove(opt) {
+    if (!isDrawing || !canvas) return;
+    const pointer = getPointer(opt);
+    endPoint = { x: pointer.x, y: pointer.y };
+    if (currentTool === 'poi' && previewRect) {
+      const left = Math.min(startPoint.x, endPoint.x);
+      const top = Math.min(startPoint.y, endPoint.y);
+      const width = Math.abs(endPoint.x - startPoint.x);
+      const height = Math.abs(endPoint.y - startPoint.y);
+      previewRect.set({ left, top, width, height });
+      canvas.renderAll();
+    } else if (currentTool === 'bos' && previewLine) {
+      previewLine.set({ x1: startPoint.x, y1: startPoint.y, x2: endPoint.x, y2: endPoint.y });
+      canvas.renderAll();
+    } else if (currentTool === 'circle' && previewCircle) {
+      const dx = endPoint.x - startPoint.x;
+      const dy = endPoint.y - startPoint.y;
+      const r = Math.sqrt(dx*dx + dy*dy);
+      previewCircle.set({ left: startPoint.x, top: startPoint.y, radius: r });
+      canvas.renderAll();
+    }
+  }
+
+  function handleMouseUp(opt) {
+    if (!isDrawing || !canvas) return;
+    isDrawing = false;
+    const color = getColorForTool();
+    // Finalize creation
+    if (currentTool === 'poi') {
+      if (previewRect) {
+        const rect = previewRect;
+        previewRect = null;
+        const end = { x: rect.left + rect.width, y: rect.top + rect.height };
+        createPOIBox({ x: rect.left, y: rect.top }, end, color);
+        canvas.remove(rect);
       }
-    });
-    
-    // Cancel drawing on right-click or escape
-    canvas.on('mouse:down:before', (e) => {
-      if (e.e.button === 2 || e.e.key === 'Escape') {
-        clickCount = 0;
-        startPoint = null;
-        endPoint = null;
-        // Remove preview objects
-        if (previewRect) {
-          canvas.remove(previewRect);
-          previewRect = null;
-        }
-        if (previewLine) {
-          canvas.remove(previewLine);
-          previewLine = null;
-        }
-        if (previewCircle) {
-          canvas.remove(previewCircle);
-          previewCircle = null;
-        }
-        canvas.renderAll();
+    } else if (currentTool === 'bos') {
+      if (previewLine) {
+        const line = previewLine;
+        previewLine = null;
+        createBOSLine({ x: line.x1, y: line.y1 }, { x: line.x2, y: line.y2 }, color);
+        canvas.remove(line);
       }
-    });
+    } else if (currentTool === 'circle') {
+      if (previewCircle) {
+        const circ = previewCircle; const center = { x: circ.left, y: circ.top }; const r = circ.radius;
+        previewCircle = null;
+        createCircle(center, r, color);
+        canvas.remove(circ);
+      }
+    }
+    canvas.renderAll();
   }
   
   function createPOIBox(start, end, color) {
@@ -574,6 +569,7 @@
       textAlign: 'center',
       originX: 'center',
       originY: 'center',
+      textBaseline: 'alphabetic', // Fix: use 'alphabetic' not 'alphabetical'
       selectable: false,
       evented: false
     });
@@ -609,12 +605,22 @@
   
   function createBOSLine(start, end, color) {
     // Create line from start to end point
+    // Store original absolute coordinates for accurate saving
     const line = new fabric.Line([start.x, start.y, end.x, end.y], {
       stroke: color,
       strokeWidth: 2,
       selectable: true,
       hasControls: true,
-      data: { type: 'bos', price: 0, color: color }
+      data: { 
+        type: 'bos', 
+        price: 0, 
+        color: color,
+        // Store original absolute coordinates before grouping
+        originalX1: start.x,
+        originalY1: start.y,
+        originalX2: end.x,
+        originalY2: end.y
+      }
     });
     
     const text = new fabric.Text('BOS', {
@@ -622,6 +628,7 @@
       top: (start.y + end.y) / 2 - 15,
       fontSize: 12,
       fill: color,
+      textBaseline: 'alphabetic', // Fix: use 'alphabetic' not 'alphabetical'
       selectable: false,
       evented: false
     });
@@ -630,12 +637,49 @@
       selectable: true, // Always selectable (will be disabled by setTool if needed)
       evented: true, // Always interactive (will be disabled by setTool if needed)
       hasControls: true,
-      data: { type: 'bos', price: 0, color: color }
+      data: { 
+        type: 'bos', 
+        price: 0, 
+        color: color,
+        // Store original absolute coordinates in group data too
+        originalX1: start.x,
+        originalY1: start.y,
+        originalX2: end.x,
+        originalY2: end.y
+      }
     });
     
     canvas.add(group);
     canvas.bringToFront(group);
     bosLines.push(group);
+    
+    // Update stored coordinates when group is modified (moved/resized)
+    // This ensures we always have accurate original coordinates for saving
+    group.on('modified', () => {
+      // After modification, update the stored original coordinates
+      // Get the line object from the group
+      const lineObj = group.getObjects().find(obj => obj.type === 'line');
+      if (lineObj) {
+        // Get relative coordinates
+        const relX1 = lineObj.x1 || 0;
+        const relY1 = lineObj.y1 || 0;
+        const relX2 = lineObj.x2 || 0;
+        const relY2 = lineObj.y2 || 0;
+        
+        // Transform to absolute coordinates
+        const point1 = new fabric.Point(relX1, relY1);
+        const point2 = new fabric.Point(relX2, relY2);
+        const transform = group.calcTransformMatrix();
+        const absPoint1 = fabric.util.transformPoint(point1, transform);
+        const absPoint2 = fabric.util.transformPoint(point2, transform);
+        
+        // Update stored coordinates
+        group.data.originalX1 = absPoint1.x;
+        group.data.originalY1 = absPoint1.y;
+        group.data.originalX2 = absPoint2.x;
+        group.data.originalY2 = absPoint2.y;
+      }
+    });
     
     // Double-click to edit price
     group.on('mousedblclick', () => {
@@ -727,6 +771,9 @@
         const ann = annotations[0];
         annotationId = ann.id;
         
+        // Clear any existing annotations before loading persisted ones
+        clearAllAnnotations();
+
         // Load POI markers (rectangles)
         if (ann.poi_locations && ann.poi_locations.length > 0) {
           ann.poi_locations.forEach(poi => {
@@ -736,8 +783,8 @@
         
         // Load BOS lines
         if (ann.bos_locations && ann.bos_locations.length > 0) {
-          ann.bos_locations.forEach(bos => {
-            addBOSFromData(bos);
+          ann.bos_locations.forEach((bos, idx) => {
+            addBOSFromData(bos, idx);
           });
         }
         
@@ -760,18 +807,20 @@
 
   function addPOIFromData(poi) {
     // Recreate POI box from saved data - use actual bounds if available
+    // Saved coordinates are in original image coordinates, convert to scaled canvas
+    const scale = canvas.chartScale || 1;
     const color = poi.color || '#2962FF';
     const fillColor = color === '#2962FF' 
       ? 'rgba(41, 98, 255, 0.1)' 
       : 'rgba(242, 54, 69, 0.1)';
     
-    // Use saved bounds if available, otherwise use center point (backward compatibility)
-    const left = poi.left !== undefined ? poi.left : (poi.x !== undefined ? poi.x - 50 : 0);
-    const top = poi.top !== undefined ? poi.top : (poi.y !== undefined ? poi.y - 30 : 0);
-    const width = poi.width !== undefined ? poi.width : 100;
-    const height = poi.height !== undefined ? poi.height : 60;
-    const centerX = poi.x !== undefined ? poi.x : (left + width / 2);
-    const centerY = poi.y !== undefined ? poi.y : (top + height / 2);
+    // Use saved bounds if available (in original image coords), convert to canvas coords
+    const left = (poi.left !== undefined ? poi.left : (poi.x !== undefined ? poi.x - 50 : 0)) * scale;
+    const top = (poi.top !== undefined ? poi.top : (poi.y !== undefined ? poi.y - 30 : 0)) * scale;
+    const width = (poi.width !== undefined ? poi.width : 100) * scale;
+    const height = (poi.height !== undefined ? poi.height : 60) * scale;
+    const centerX = (poi.x !== undefined ? poi.x : (poi.left !== undefined ? poi.left + (poi.width || 100) / 2 : left / scale + width / 2 / scale)) * scale;
+    const centerY = (poi.y !== undefined ? poi.y : (poi.top !== undefined ? poi.top + (poi.height || 60) / 2 : top / scale + height / 2 / scale)) * scale;
     
     const rect = new fabric.Rect({
       left: left,
@@ -794,6 +843,7 @@
       textAlign: 'center',
       originX: 'center',
       originY: 'center',
+      textBaseline: 'alphabetic', // Fix: use 'alphabetic' not 'alphabetical'
       selectable: false,
       evented: false
     });
@@ -823,23 +873,33 @@
     });
   }
 
-  function addBOSFromData(bos) {
+  function addBOSFromData(bos, idx) {
     // Recreate BOS line from saved data - use actual coordinates if available
+    // Saved coordinates are in original image coordinates, convert to scaled canvas
+    // IMPORTANT: Match the exact way createBOSLine works - use absolute coordinates and let Fabric.js group it
+    const scale = canvas.chartScale || 1;
     const color = bos.color || '#2962FF';
     
-    // Use saved coordinates if available, otherwise use horizontal line (backward compatibility)
+    // Use saved coordinates if available (these are in original image coordinates)
     let x1, y1, x2, y2;
     if (bos.x1 !== undefined && bos.y1 !== undefined && bos.x2 !== undefined && bos.y2 !== undefined) {
-      x1 = bos.x1;
-      y1 = bos.y1;
-      x2 = bos.x2;
-      y2 = bos.y2;
+      // Convert from original image coordinates to scaled canvas coordinates
+      x1 = bos.x1 * scale;
+      y1 = bos.y1 * scale;
+      x2 = bos.x2 * scale;
+      y2 = bos.y2 * scale;
+      
+      console.log(`[LOAD BOS ${idx}]`, {
+        saved: { x1: bos.x1, y1: bos.y1, x2: bos.x2, y2: bos.y2 },
+        scale,
+        canvas: { x1, y1, x2, y2 }
+      });
     } else if (bos.y !== undefined) {
       // Backward compatibility: horizontal line
       x1 = 0;
-      y1 = bos.y;
+      y1 = bos.y * scale;
       x2 = canvas.width;
-      y2 = bos.y;
+      y2 = bos.y * scale;
     } else {
       // Fallback
       x1 = 0;
@@ -848,12 +908,23 @@
       y2 = 100;
     }
     
+    // Create line with ABSOLUTE coordinates (same as createBOSLine)
+    // This matches how we create it initially, so Fabric.js will group it the same way
     const line = new fabric.Line([x1, y1, x2, y2], {
       stroke: color,
       strokeWidth: 2,
-      selectable: false,
-      evented: false,
-      data: { type: 'bos', price: bos.price || 0, color: color }
+      selectable: true,
+      hasControls: true,
+      data: { 
+        type: 'bos', 
+        price: bos.price || 0, 
+        color: color,
+        // Store original absolute coordinates (same as createBOSLine)
+        originalX1: x1,
+        originalY1: y1,
+        originalX2: x2,
+        originalY2: y2
+      }
     });
     
     const text = new fabric.Text(`BOS${bos.price ? ': ' + bos.price : ''}`, {
@@ -861,19 +932,44 @@
       top: (y1 + y2) / 2 - 15,
       fontSize: 12,
       fill: color,
+      textBaseline: 'alphabetic', // Fix: use 'alphabetic' not 'alphabetical'
       selectable: false,
       evented: false
     });
     
+    // Create group - Fabric.js will automatically position it based on the objects
+    // This matches how createBOSLine works
     const group = new fabric.Group([line, text], {
       selectable: true,
       hasControls: true,
-      data: { type: 'bos', price: bos.price || 0, color: color }
+      data: { 
+        type: 'bos', 
+        price: bos.price || 0, 
+        color: color,
+        // Store original absolute coordinates (in scaled canvas coordinates)
+        originalX1: x1,
+        originalY1: y1,
+        originalX2: x2,
+        originalY2: y2
+      }
     });
     
     canvas.add(group);
     canvas.bringToFront(group);
     bosLines.push(group);
+    
+    // Debug: Log the actual group position after Fabric.js calculates it
+    console.log(`[LOAD BOS ${idx}] Group created:`, {
+      expected: { x1, y1, x2, y2 },
+      groupPosition: { left: group.left, top: group.top },
+      groupBounds: group.getBoundingRect(),
+      lineInGroup: {
+        x1: line.x1,
+        y1: line.y1,
+        x2: line.x2,
+        y2: line.y2
+      }
+    });
     
     group.on('mousedblclick', () => {
       const newPrice = prompt('Enter BOS price level:', group.data.price || '');
@@ -890,15 +986,23 @@
   
   function addCircleFromData(circle) {
     // Recreate circle from saved data
+    // Saved coordinates are in original image coordinates, convert to scaled canvas
+    const scale = canvas.chartScale || 1;
     const color = circle.color || '#2962FF';
     const fillColor = color === '#2962FF' 
       ? 'rgba(41, 98, 255, 0.1)' 
       : 'rgba(242, 54, 69, 0.1)';
     
+    console.log(`[LOAD CIRCLE]`, {
+      saved: { x: circle.x, y: circle.y, radius: circle.radius },
+      scale,
+      canvas: { x: (circle.x || 0) * scale, y: (circle.y || 0) * scale, radius: (circle.radius || 20) * scale }
+    });
+    
     const circleObj = new fabric.Circle({
-      left: circle.x,
-      top: circle.y,
-      radius: circle.radius || 20,
+      left: (circle.x || 0) * scale,
+      top: (circle.y || 0) * scale,
+      radius: (circle.radius || 20) * scale,
       fill: fillColor,
       stroke: color,
       strokeWidth: 2,
@@ -934,55 +1038,124 @@
   async function saveAnnotations() {
     if (!canvas) return;
 
-    // Collect POI and BOS data - save actual bounds for accurate restoration
+    // Collect POI and BOS data - save in ORIGINAL IMAGE coordinates (not scaled canvas)
+    // This ensures annotations work correctly on both annotate and teach pages
+    const scale = canvas.chartScale || 1;
+    
     const poiLocations = poiMarkers.map(marker => {
       const bounds = marker.getBoundingRect();
+      // Convert from scaled canvas coordinates to original image coordinates
       return {
-        left: bounds.left,
-        top: bounds.top,
-        width: bounds.width,
-        height: bounds.height,
+        left: bounds.left / scale,
+        top: bounds.top / scale,
+        width: bounds.width / scale,
+        height: bounds.height / scale,
         price: marker.data?.price || 0,
         color: marker.data?.color || '#2962FF',
         timestamp: new Date().toISOString()
       };
     });
 
-    const bosLocations = bosLines.map(line => {
+    const bosLocations = bosLines.map((line, idx) => {
       // Get actual line coordinates (start and end points)
-      const lineObj = line.getObjects().find(obj => obj.type === 'line');
-      if (lineObj) {
-        return {
-          x1: lineObj.x1,
-          y1: lineObj.y1,
-          x2: lineObj.x2,
-          y2: lineObj.y2,
+      // Try to use stored original coordinates first (most accurate - from when line was created)
+      if (line.data && line.data.originalX1 !== undefined) {
+        const scale = canvas.chartScale || 1;
+        const saved = {
+          x1: line.data.originalX1 / scale,
+          y1: line.data.originalY1 / scale,
+          x2: line.data.originalX2 / scale,
+          y2: line.data.originalY2 / scale,
           price: line.data?.price || 0,
           color: line.data?.color || '#2962FF',
           timestamp: new Date().toISOString()
         };
+        
+        console.log(`[SAVE BOS ${idx}] Using stored original coordinates:`, {
+          stored: { x1: line.data.originalX1, y1: line.data.originalY1, x2: line.data.originalX2, y2: line.data.originalY2 },
+          scale,
+          saved
+        });
+        
+        return saved;
+      }
+      
+      // Fallback: Calculate from current group position
+      const lineObj = line.getObjects().find(obj => obj.type === 'line');
+      if (lineObj) {
+        // Get the line's coordinates in the group's local coordinate system
+        const relX1 = lineObj.x1 || 0;
+        const relY1 = lineObj.y1 || 0;
+        const relX2 = lineObj.x2 || 0;
+        const relY2 = lineObj.y2 || 0;
+        
+        // Use Fabric.js to transform these local coordinates to canvas coordinates
+        // Create temporary points and transform them using the group's transform matrix
+        const point1 = new fabric.Point(relX1, relY1);
+        const point2 = new fabric.Point(relX2, relY2);
+        
+        // Get the group's transform matrix
+        const transform = line.calcTransformMatrix();
+        
+        // Transform the points to canvas coordinates
+        const absPoint1 = fabric.util.transformPoint(point1, transform);
+        const absPoint2 = fabric.util.transformPoint(point2, transform);
+        
+        // Convert from scaled canvas coordinates to original image coordinates
+        const scale = canvas.chartScale || 1;
+        
+        const saved = {
+          x1: absPoint1.x / scale,
+          y1: absPoint1.y / scale,
+          x2: absPoint2.x / scale,
+          y2: absPoint2.y / scale,
+          price: line.data?.price || 0,
+          color: line.data?.color || '#2962FF',
+          timestamp: new Date().toISOString()
+        };
+        
+        console.log(`[SAVE BOS ${idx}] Calculated from transform:`, {
+          rel: { x1: relX1, y1: relY1, x2: relX2, y2: relY2 },
+          abs: { x1: absPoint1.x, y1: absPoint1.y, x2: absPoint2.x, y2: absPoint2.y },
+          scale,
+          saved
+        });
+        
+        return saved;
       }
       // Fallback to bounds if line object not found
       const bounds = line.getBoundingRect();
+      const scale = canvas.chartScale || 1;
       return {
-        x1: bounds.left,
-        y1: bounds.top,
-        x2: bounds.left + bounds.width,
-        y2: bounds.top + bounds.height,
+        x1: bounds.left / scale,
+        y1: bounds.top / scale,
+        x2: (bounds.left + bounds.width) / scale,
+        y2: (bounds.top + bounds.height) / scale,
         price: line.data?.price || 0,
         color: line.data?.color || '#2962FF',
         timestamp: new Date().toISOString()
       };
     });
     
-    const circleLocations = circles.map(circle => {
-      return {
-        x: circle.left,
-        y: circle.top,
-        radius: circle.radius,
+    const circleLocations = circles.map((circle, idx) => {
+      // Convert from scaled canvas coordinates to original image coordinates
+      const scale = canvas.chartScale || 1;
+      const center = circle.getCenterPoint();
+      const saved = {
+        x: center.x / scale,
+        y: center.y / scale,
+        radius: (circle.radius * (circle.scaleX || 1)) / scale,
         color: circle.data?.color || '#2962FF',
         timestamp: new Date().toISOString()
       };
+      
+      console.log(`[SAVE CIRCLE ${idx}]`, {
+        canvas: { centerX: center.x, centerY: center.y, radius: circle.radius * (circle.scaleX || 1) },
+        scale,
+        saved
+      });
+      
+      return saved;
     });
 
     const data = {
@@ -990,6 +1163,8 @@
       poi_locations: poiLocations,
       bos_locations: bosLocations,
       circle_locations: circleLocations,
+      image_width: canvas.originalImageWidth || null,
+      image_height: canvas.originalImageHeight || null,
       notes: $('annotation-notes').value.trim() || null,
       ai_detected: false,
       user_corrected: false

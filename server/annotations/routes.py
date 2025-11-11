@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from db.session import get_db
 from db.models import Annotation, Trade
+from ai.rag.indexing import index_trade_annotation
 
 
 router = APIRouter(prefix="/annotations", tags=["annotations"])
@@ -72,6 +73,13 @@ def create_annotation(annotation: AnnotationCreate, db: Session = Depends(get_db
     db.add(new_annotation)
     db.commit()
     db.refresh(new_annotation)
+    
+    # Auto-index annotation in Chroma for RAG (Phase 4D.1)
+    try:
+        index_trade_annotation(new_annotation.trade_id, new_annotation.id)
+    except Exception as e:
+        print(f"[Annotations] Warning: Failed to index annotation: {e}")
+        # Don't fail the request if indexing fails
     
     return AnnotationResponse(
         id=new_annotation.id,
@@ -155,6 +163,13 @@ def update_annotation(annotation_id: int, update: AnnotationUpdate, db: Session 
     
     db.commit()
     db.refresh(annotation)
+    
+    # Auto-update Chroma embedding when annotation is updated (Phase 4D.1)
+    try:
+        index_trade_annotation(annotation.trade_id, annotation.id)
+    except Exception as e:
+        print(f"[Annotations] Warning: Failed to update annotation index: {e}")
+        # Don't fail the request if indexing fails
     
     return AnnotationResponse(
         id=annotation.id,

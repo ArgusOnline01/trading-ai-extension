@@ -1,0 +1,103 @@
+[
+  {
+    "trade_id": "1308411348",
+    "entry_time": "2025-09-04 05:11:55",
+    "entry_price": 1.17,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "6EU5",
+    "profit": -12.50,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1308408667",
+    "entry_time": "2025-09-04 05:10:43",
+    "entry_price": 1.17,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "6EU5",
+    "profit": null,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1308361614",
+    "entry_time": "2025-09-04 04:35:35",
+    "entry_price": 63.24,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "CLV5",
+    "profit": null,
+    "fees": -3.04
+  },
+  {
+    "trade_id": "1308347065",
+    "entry_time": "2025-09-04 04:20:30",
+    "entry_price": 1.17,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "6EU5",
+    "profit": -237.50,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1308318568",
+    "entry_time": "2025-09-04 03:50:51",
+    "entry_price": 1.17,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "6EU5",
+    "profit": null,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1308318437",
+    "entry_time": "2025-09-04 03:50:45",
+    "entry_price": 1.17,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "6EU5",
+    "profit": 37.50,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1308238593",
+    "entry_time": "2025-09-04 02:52:22",
+    "entry_price": 1.17,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "6EU5",
+    "profit": null,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1308235334",
+    "entry_time": "2025-09-04 02:50:02",
+    "entry_price": 1.17,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "6EU5",
+    "profit": -62.50,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1308229992",
+    "entry_time": "2025-09-04 02:44:00",
+    "entry_price": 1.17,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "6EU5",
+    "profit": null,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1308187544",
+    "entry_time": "2025-09-04 02:20:26",
+    "entry_price": 1.17,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "6EU5",
+    "profit": -137.50,
+    "fees": -3.24
+  }
+]
+

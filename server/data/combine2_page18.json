@@ -1,0 +1,103 @@
+[
+  {
+    "trade_id": "1279071777",
+    "entry_time": "2025-08-26 15:10:18",
+    "entry_price": 63.36,
+    "direction": "sell",
+    "size": 5.00,
+    "product": "MCLV5",
+    "profit": 55.00,
+    "fees": -2.60
+  },
+  {
+    "trade_id": "1279071776",
+    "entry_time": "2025-08-26 15:10:18",
+    "entry_price": 63.36,
+    "direction": "buy",
+    "size": 5.00,
+    "product": "MCLV5",
+    "profit": null,
+    "fees": -2.60
+  },
+  {
+    "trade_id": "1278106423",
+    "entry_time": "2025-08-26 11:55:38",
+    "entry_price": 63.38,
+    "direction": "buy",
+    "size": 5.00,
+    "product": "MCLV5",
+    "profit": -5.00,
+    "fees": -2.60
+  },
+  {
+    "trade_id": "1278106422",
+    "entry_time": "2025-08-26 11:55:38",
+    "entry_price": 63.38,
+    "direction": "sell",
+    "size": 5.00,
+    "product": "MCLV5",
+    "profit": null,
+    "fees": -2.60
+  },
+  {
+    "trade_id": "1278106421",
+    "entry_time": "2025-08-26 11:55:38",
+    "entry_price": 38.64,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "SILU5",
+    "profit": null,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1273593500",
+    "entry_time": "2025-08-25 13:36:28",
+    "entry_price": 38.64,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "SILU5",
+    "profit": -510.00,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1273593499",
+    "entry_time": "2025-08-25 13:36:28",
+    "entry_price": 38.64,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "SILU5",
+    "profit": null,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1273593498",
+    "entry_time": "2025-08-25 13:36:28",
+    "entry_price": 23545.25,
+    "direction": "sell",
+    "size": 3.00,
+    "product": "MNQU5",
+    "profit": null,
+    "fees": -1.11
+  },
+  {
+    "trade_id": "1271621884",
+    "entry_time": "2025-08-25 09:08:47",
+    "entry_price": 23545.25,
+    "direction": "sell",
+    "size": 3.00,
+    "product": "MNQU5",
+    "profit": 499.50,
+    "fees": -1.11
+  },
+  {
+    "trade_id": "1271621883",
+    "entry_time": "2025-08-25 09:08:47",
+    "entry_price": 23545.25,
+    "direction": "buy",
+    "size": 3.00,
+    "product": "MNQU5",
+    "profit": null,
+    "fees": -1.11
+  }
+]
+

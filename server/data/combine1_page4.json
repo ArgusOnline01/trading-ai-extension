@@ -1,0 +1,102 @@
+[
+  {
+    "trade_id": "1422035475",
+    "entry_time": "2025-10-02 22:31:11",
+    "entry_price": 46.70,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "SILZ5",
+    "profit": -160.00,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1422026992",
+    "entry_time": "2025-10-02 22:25:49",
+    "entry_price": 46.62,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "SILZ5",
+    "profit": null,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1421635294",
+    "entry_time": "2025-10-02 22:20:00",
+    "entry_price": 46.79,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "SILZ5",
+    "profit": null,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1421548877",
+    "entry_time": "2025-10-02 22:15:00",
+    "entry_price": 46.79,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "SILZ5",
+    "profit": null,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1419663293",
+    "entry_time": "2025-10-02 10:12:50",
+    "entry_price": 1.18,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "6EZ5",
+    "profit": -162.50,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1419471945",
+    "entry_time": "2025-10-02 10:10:00",
+    "entry_price": 1.18,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "6EZ5",
+    "profit": null,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1417722715",
+    "entry_time": "2025-10-02 08:35:31",
+    "entry_price": 3914.50,
+    "direction": "sell",
+    "size": 3.00,
+    "product": "MGCZ5",
+    "profit": 735.00,
+    "fees": -1.86
+  },
+  {
+    "trade_id": "1417470555",
+    "entry_time": "2025-10-02 08:30:00",
+    "entry_price": 47.96,
+    "direction": "sell",
+    "size": 1.00,
+    "product": "SILZ5",
+    "profit": 430.00,
+    "fees": -1.02
+  },
+  {
+    "trade_id": "1417117532",
+    "entry_time": "2025-10-02 08:25:00",
+    "entry_price": 47.53,
+    "direction": "buy",
+    "size": 1.00,
+    "product": "SILZ5",
+    "profit": null,
+    "fees": -1.02
+  },
+  {
+    "trade_id": "1417081810",
+    "entry_time": "2025-10-02 05:39:15",
+    "entry_price": 47.49,
+    "direction": "sell",
+    "size": 1.00,
+    "product": "SILZ5",
+    "profit": 5.00,
+    "fees": -1.02
+  }
+]

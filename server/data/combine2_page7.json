@@ -1,0 +1,103 @@
+[
+  {
+    "trade_id": "1308106421",
+    "entry_time": "2025-09-04 01:38:20",
+    "entry_price": 1.17,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "6EU5",
+    "profit": -100.00,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1308106420",
+    "entry_time": "2025-09-04 01:38:20",
+    "entry_price": 23467.00,
+    "direction": "buy",
+    "size": 3.00,
+    "product": "MNQU5",
+    "profit": -180.00,
+    "fees": -1.11
+  },
+  {
+    "trade_id": "1308106419",
+    "entry_time": "2025-09-04 01:38:20",
+    "entry_price": 64.30,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "CLV5",
+    "profit": 750.00,
+    "fees": -3.04
+  },
+  {
+    "trade_id": "1308106418",
+    "entry_time": "2025-09-04 01:38:20",
+    "entry_price": 64.30,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "CLV5",
+    "profit": null,
+    "fees": -3.04
+  },
+  {
+    "trade_id": "1308106417",
+    "entry_time": "2025-09-04 01:38:20",
+    "entry_price": 41.31,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "SILZ5",
+    "profit": null,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1308106416",
+    "entry_time": "2025-09-04 01:38:20",
+    "entry_price": 41.31,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "SILZ5",
+    "profit": null,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1308106415",
+    "entry_time": "2025-09-04 01:38:20",
+    "entry_price": 1.17,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "6EU5",
+    "profit": null,
+    "fees": -3.24
+  },
+  {
+    "trade_id": "1308106414",
+    "entry_time": "2025-09-04 01:38:20",
+    "entry_price": 23467.00,
+    "direction": "sell",
+    "size": 3.00,
+    "product": "MNQU5",
+    "profit": null,
+    "fees": -1.11
+  },
+  {
+    "trade_id": "1308106413",
+    "entry_time": "2025-09-04 01:38:20",
+    "entry_price": 64.30,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "CLV5",
+    "profit": null,
+    "fees": -3.04
+  },
+  {
+    "trade_id": "1305276835",
+    "entry_time": "2025-09-03 10:53:12",
+    "entry_price": 64.30,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "CLV5",
+    "profit": null,
+    "fees": -3.04
+  }
+]
+

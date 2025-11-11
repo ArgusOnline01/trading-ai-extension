@@ -1,0 +1,23 @@
+[
+  {
+    "trade_id": "1405154215",
+    "entry_time": "2025-09-30 02:07:23",
+    "entry_price": 63.03,
+    "direction": "sell",
+    "size": 2.00,
+    "product": "CLX5",
+    "profit": -120.00,
+    "fees": -3.04
+  },
+  {
+    "trade_id": "1405050629",
+    "entry_time": "2025-09-30 01:19:01",
+    "entry_price": 63.09,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "CLX5",
+    "profit": null,
+    "fees": -3.04
+  }
+]
+

@@ -1,0 +1,43 @@
+[
+  {
+    "trade_id": "1270794023",
+    "entry_time": "2025-08-25 08:31:26",
+    "entry_price": 23462.00,
+    "direction": "buy",
+    "size": 3.00,
+    "product": "MNQU5",
+    "profit": null,
+    "fees": -1.11
+  },
+  {
+    "trade_id": "1270685642",
+    "entry_time": "2025-08-25 08:19:06",
+    "entry_price": 38.58,
+    "direction": "buy",
+    "size": 2.00,
+    "product": "SILU5",
+    "profit": null,
+    "fees": -2.04
+  },
+  {
+    "trade_id": "1265527616",
+    "entry_time": "2025-08-22 02:34:19",
+    "entry_price": 63.80,
+    "direction": "buy",
+    "size": 1.00,
+    "product": "CLV5",
+    "profit": -160.00,
+    "fees": -1.52
+  },
+  {
+    "trade_id": "1265454928",
+    "entry_time": "2025-08-22 01:51:27",
+    "entry_price": 63.64,
+    "direction": "sell",
+    "size": 1.00,
+    "product": "CLV5",
+    "profit": null,
+    "fees": -1.52
+  }
+]
+

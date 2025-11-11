@@ -1,0 +1,23 @@
+[
+  {
+    "trade_id": "1433753170",
+    "entry_time": "2025-10-07 01:24:37",
+    "entry_price": 25148.00,
+    "direction": "buy",
+    "size": 5.00,
+    "product": "MNQZ5",
+    "profit": 20.00,
+    "fees": -1.85
+  },
+  {
+    "trade_id": "1433752819",
+    "entry_time": "2025-10-07 01:24:34",
+    "entry_price": 25150.00,
+    "direction": "sell",
+    "size": 5.00,
+    "product": "MNQZ5",
+    "profit": null,
+    "fees": -1.85
+  }
+]
+

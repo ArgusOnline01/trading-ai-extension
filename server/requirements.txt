@@ -5,7 +5,7 @@ python-dotenv==1.0.0
 uvicorn[standard]>=0.23.0
 python-multipart>=0.0.6
 pypng==0.20220715.0
-# pillow==9.5.0  # Optional - requires system libraries (zlib) for compilation
+Pillow>=9.5.0  # Needed for rendering corrected annotation overlays
 
 # Phase 4D.1: Chart Reconstruction
 yfinance>=0.2.28
@@ -21,3 +21,6 @@ jsonschema>=4.0.0
 
 # Phase 4A: Database
 sqlalchemy>=2.0.0
+
+# Phase 4D: AI Learning System (RAG)
+chromadb>=0.4.0

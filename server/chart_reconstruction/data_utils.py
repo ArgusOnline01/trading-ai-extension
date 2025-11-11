@@ -7,6 +7,7 @@ import time
 from datetime import timedelta
 from random import uniform
 import pandas as pd
+import pytz
 
 # Try to import yfinance
 try:
@@ -15,6 +16,8 @@ try:
 except ImportError:
     YFINANCE_AVAILABLE = False
     print("[WARN] yfinance not installed. Run: pip install yfinance")
+
+CHICAGO_TZ = pytz.timezone("America/Chicago")
 
 
 def fetch_price_data(symbol, entry_time, window_hours=36, retries=3, delay=5):
@@ -34,12 +37,18 @@ def fetch_price_data(symbol, entry_time, window_hours=36, retries=3, delay=5):
     interval = "5m"
     try:
         entry_dt = pd.to_datetime(entry_time)
+        if entry_dt.tzinfo is None:
+            entry_dt = CHICAGO_TZ.localize(entry_dt)
+        else:
+            entry_dt = entry_dt.tz_convert(CHICAGO_TZ)
     except Exception as e:
         print(f"[ERROR] Invalid entry_time format: {entry_time} - {e}")
         return pd.DataFrame()
     
-    start = entry_dt - timedelta(hours=window_hours)
-    end = entry_dt + timedelta(hours=window_hours)
+    start_local = entry_dt - timedelta(hours=window_hours)
+    end_local = entry_dt + timedelta(hours=window_hours)
+    start_utc = start_local.astimezone(pytz.UTC)
+    end_utc = end_local.astimezone(pytz.UTC)
     yf_symbol = convert_symbol_to_yfinance(symbol)
     for attempt in range(1, retries + 1):
         try:
@@ -47,17 +56,22 @@ def fetch_price_data(symbol, entry_time, window_hours=36, retries=3, delay=5):
             df = yf.download(
                 yf_symbol,
                 interval=interval,
-                start=start,
-                end=end,
+                start=start_utc,
+                end=end_utc,
                 progress=False
             )
             if not df.empty:
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = df.columns.droplevel(1)
+                # Convert index to America/Chicago timezone and drop tz
+                if getattr(df.index, 'tz', None) is not None:
+                    df.index = df.index.tz_convert(CHICAGO_TZ).tz_localize(None)
+                else:
+                    df.index = pd.to_datetime(df.index)
                 print(f"[SUCCESS] Fetched {len(df)} candles for {symbol}")
                 return df
             else:
-                print(f"[WARN] No data for {symbol} between {start} and {end}")
+                print(f"[WARN] No data for {symbol} between {start_local} and {end_local}")
         except Exception as e:
             print(f"[ERROR] {symbol} fetch failed: {e}")
         if attempt < retries:
@@ -80,8 +94,11 @@ def convert_symbol_to_yfinance(symbol):
         MGCZ5 -> MGC=F (Micro Gold)
         SILZ5 -> SI=F (Silver)
     """
-    # Remove month/year code (e.g., Z5, H5, M5)
-    base_symbol = symbol[:-2] if len(symbol) > 2 else symbol
+    # Remove month/year code (e.g., Z5, H5) when present
+    if len(symbol) > 2 and symbol[-1].isdigit():
+        base_symbol = symbol[:-2]
+    else:
+        base_symbol = symbol
     
     # Map to yfinance continuous contract format
     symbol_map = {

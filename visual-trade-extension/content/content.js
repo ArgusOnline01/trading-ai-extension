@@ -1167,20 +1167,122 @@ function ensureChatUI() {
                                  lower.includes('pull up chart') ||
                                  lower.includes('pull up image');
       
-      // REMOVED: Local command interception - all commands now go through AI extraction
-      // This ensures consistent behavior and proper context handling
-      
-      // Disable both buttons and show loading
-      sendTextBtn.disabled = true;
-      sendImageBtn.disabled = true;
-      const activeBtn = includeImage ? sendImageBtn : sendTextBtn;
-      const originalText = activeBtn.textContent;
-      activeBtn.textContent = "⏳";
-      
-      const notificationMsg = includeImage ? "Capturing chart..." : "Sending...";
-      showNotification(notificationMsg, "info");
-      
+    // Phase 4D.1: AI Chart Analysis - Check if user wants AI to analyze chart
+    const isAIAnalysisRequest = includeImage && (
+      lower.includes('analyze chart') ||
+      lower.includes('identify poi') ||
+      lower.includes('find bos') ||
+      lower.includes('find setup') ||
+      lower.includes('ai analyze') ||
+      lower.includes('teach ai') ||
+      lower === 'analyze' ||
+      lower === 'ai'
+    );
+
+    if (isAIAnalysisRequest) {
+      // Call AI analyze-chart endpoint instead of regular chat
       try {
+        showNotification("🤖 AI analyzing chart...", "info");
+        
+        const formData = new FormData();
+        if (uploadedImageData) {
+          // uploadedImageData is base64 string, convert to blob
+          const base64Data = uploadedImageData.includes(',') ? uploadedImageData.split(',')[1] : uploadedImageData;
+          const byteCharacters = atob(base64Data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: 'image/png' });
+          formData.append('file', blob, 'chart.png');
+        } else if (includeImage) {
+          // If no uploaded image but includeImage is true, we need to capture screenshot
+          // For now, show error - user should upload image first
+          throw new Error('Please upload a chart image first, or use screenshot capture');
+        }
+        
+        const aiResponse = await fetch('http://127.0.0.1:8765/ai/analyze-chart', {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (!aiResponse.ok) {
+          throw new Error(`AI analysis failed: ${aiResponse.statusText}`);
+        }
+        
+        const result = await aiResponse.json();
+        
+        if (result.success) {
+          // Format AI response for chat
+          let aiMessage = "🤖 **AI Chart Analysis**\n\n";
+          
+          if (result.annotations.poi && result.annotations.poi.length > 0) {
+            aiMessage += `**POI Found:** ${result.annotations.poi.length} price level(s)\n`;
+          }
+          if (result.annotations.bos && result.annotations.bos.length > 0) {
+            aiMessage += `**BOS Found:** ${result.annotations.bos.length} break(s) of structure\n`;
+          }
+          if (result.annotations.circles && result.annotations.circles.length > 0) {
+            aiMessage += `**Circles:** ${result.annotations.circles.length} marked area(s)\n`;
+          }
+          
+          if (result.reasoning) {
+            aiMessage += `\n**Reasoning:** ${result.reasoning}\n`;
+          }
+          
+          if (result.similar_trades && result.similar_trades.length > 0) {
+            aiMessage += `\n**Similar Trades:** Found ${result.similar_trades.length} similar trade(s) from history.\n`;
+          }
+          
+          if (result.annotations.notes) {
+            aiMessage += `\n**Notes:** ${result.annotations.notes}\n`;
+          }
+          
+          aiMessage += `\n💡 **Tip:** Open the "Teach AI" page to see visual annotations and correct them!`;
+          
+          // Save messages
+          await window.IDB.saveMessage(currentSession.sessionId, "user", question);
+          await window.IDB.saveMessage(currentSession.sessionId, "assistant", aiMessage);
+          chatHistory = await window.IDB.loadMessages(currentSession.sessionId);
+          renderMessages();
+          input.value = "";
+          showNotification("✅ AI analysis complete!", "success");
+          
+          // Clear uploaded image
+          if (uploadedImageData) {
+            uploadedImageData = null;
+            uploadBtn.textContent = "📤 Upload";
+            uploadBtn.style.background = "";
+            fileInput.value = "";
+          }
+          
+          sendTextBtn.disabled = false;
+          sendImageBtn.disabled = false;
+          activeBtn.textContent = originalText;
+          return;
+        }
+      } catch (error) {
+        console.error("[AI Analysis] Error:", error);
+        showNotification("⚠️ AI analysis failed: " + error.message, "error");
+        sendTextBtn.disabled = false;
+        sendImageBtn.disabled = false;
+        activeBtn.textContent = originalText;
+        return;
+      }
+    }
+    
+    // Disable both buttons and show loading
+    sendTextBtn.disabled = true;
+    sendImageBtn.disabled = true;
+    const activeBtn = includeImage ? sendImageBtn : sendTextBtn;
+    const originalText = activeBtn.textContent;
+    activeBtn.textContent = "⏳";
+    
+    const notificationMsg = includeImage ? "Capturing chart..." : "Sending...";
+    showNotification(notificationMsg, "info");
+    
+    try {
         // Apply context summarization if needed (Phase 3B.1)
         let contextToSend = chatHistory.map(msg => ({ role: msg.role, content: msg.content }));
         const estimatedTokens = estimateTokens(contextToSend);

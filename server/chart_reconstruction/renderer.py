@@ -5,6 +5,11 @@ Uses mplfinance to create beautiful trading charts with entry/exit markers
 
 from pathlib import Path
 import pandas as pd
+import numpy as np
+import matplotlib.dates as mdates
+import pytz
+
+CHICAGO_TZ = pytz.timezone("America/Chicago")
 
 # Try to import required libraries
 try:
@@ -42,27 +47,45 @@ def render_trade_chart(trade, data, output_dir):
     try:
         entry_price = trade.get("entry_price")
         exit_price = trade.get("exit_price")
-        entry_time = pd.to_datetime(trade.get("entry_time"))
-        exit_time = pd.to_datetime(trade.get("exit_time")) if trade.get("exit_time") else None
-        
-        # Fix timezone issues - ensure both entry_time and data.index are timezone-aware or naive
-        if entry_time.tz is not None:
-            entry_time = entry_time.tz_localize(None) if entry_time.tz is not None else entry_time
-        if exit_time is not None and exit_time.tz is not None:
-            exit_time = exit_time.tz_localize(None)
-        
-        # Ensure data index is timezone-naive for comparison
-        if data.index.tz is not None:
+        entry_original = pd.to_datetime(trade.get("entry_time"))
+        exit_original = pd.to_datetime(trade.get("exit_time")) if trade.get("exit_time") else None
+
+        if entry_original.tzinfo is None:
+            entry_local = CHICAGO_TZ.localize(entry_original)
+        else:
+            entry_local = entry_original.tz_convert(CHICAGO_TZ)
+        entry_time = entry_local.tz_localize(None)
+
+        if exit_original is not None:
+            if exit_original.tzinfo is None:
+                exit_local = CHICAGO_TZ.localize(exit_original)
+            else:
+                exit_local = exit_original.tz_convert(CHICAGO_TZ)
+            exit_time = exit_local.tz_localize(None)
+        else:
+            exit_local = None
+            exit_time = None
+
+        # Ensure data index is localized to Chicago
+        if getattr(data.index, 'tz', None) is not None:
             data = data.copy()
-            data.index = data.index.tz_localize(None)
-        
+            data.index = data.index.tz_convert(CHICAGO_TZ).tz_localize(None)
+        else:
+            data.index = pd.to_datetime(data.index)
+
         addplots = []
         # DO NOT draw horizontal price lines
         # Mark entry/exit candles with triangle markers below
         direction = trade.get("direction", "").upper()
         pnl = trade.get("pnl", 0)
         pnl_str = f"${pnl:+.2f}" if pnl else "$0.00"
-        title = f"{trade['symbol']} | {direction} | {trade.get('entry_time', '')} (5m) | P&L: {pnl_str}"
+        
+        # Title formatting uses original local time
+        local_display = entry_original
+        if local_display.tzinfo is None:
+            local_display = local_display.tz_localize("America/New_York")
+        local_display_str = local_display.strftime("%m/%d/%Y %H:%M:%S %z")
+
         mc = mpf.make_marketcolors(
             up='#26a69a',
             down='#ef5350',
@@ -106,7 +129,7 @@ def render_trade_chart(trade, data, output_dir):
             focused_data,
             type="candle",
             style=s,
-            title=title,
+            title=f"{trade['symbol']} | {direction} | {local_display_str} (5m) | P&L: {pnl_str}",
             volume=False,  # Remove volume to fix jagged rendering
             returnfig=True,
             figsize=(16, 9),
@@ -115,21 +138,98 @@ def render_trade_chart(trade, data, output_dir):
         )
         
         ax = axlist[0] if isinstance(axlist, list) else axlist
-        # Triangle marker for entry/exit
-        for tval, color in [
-            (entry_time, '#2962FF'),
-            (exit_time, '#F23645')
-        ]:
-            if tval is None:
-                continue
-            # Ensure timezone-naive for comparison
-            if hasattr(tval, 'tz') and tval.tz is not None:
-                tval = tval.tz_localize(None)
-            idx = data.index.get_indexer([pd.to_datetime(tval)], method='nearest')[0]
-            bar = data.iloc[idx]
-            x = idx
-            y = bar['Low'] - (bar['High']-bar['Low'])*0.11
-            ax.scatter(x, y, marker='^', color=color, s=55, zorder=25, edgecolors='#fff', linewidths=1.4)
+        # Triangle markers for entry/exit
+        is_short = direction.upper() == "SHORT"
+
+        index_np = data.index.to_numpy(dtype='datetime64[ns]')
+
+        def compute_x(dt):
+            if dt is None:
+                return None
+            t = pd.to_datetime(dt)
+            t_np = t.to_datetime64()
+            idx = np.searchsorted(index_np, t_np) - 1
+            if idx < 0:
+                idx = 0
+            if idx >= len(data):
+                idx = len(data) - 1
+            base_time = data.index[idx]
+            if idx + 1 < len(data):
+                next_time = data.index[idx + 1]
+            else:
+                next_time = base_time + (base_time - data.index[idx - 1]) if idx > 0 else base_time
+            if next_time > base_time:
+                frac = (t - base_time) / (next_time - base_time)
+                frac = max(0, min(1, frac))
+            else:
+                frac = 0
+            return idx + float(frac)
+
+        def plot_marker(dt, price, color, marker, offset_pixels=0):
+            if dt is None or price is None:
+                return
+            x = compute_x(dt)
+            if x is None:
+                return
+            x_disp, y_disp = ax.transData.transform((x, price))
+            y_disp -= offset_pixels
+            x_new, y_new = ax.transData.inverted().transform((x_disp, y_disp))
+            ax.scatter(
+                [x_new],
+                [y_new],
+                marker=marker,
+                s=90,
+                c=color,
+                edgecolors='#FFFFFF',
+                linewidths=1.2,
+                zorder=30,
+                clip_on=False,
+            )
+
+        long_offset = 18  # pixels downward
+        short_offset = -18  # pixels upward
+
+        # Entry marker (blue)
+        if entry_time is not None:
+            try:
+                entry_dt = pd.to_datetime(entry_time)
+                x_pos = compute_x(entry_dt)
+                idx = min(int(np.floor(x_pos)), len(data) - 1)
+                bar = data.iloc[idx]
+                print(f"[DEBUG] Selected entry candle at index {idx}, time: {data.index[idx]}")
+                if is_short:
+                    price = bar['High'] + (bar['High'] - bar['Low']) * 0.05
+                    plot_marker(entry_dt, price, '#2962FF', 'v', offset_pixels=short_offset)
+                else:
+                    price = bar['Low'] - (bar['High'] - bar['Low']) * 0.05
+                    plot_marker(entry_dt, price, '#2962FF', '^', offset_pixels=long_offset)
+            except Exception as e:
+                print(f"[WARN] Could not place entry marker: {e}")
+                import traceback
+                traceback.print_exc()
+
+        # Exit marker (red)
+        if exit_time is not None:
+            try:
+                exit_dt = pd.to_datetime(exit_time)
+                x_pos = compute_x(exit_dt)
+                idx = min(int(np.floor(x_pos)), len(data) - 1)
+                bar = data.iloc[idx]
+                print(f"[DEBUG] Selected exit candle at index {idx}, time: {data.index[idx]}")
+                distance = bar['High'] - bar['Low']
+                offset = -distance * 0.25
+                price = bar['Low'] - distance * 0.1
+                exit_marker = 'v' if is_short else '^'
+                if is_short:
+                    price = bar['Low'] - (bar['High'] - bar['Low']) * 0.05
+                    plot_marker(exit_dt, price, '#F23645', 'v', offset_pixels=long_offset)
+                else:
+                    price = bar['Low'] - (bar['High'] - bar['Low']) * 0.05
+                    plot_marker(exit_dt, price, '#F23645', '^', offset_pixels=long_offset)
+            except Exception as e:
+                print(f"[WARN] Could not place exit marker: {e}")
+                import traceback
+                traceback.print_exc()
         # Save with high DPI and anti-aliasing for crisp rendering
         fig.savefig(
             str(chart_path), 

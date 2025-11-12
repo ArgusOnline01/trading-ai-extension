@@ -84,14 +84,36 @@
     <h1>Visual Trade Copilot</h1>
     <nav>
       <a href="/app/">Trades</a>
+      <a href="/app/teach.html">Teach AI</a>
+      <a href="/app/annotate.html" class="active">Annotate</a>
+      <a href="/app/progress.html">AI Progress</a>
+      <a href="/app/strategy.html">Strategy</a>
       <a href="/app/setups.html">Setups</a>
       <a href="/app/entry-methods.html">Entry Methods</a>
+      <a href="/app/analytics.html">Analytics</a>
     </nav>
   </header>
 
   <main>
     <div id="loading" style="text-align: center; padding: 40px; color: var(--muted);">
       Loading trade and chart...
+    </div>
+
+    <div id="trade-selector" style="display: none; max-width: 800px; margin: 40px auto; padding: 24px; background: var(--panel); border-radius: 8px;">
+      <h2 style="color: var(--text); margin-bottom: 16px;">Select a Trade to Annotate</h2>
+      <p style="color: var(--muted); margin-bottom: 16px;">Choose a trade from the list below to add annotations.</p>
+      <div style="margin-bottom: 16px;">
+        <label for="trade-select" style="display: block; color: var(--text); margin-bottom: 8px;">Trade:</label>
+        <select id="trade-select" style="width: 100%; padding: 8px; background: var(--bg); color: var(--text); border: 1px solid #333; border-radius: 4px; font-size: 14px;">
+          <option value="">Loading trades...</option>
+        </select>
+      </div>
+      <button id="load-trade-btn" style="padding: 10px 20px; background: var(--accent); color: #111; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;">
+        Load Trade
+      </button>
+      <p style="margin-top: 16px; text-align: center;">
+        <a href="/app/" style="color: var(--accent);">Or go back to trades list</a>
+      </p>
     </div>
 
     <div id="content" style="display: none;">

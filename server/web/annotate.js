@@ -17,6 +17,20 @@
   let defaultViewportTransform = null; // Store default viewport transform
   let chartScale = 1; // Store the scale factor for coordinate conversion (same as teach page)
   
+  // Helper: convert viewport coordinates to unzoomed canvas coords, then to original-image units
+  // This matches teach.js to ensure coordinate consistency between pages
+  function toOriginalUnits(x, y) {
+    const scale = canvas?.chartScale || 1;
+    const vt = canvas?.viewportTransform || [1,0,0,1,0,0];
+    const zoomX = vt[0] || 1; // scaleX
+    const zoomY = vt[3] || 1; // scaleY
+    const panX = vt[4] || 0;  // translateX
+    const panY = vt[5] || 0;  // translateY
+    const cx = (x - panX) / zoomX; // canvas-space (no viewport)
+    const cy = (y - panY) / zoomY;
+    return { x: cx / scale, y: cy / scale };
+  }
+  
   // Drawing state
   let isDrawing = false;
   let startPoint = null;
@@ -42,7 +56,17 @@
   tradeId = urlParams.get('trade_id');
 
   if (!tradeId) {
-    loading.innerHTML = '<p style="color: #ef5350;">Error: No trade_id provided. <a href="/app/">Go back to trades</a></p>';
+    // Show trade selector instead of error
+    loading.style.display = 'none';
+    const tradeSelector = $('trade-selector');
+    if (tradeSelector) {
+      tradeSelector.style.display = 'block';
+      // Call loadTradeSelector without await since we're not in async context
+      loadTradeSelector().catch(err => {
+        console.error('[ANNOTATE] Failed to load trade selector:', err);
+        loading.innerHTML = `<p style="color: #ef5350;">Error loading trades. <a href="/app/">Go back to trades</a></p>`;
+      });
+    }
     return;
   }
 
@@ -395,49 +419,63 @@
   function updateHUD() {
     if (!hudEl) return;
     const objs = canvas.getActiveObjects();
-    const scale = canvas.chartScale || 1;
     if (!objs || objs.length === 0) { hudEl.innerHTML = '<strong>Coordinates</strong><br/>coords: -'; return; }
     const obj = objs[0];
-    let text = `scale=${scale.toFixed(6)}`;
     // Determine logical type
     const dataType = (obj.data && obj.data.type) || obj.get('annotationType');
     const type = dataType || obj.type;
-    text += ` | type=${type}`;
+    let text = `type=${type}`;
     if (type === 'circle' || obj.type === 'circle') {
       const center = obj.getCenterPoint();
-      const r = (obj.radius * (obj.scaleX || 1));
-      text += ` | x=${(center.x/scale).toFixed(1)} y=${(center.y/scale).toFixed(1)} r=${(r/scale).toFixed(1)}`;
+      const ou = toOriginalUnits(center.x, center.y);
+      const current = {
+        x: ou.x.toFixed(1),
+        y: ou.y.toFixed(1),
+        r: ((obj.radius * (obj.scaleX || 1)) / (canvas.chartScale || 1)).toFixed(1)
+      };
+      text += ` | current x=${current.x} y=${current.y} r=${current.r}`;
     } else if (type === 'poi') {
-      // POI is a group: use its bounding rect
+      // POI is a group: use its bounding rect and remove viewport transform
       const bounds = obj.getBoundingRect(true);
-      text += ` | left=${(bounds.left/scale).toFixed(1)} top=${(bounds.top/scale).toFixed(1)} w=${(bounds.width/scale).toFixed(1)} h=${(bounds.height/scale).toFixed(1)}`;
+      const p1 = toOriginalUnits(bounds.left, bounds.top);
+      const p2 = toOriginalUnits(bounds.left + bounds.width, bounds.top + bounds.height);
+      const w = (p2.x - p1.x);
+      const h = (p2.y - p1.y);
+      text += ` | current left=${p1.x.toFixed(1)} top=${p1.y.toFixed(1)} w=${w.toFixed(1)} h=${h.toFixed(1)}`;
     } else if (type === 'bos') {
-      // BOS is a group containing a line. Prefer stored original coords
-      if (obj.data && obj.data.originalX1 !== undefined) {
-        const x1 = obj.data.originalX1/scale;
-        const y1 = obj.data.originalY1/scale;
-        const x2 = obj.data.originalX2/scale;
-        const y2 = obj.data.originalY2/scale;
-        text += ` | x1=${x1.toFixed(1)} y1=${y1.toFixed(1)} x2=${x2.toFixed(1)} y2=${y2.toFixed(1)}`;
-      } else {
-        const lineObj = obj.getObjects().find(o => o.type === 'line');
-        if (lineObj) {
-          const p1 = new fabric.Point(lineObj.x1||0, lineObj.y1||0);
-          const p2 = new fabric.Point(lineObj.x2||0, lineObj.y2||0);
-          const m = obj.calcTransformMatrix();
-          const a1 = fabric.util.transformPoint(p1, m);
-          const a2 = fabric.util.transformPoint(p2, m);
-          text += ` | x1=${(a1.x/scale).toFixed(1)} y1=${(a1.y/scale).toFixed(1)} x2=${(a2.x/scale).toFixed(1)} y2=${(a2.y/scale).toFixed(1)}`;
-        }
+      // BOS is a group containing a line. Compute endpoints and remove viewport transform (zoom/pan)
+      const lineObj = obj.getObjects().find(o => o.type === 'line');
+      if (lineObj) {
+        const p1 = new fabric.Point(lineObj.x1||0, lineObj.y1||0);
+        const p2 = new fabric.Point(lineObj.x2||0, lineObj.y2||0);
+        const m = obj.calcTransformMatrix();
+        const a1 = fabric.util.transformPoint(p1, m);
+        const a2 = fabric.util.transformPoint(p2, m);
+        const ou1 = toOriginalUnits(a1.x, a1.y);
+        const ou2 = toOriginalUnits(a2.x, a2.y);
+        text += ` | current x1=${ou1.x.toFixed(1)} y1=${ou1.y.toFixed(1)} x2=${ou2.x.toFixed(1)} y2=${ou2.y.toFixed(1)}`;
+      } else if (obj.data && obj.data.originalX1 !== undefined) {
+        // Fallback: use stored original coords (but still account for viewport if needed)
+        const ou1 = toOriginalUnits(obj.data.originalX1, obj.data.originalY1);
+        const ou2 = toOriginalUnits(obj.data.originalX2, obj.data.originalY2);
+        text += ` | current x1=${ou1.x.toFixed(1)} y1=${ou1.y.toFixed(1)} x2=${ou2.x.toFixed(1)} y2=${ou2.y.toFixed(1)}`;
       }
     } else if (obj.type === 'rect') {
-      text += ` | left=${(obj.left/scale).toFixed(1)} top=${(obj.top/scale).toFixed(1)} w=${((obj.width*(obj.scaleX||1))/scale).toFixed(1)} h=${((obj.height*(obj.scaleY||1))/scale).toFixed(1)}`;
+      const br = obj.getBoundingRect(true);
+      const p1 = toOriginalUnits(br.left, br.top);
+      const p2 = toOriginalUnits(br.left + br.width, br.top + br.height);
+      const w = (p2.x - p1.x);
+      const h = (p2.y - p1.y);
+      text += ` | current left=${p1.x.toFixed(1)} top=${p1.y.toFixed(1)} w=${w.toFixed(1)} h=${h.toFixed(1)}`;
     } else if (obj.type === 'line') {
-      const x1 = (obj.x1 + (obj.left||0))/scale;
-      const y1 = (obj.y1 + (obj.top||0))/scale;
-      const x2 = (obj.x2 + (obj.left||0))/scale;
-      const y2 = (obj.y2 + (obj.top||0))/scale;
-      text += ` | x1=${x1.toFixed(1)} y1=${y1.toFixed(1)} x2=${x2.toFixed(1)} y2=${y2.toFixed(1)}`;
+      const p1 = new fabric.Point(obj.x1||0, obj.y1||0);
+      const p2 = new fabric.Point(obj.x2||0, obj.y2||0);
+      const m = obj.calcTransformMatrix();
+      const a1 = fabric.util.transformPoint(p1, m);
+      const a2 = fabric.util.transformPoint(p2, m);
+      const ou1 = toOriginalUnits(a1.x, a1.y);
+      const ou2 = toOriginalUnits(a2.x, a2.y);
+      text += ` | current x1=${ou1.x.toFixed(1)} y1=${ou1.y.toFixed(1)} x2=${ou2.x.toFixed(1)} y2=${ou2.y.toFixed(1)}`;
     }
     hudEl.innerHTML = `<strong>Coordinates</strong><br/>${text}`;
   }
@@ -762,6 +800,57 @@
     });
   }
 
+  async function loadTradeSelector() {
+    try {
+      // Load list of trades - use absolute path like app.js does
+      const response = await fetch('/trades?limit=100&sort_by=entry_time&sort_dir=desc');
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to load trades: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+      
+      const data = await response.json();
+      const select = $('trade-select');
+      select.innerHTML = '<option value="">Select a trade...</option>';
+      
+      // Check if data has trades array (response format from trades API)
+      // The API returns { items: [...], total: ... } format
+      const trades = data.items || data.trades || [];
+      
+      if (trades.length === 0) {
+        select.innerHTML = '<option value="">No trades found</option>';
+        return;
+      }
+      
+      trades.forEach(t => {
+        const option = document.createElement('option');
+        option.value = t.trade_id;
+        const symbol = t.symbol || 'Unknown';
+        const direction = t.direction || '';
+        const outcome = t.outcome || '';
+        const pnl = t.pnl !== null ? `$${t.pnl.toFixed(2)}` : 'N/A';
+        option.textContent = `${symbol} ${direction} ${outcome} (${pnl}) - ${t.trade_id}`;
+        select.appendChild(option);
+      });
+      
+      // Setup load button
+      $('load-trade-btn').addEventListener('click', () => {
+        const selectedTradeId = select.value;
+        if (selectedTradeId) {
+          window.location.href = `/app/annotate.html?trade_id=${selectedTradeId}`;
+        } else {
+          alert('Please select a trade');
+        }
+      });
+    } catch (err) {
+      console.error('[ANNOTATE] Failed to load trade selector:', err);
+      const select = $('trade-select');
+      if (select) {
+        select.innerHTML = '<option value="">Error loading trades</option>';
+      }
+    }
+  }
+
   async function loadAnnotations() {
     try {
       const res = await fetch(`${API_BASE}/annotations/trade/${tradeId}`);
@@ -1042,14 +1131,25 @@
     // This ensures annotations work correctly on both annotate and teach pages
     const scale = canvas.chartScale || 1;
     
+    const imgW = canvas.originalImageWidth || 1;
+    const imgH = canvas.originalImageHeight || 1;
+
+    const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
+
     const poiLocations = poiMarkers.map(marker => {
-      const bounds = marker.getBoundingRect();
-      // Convert from scaled canvas coordinates to original image coordinates
+      // Use bounding rect and remove viewport transform (zoom/pan) - matches teach.js
+      const bounds = marker.getBoundingRect(true);
+      const p1 = toOriginalUnits(bounds.left, bounds.top);
+      const p2 = toOriginalUnits(bounds.left + bounds.width, bounds.top + bounds.height);
+      const left = clamp(p1.x, 0, imgW);
+      const top = clamp(p1.y, 0, imgH);
+      const right = clamp(p2.x, 0, imgW);
+      const bottom = clamp(p2.y, 0, imgH);
       return {
-        left: bounds.left / scale,
-        top: bounds.top / scale,
-        width: bounds.width / scale,
-        height: bounds.height / scale,
+        left,
+        top,
+        width: right - left,
+        height: bottom - top,
         price: marker.data?.price || 0,
         color: marker.data?.color || '#2962FF',
         timestamp: new Date().toISOString()
@@ -1057,102 +1157,83 @@
     });
 
     const bosLocations = bosLines.map((line, idx) => {
-      // Get actual line coordinates (start and end points)
-      // Try to use stored original coordinates first (most accurate - from when line was created)
-      if (line.data && line.data.originalX1 !== undefined) {
-        const scale = canvas.chartScale || 1;
-        const saved = {
-          x1: line.data.originalX1 / scale,
-          y1: line.data.originalY1 / scale,
-          x2: line.data.originalX2 / scale,
-          y2: line.data.originalY2 / scale,
-          price: line.data?.price || 0,
-          color: line.data?.color || '#2962FF',
-          timestamp: new Date().toISOString()
-        };
-        
-        console.log(`[SAVE BOS ${idx}] Using stored original coordinates:`, {
-          stored: { x1: line.data.originalX1, y1: line.data.originalY1, x2: line.data.originalX2, y2: line.data.originalY2 },
-          scale,
-          saved
-        });
-        
-        return saved;
+      // Use bounding box approach (same as teach.js) to avoid coordinate skew
+      const bounds = line.getBoundingRect(true);
+      
+      // For a line, extract endpoints from the bounding box
+      const isHorizontal = Math.abs(bounds.width) > Math.abs(bounds.height);
+      
+      let canvasX1, canvasY1, canvasX2, canvasY2;
+      if (isHorizontal) {
+        // Horizontal line: endpoints at left/right edges, vertically centered
+        canvasX1 = bounds.left;
+        canvasY1 = bounds.top + bounds.height / 2;
+        canvasX2 = bounds.left + bounds.width;
+        canvasY2 = bounds.top + bounds.height / 2;
+      } else {
+        // Vertical line: endpoints at top/bottom edges, horizontally centered
+        canvasX1 = bounds.left + bounds.width / 2;
+        canvasY1 = bounds.top;
+        canvasX2 = bounds.left + bounds.width / 2;
+        canvasY2 = bounds.top + bounds.height;
       }
       
-      // Fallback: Calculate from current group position
-      const lineObj = line.getObjects().find(obj => obj.type === 'line');
-      if (lineObj) {
-        // Get the line's coordinates in the group's local coordinate system
-        const relX1 = lineObj.x1 || 0;
-        const relY1 = lineObj.y1 || 0;
-        const relX2 = lineObj.x2 || 0;
-        const relY2 = lineObj.y2 || 0;
-        
-        // Use Fabric.js to transform these local coordinates to canvas coordinates
-        // Create temporary points and transform them using the group's transform matrix
-        const point1 = new fabric.Point(relX1, relY1);
-        const point2 = new fabric.Point(relX2, relY2);
-        
-        // Get the group's transform matrix
-        const transform = line.calcTransformMatrix();
-        
-        // Transform the points to canvas coordinates
-        const absPoint1 = fabric.util.transformPoint(point1, transform);
-        const absPoint2 = fabric.util.transformPoint(point2, transform);
-        
-        // Convert from scaled canvas coordinates to original image coordinates
-        const scale = canvas.chartScale || 1;
-        
-        const saved = {
-          x1: absPoint1.x / scale,
-          y1: absPoint1.y / scale,
-          x2: absPoint2.x / scale,
-          y2: absPoint2.y / scale,
-          price: line.data?.price || 0,
-          color: line.data?.color || '#2962FF',
-          timestamp: new Date().toISOString()
-        };
-        
-        console.log(`[SAVE BOS ${idx}] Calculated from transform:`, {
-          rel: { x1: relX1, y1: relY1, x2: relX2, y2: relY2 },
-          abs: { x1: absPoint1.x, y1: absPoint1.y, x2: absPoint2.x, y2: absPoint2.y },
-          scale,
-          saved
-        });
-        
-        return saved;
-      }
-      // Fallback to bounds if line object not found
-      const bounds = line.getBoundingRect();
-      const scale = canvas.chartScale || 1;
-      return {
-        x1: bounds.left / scale,
-        y1: bounds.top / scale,
-        x2: (bounds.left + bounds.width) / scale,
-        y2: (bounds.top + bounds.height) / scale,
+      // Convert to original image coordinates
+      const ou1 = toOriginalUnits(canvasX1, canvasY1);
+      const ou2 = toOriginalUnits(canvasX2, canvasY2);
+      
+      // Clamp to image bounds
+      const clamped = {
+        x1: clamp(ou1.x, 0, imgW),
+        y1: clamp(ou1.y, 0, imgH),
+        x2: clamp(ou2.x, 0, imgW),
+        y2: clamp(ou2.y, 0, imgH)
+      };
+      
+      const saved = {
+        x1: clamped.x1,
+        y1: clamped.y1,
+        x2: clamped.x2,
+        y2: clamped.y2,
         price: line.data?.price || 0,
         color: line.data?.color || '#2962FF',
         timestamp: new Date().toISOString()
       };
+      
+      console.log(`[SAVE BOS ${idx}] Bounding box method:`, {
+        bounds: { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height },
+        isHorizontal,
+        canvasCoords: { x1: canvasX1, y1: canvasY1, x2: canvasX2, y2: canvasY2 },
+        originalUnits: { x1: ou1.x, y1: ou1.y, x2: ou2.x, y2: ou2.y },
+        clamped,
+        scale: canvas.chartScale || 1,
+        img: { w: imgW, h: imgH }
+      });
+      
+      return saved;
     });
     
     const circleLocations = circles.map((circle, idx) => {
-      // Convert from scaled canvas coordinates to original image coordinates
-      const scale = canvas.chartScale || 1;
+      // Convert from canvas coordinates (accounting for viewport transform) to original image coordinates
       const center = circle.getCenterPoint();
+      const ou = toOriginalUnits(center.x, center.y);
+      const rCanvas = (circle.radius * (circle.scaleX || 1));
+      const scale = canvas.chartScale || 1;
+      const cx = clamp(ou.x, 0, imgW);
+      const cy = clamp(ou.y, 0, imgH);
       const saved = {
-        x: center.x / scale,
-        y: center.y / scale,
-        radius: (circle.radius * (circle.scaleX || 1)) / scale,
+        x: cx,
+        y: cy,
+        radius: rCanvas / scale,
         color: circle.data?.color || '#2962FF',
         timestamp: new Date().toISOString()
       };
       
       console.log(`[SAVE CIRCLE ${idx}]`, {
-        canvas: { centerX: center.x, centerY: center.y, radius: circle.radius * (circle.scaleX || 1) },
+        canvas: { centerX: center.x, centerY: center.y, radius: rCanvas },
+        original: saved,
         scale,
-        saved
+        img: { w: canvas.originalImageWidth, h: canvas.originalImageHeight }
       });
       
       return saved;

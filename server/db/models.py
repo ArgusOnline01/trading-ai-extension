@@ -121,6 +121,7 @@ class AILesson(Base):
     ai_annotations = Column(JSON, nullable=True)  # AI's original annotations
     corrected_annotations = Column(JSON, nullable=True)  # User's corrections
     corrected_reasoning = Column(String, nullable=True)  # User's correction to AI's reasoning
+    deleted_annotations = Column(JSON, nullable=True)  # AI annotations that were deleted (shouldn't exist)
     questions = Column(JSON, nullable=True)  # AI's questions
     answers = Column(JSON, nullable=True)  # User's answers
     accuracy_score = Column(Float, nullable=True)
@@ -150,3 +151,65 @@ class AIVerificationTest(Base):
     ground_truth = Column(JSON, nullable=True)  # User's annotations (ground truth)
     accuracy_score = Column(Float, nullable=True)
     test_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+# Phase 4E: Entry Suggestion & Learning System Tables
+
+class Strategy(Base):
+    __tablename__ = "strategies"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    setup_definitions = Column(JSON, nullable=True)  # POI, BOS, fractals definitions
+    entry_methods = Column(JSON, nullable=True)  # Entry methods user uses
+    stop_loss_rules = Column(JSON, nullable=True)  # Stop loss rules
+    good_entry_criteria = Column(JSON, nullable=True)  # What makes a good entry
+    bad_entry_criteria = Column(JSON, nullable=True)  # What makes a bad entry
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class ChatSession(Base):
+    __tablename__ = "chat_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String, unique=True, index=True, nullable=False)
+    trade_id = Column(String, ForeignKey("trades.trade_id"), nullable=True)
+    state_json = Column(JSON, nullable=True)  # Current setup status, waiting for confluences, progress
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    trade = relationship("Trade")
+
+
+class EntrySuggestion(Base):
+    __tablename__ = "entry_suggestions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String, ForeignKey("chat_sessions.session_id"), nullable=False)
+    entry_price = Column(Float, nullable=True)
+    stop_loss = Column(Float, nullable=True)
+    stop_loss_type = Column(String, nullable=True)  # 'strategy_based' | 'fixed'
+    stop_loss_reasoning = Column(String, nullable=True)
+    reasoning = Column(String, nullable=True)  # Why this entry was suggested
+    confluences_met = Column(JSON, nullable=True)  # List of confluences that were met
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    session = relationship("ChatSession")
+
+
+class EntryOutcome(Base):
+    __tablename__ = "entry_outcomes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    suggestion_id = Column(Integer, ForeignKey("entry_suggestions.id"), nullable=False)
+    outcome = Column(String, nullable=False)  # 'win' | 'loss' | 'skipped'
+    actual_entry_price = Column(Float, nullable=True)
+    actual_exit_price = Column(Float, nullable=True)
+    r_multiple = Column(Float, nullable=True)
+    notes = Column(String, nullable=True)
+    chart_sequence = Column(JSON, nullable=True)  # All images in the session
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    suggestion = relationship("EntrySuggestion")

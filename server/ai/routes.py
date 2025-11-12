@@ -12,6 +12,7 @@ from ai.rag.retrieval import get_retrieval_service
 from ai.rag.embeddings import get_embedding_service
 from ai.rag.chroma_client import get_chroma_client
 from ai.rag.indexing import index_corrected_annotation
+from ai.accuracy import calculate_annotation_accuracy  # Phase 4D.3
 from openai_client import get_client
 import os
 import io
@@ -171,6 +172,7 @@ class AnalyzeChartResponse(BaseModel):
     annotations: AnnotationData
     similar_trades: List[Dict[str, Any]]
     reasoning: Optional[str] = None
+    questions: Optional[List[Dict[str, str]]] = None  # Phase 4D.2: AI-generated questions
 
 
 class SaveLessonRequest(BaseModel):
@@ -179,6 +181,9 @@ class SaveLessonRequest(BaseModel):
     ai_annotations: Dict[str, Any]
     corrected_annotations: Dict[str, Any]
     corrected_reasoning: Optional[str] = None  # User's correction to AI's reasoning
+    deleted_annotations: Optional[List[Dict[str, Any]]] = None  # AI annotations that were deleted
+    questions: Optional[List[Dict[str, str]]] = None  # Phase 4D.2: AI-generated questions
+    answers: Optional[List[Dict[str, str]]] = None  # Phase 4D.2: User's answers to questions
 
 
 @router.post("/analyze-chart", response_model=AnalyzeChartResponse)
@@ -306,11 +311,35 @@ async def analyze_chart(
                                 original = bos.get("original") if isinstance(bos, dict) else None
                                 data = corrected or bos
                                 price = data.get("price") or (original or {}).get("price", "unknown")
+                                
+                                # Corrected coordinates
                                 x1 = data.get("x1", 0)
                                 y1 = data.get("y1", 0)
                                 x2 = data.get("x2", 0)
                                 y2 = data.get("y2", 0)
-                                past_lessons_text += f"  BOS {j} (price {price}): x1={x1:.0f}, y1={y1:.0f}, x2={x2:.0f}, y2={y2:.0f}\n"
+                                corrected_length = abs(x2 - x1)
+                                
+                                # Original coordinates (if available)
+                                orig_x1 = original.get("x1", 0) if original else 0
+                                orig_x2 = original.get("x2", 0) if original else 0
+                                original_length = abs(orig_x2 - orig_x1) if original else 0
+                                
+                                # Calculate percentage for clarity
+                                img_w = image_width or 4440
+                                img_h = image_height or 2651
+                                x1_pct = (x1 / img_w * 100) if img_w > 0 else 0
+                                x2_pct = (x2 / img_w * 100) if img_w > 0 else 0
+                                y1_pct = (y1 / img_h * 100) if img_h > 0 else 0
+                                y2_pct = (y2 / img_h * 100) if img_h > 0 else 0
+                                
+                                past_lessons_text += f"  BOS {j} (price {price}): I placed it at approximately x1={x1:.0f} ({x1_pct:.1f}% from left), x2={x2:.0f} ({x2_pct:.1f}% from left)\n"
+                                past_lessons_text += f"    → Length: {corrected_length:.0f}px ({corrected_length / img_w * 100:.1f}% of chart width)\n"
+                                if original and original_length > 0:
+                                    length_diff = corrected_length - original_length
+                                    length_change_pct = (length_diff / original_length * 100) if original_length > 0 else 0
+                                    if abs(length_change_pct) > 10:  # Only show if significant change
+                                        past_lessons_text += f"    → I {'extended' if length_diff > 0 else 'shortened'} your line by {abs(length_diff):.0f}px ({abs(length_change_pct):.1f}%) - this shows the BOS should span {'more' if length_diff > 0 else 'less'} of the time period\n"
+                                past_lessons_text += f"    → This marks the BOS at price level {price} - look for this price level on the chart and identify where the structure break occurred\n"
                         if lesson.corrected_annotations.get("poi"):
                             poi_list = lesson.corrected_annotations["poi"]
                             past_lessons_text += f"I corrected your POI ({len(poi_list)} box(es)):\n"
@@ -319,9 +348,36 @@ async def analyze_chart(
                                 original = poi.get("original") if isinstance(poi, dict) else None
                                 data = corrected or poi
                                 price = data.get("price") or (original or {}).get("price", "unknown")
+                                
+                                # Corrected dimensions
                                 left = data.get("left", 0)
                                 top = data.get("top", 0)
+                                width = data.get("width", 0)
+                                height = data.get("height", 0)
+                                
+                                # Original dimensions (if available)
+                                orig_width = original.get("width", 0) if original else 0
+                                orig_height = original.get("height", 0) if original else 0
+                                
+                                img_w = image_width or 4440
+                                img_h = image_height or 2651
+                                
                                 past_lessons_text += f"  POI {j} (price {price}): left={left:.0f}, top={top:.0f}\n"
+                                past_lessons_text += f"    → Size: {width:.0f}px wide × {height:.0f}px tall ({width / img_w * 100:.1f}% × {height / img_h * 100:.1f}% of chart)\n"
+                                
+                                if original and orig_width > 0 and orig_height > 0:
+                                    width_diff = width - orig_width
+                                    height_diff = height - orig_height
+                                    width_change_pct = (width_diff / orig_width * 100) if orig_width > 0 else 0
+                                    height_change_pct = (height_diff / orig_height * 100) if orig_height > 0 else 0
+                                    
+                                    if abs(width_change_pct) > 10 or abs(height_change_pct) > 10:  # Show if significant change
+                                        changes = []
+                                        if abs(width_change_pct) > 10:
+                                            changes.append(f"{'widened' if width_diff > 0 else 'narrowed'} by {abs(width_diff):.0f}px ({abs(width_change_pct):.1f}%)")
+                                        if abs(height_change_pct) > 10:
+                                            changes.append(f"{'heightened' if height_diff > 0 else 'shortened'} by {abs(height_diff):.0f}px ({abs(height_change_pct):.1f}%)")
+                                        past_lessons_text += f"    → I {' and '.join(changes)} - this shows the POI zone should cover {'more' if width_diff > 0 or height_diff > 0 else 'less'} area\n"
                         if lesson.corrected_annotations.get("circles"):
                             circles_list = lesson.corrected_annotations["circles"]
                             past_lessons_text += f"I corrected your circles ({len(circles_list)} circle(s)):\n"
@@ -329,23 +385,90 @@ async def analyze_chart(
                                 corrected = circle.get("corrected") if isinstance(circle, dict) else None
                                 original = circle.get("original") if isinstance(circle, dict) else None
                                 data = corrected or circle
+                                
+                                # Corrected dimensions
                                 x = data.get("x", 0)
                                 y = data.get("y", 0)
                                 radius = data.get("radius", 0)
-                                past_lessons_text += f"  Circle {j}: x={x:.0f}, y={y:.0f}, radius={radius:.0f}\n"
+                                
+                                # Original dimensions (if available)
+                                orig_radius = original.get("radius", 0) if original else 0
+                                
+                                past_lessons_text += f"  Circle {j}: x={x:.0f}, y={y:.0f}, radius={radius:.0f}px\n"
+                                
+                                if original and orig_radius > 0:
+                                    radius_diff = radius - orig_radius
+                                    radius_change_pct = (radius_diff / orig_radius * 100) if orig_radius > 0 else 0
+                                    if abs(radius_change_pct) > 10:  # Show if significant change
+                                        past_lessons_text += f"    → I {'enlarged' if radius_diff > 0 else 'shrunk'} your circle by {abs(radius_diff):.0f}px ({abs(radius_change_pct):.1f}%) - this shows the fractal marker should be {'larger' if radius_diff > 0 else 'smaller'} to emphasize the pattern\n"
                     
                     if lesson.corrected_reasoning:
                         past_lessons_text += f"\nI corrected your reasoning: \"{lesson.corrected_reasoning}\"\n"
+
+                    # Phase 4D.2: Include Q&A from past lessons
+                    if lesson.answers and isinstance(lesson.answers, list) and len(lesson.answers) > 0:
+                        past_lessons_text += f"\n💬 TEACHING Q&A (I answered your questions to explain my strategy):\n"
+                        for qa in lesson.answers:
+                            if isinstance(qa, dict) and qa.get('answer'):
+                                question = qa.get('question_text', 'Question')
+                                answer = qa.get('answer', '')
+                                context = qa.get('context', '')
+                                past_lessons_text += f"  Q: {question}\n"
+                                past_lessons_text += f"  A: {answer}\n"
+                                if context:
+                                    past_lessons_text += f"     (Context: {context})\n"
+                                past_lessons_text += "\n"
+                        past_lessons_text += "  → Use my answers above to understand WHY I placed annotations where I did\n"
+                        past_lessons_text += "  → My reasoning and strategy are explained in these answers\n"
+
+                    # Show deleted and added annotations
+                    deleted_count = 0
+                    added_count = 0
+                    
+                    # Count deletions from deleted_annotations field
+                    if lesson.deleted_annotations:
+                        deleted_count = len(lesson.deleted_annotations)
+                    
+                    # Count additions (annotations with no original, marked as added)
+                    if lesson.corrected_annotations:
+                        for ann_type in ['bos', 'poi', 'circles']:
+                            ann_list = lesson.corrected_annotations.get(ann_type, [])
+                            for ann in ann_list:
+                                if isinstance(ann, dict):
+                                    is_added = ann.get('added', False)
+                                    has_original = ann.get('original') is not None
+                                    if is_added and not has_original:
+                                        added_count += 1
+                    
+                    if deleted_count > 0:
+                        past_lessons_text += f"\n🗑️ DELETIONS: I deleted {deleted_count} annotation(s) you created that SHOULD NOT EXIST:\n"
+                        past_lessons_text += "  → These annotations were hallucinations or incorrect identifications\n"
+                        past_lessons_text += "  → DO NOT create similar annotations - they don't represent valid patterns\n"
+                        
+                    if added_count > 0:
+                        past_lessons_text += f"\n➕ ADDITIONS: I added {added_count} annotation(s) that you MISSED:\n"
+                        past_lessons_text += "  → These annotations should have been identified but weren't in your initial analysis\n"
+                        past_lessons_text += "  → Learn to identify these patterns/structures that you overlooked\n"
                     
                     past_lessons_text += "\n"
                 
-                past_lessons_text += "CRITICAL INSTRUCTIONS:\n"
-                past_lessons_text += "1. These are the EXACT coordinates I corrected your annotations to on this SAME chart\n"
-                past_lessons_text += "2. You MUST place your annotations at SIMILAR positions (within 50-100 pixels)\n"
-                past_lessons_text += "3. If I corrected circles to mark fractals, place circles at those same fractal points\n"
-                past_lessons_text += "4. If I corrected BOS lines, place BOS lines at those same price levels and time ranges\n"
-                past_lessons_text += "5. Read my reasoning corrections carefully - they explain WHY I made those corrections\n"
-                past_lessons_text += "6. DO NOT make the same mistakes again! Learn from these corrections!\n"
+                past_lessons_text += "🎯 LEARNING FROM CORRECTIONS - FOCUS ON LOGIC, PATTERNS, AND DIMENSIONS:\n"
+                past_lessons_text += f"1. The coordinates above show WHERE I placed annotations on this chart (image size: {image_width}x{image_height} pixels)\n"
+                past_lessons_text += "2. The DIMENSIONS (length, width, height, radius) show HOW MUCH of the chart each annotation should cover\n"
+                past_lessons_text += "3. MORE IMPORTANTLY: Focus on LEARNING THE LOGIC and PATTERNS from my corrections, not just copying exact coordinates\n"
+                past_lessons_text += "4. Understand WHY I placed annotations at those positions AND sizes:\n"
+                past_lessons_text += "   - What price levels did I mark? (e.g., BOS at 1.169, circles at fractals)\n"
+                past_lessons_text += "   - What time periods did I mark? (e.g., BOS spanning from Oct 28 9:20 to retest)\n"
+                past_lessons_text += "   - How much area did I mark? (e.g., POI covering 5% of chart width means it spans a specific time range)\n"
+                past_lessons_text += "   - What patterns did I identify? (e.g., swing highs, fractals, structure breaks)\n"
+                past_lessons_text += "5. If I extended/shortened a BOS line or resized a POI, understand WHY:\n"
+                past_lessons_text += "   - Extended BOS = structure break spans a longer time period (from initial break to confirmation)\n"
+                past_lessons_text += "   - Wider POI = zone covers multiple price levels or a longer accumulation period\n"
+                past_lessons_text += "   - Larger circle = emphasize a more significant fractal or turning point\n"
+                past_lessons_text += "6. Read my reasoning corrections carefully - they explain the LOGIC behind my corrections\n"
+                past_lessons_text += "7. Use the corrected coordinates AND dimensions as GUIDANCE to understand the approximate positions and scale\n"
+                past_lessons_text += "8. The goal is to learn to identify similar patterns AND their appropriate scale on future charts\n"
+                past_lessons_text += "9. Apply the same REASONING I used when making corrections to identify positions AND sizes on this chart\n"
         
         # Get retrieval service
         retrieval_service = get_retrieval_service()
@@ -360,7 +483,7 @@ async def analyze_chart(
                 n_results=5
             )
         
-        # Prepare context from similar trades - include actual annotations!
+        # Prepare context from similar trades - ENHANCED: Include corrections and reasoning!
         similar_trades_context = []
         for trade_data in similar_trades:
             trade_id = trade_data.get("trade_id")
@@ -375,7 +498,41 @@ async def analyze_chart(
                         "outcome": trade.outcome,
                         "distance": trade_data.get("distance")
                     }
-                    
+
+                    # Phase 4D.3: Include LESSONS (corrections, Q&A, reasoning) from this trade
+                    lessons = db.query(AILesson).filter(AILesson.trade_id == trade_id).order_by(AILesson.created_at.desc()).limit(1).all()
+                    if lessons and len(lessons) > 0:
+                        latest_lesson = lessons[0]
+                        context["has_corrections"] = True
+
+                        # Include user's reasoning if available
+                        if latest_lesson.corrected_reasoning:
+                            context["user_reasoning"] = latest_lesson.corrected_reasoning
+
+                        # Include Q&A answers to capture strategy
+                        if latest_lesson.answers and isinstance(latest_lesson.answers, list):
+                            qa_summary = []
+                            for qa in latest_lesson.answers[:3]:  # Top 3 Q&A
+                                if isinstance(qa, dict) and qa.get('answer'):
+                                    qa_summary.append(f"Q: {qa.get('question_text')} | A: {qa.get('answer')}")
+                            if qa_summary:
+                                context["qa_insights"] = qa_summary
+
+                        # Include deletion/addition counts to show patterns
+                        deleted_count = len(latest_lesson.deleted_annotations) if latest_lesson.deleted_annotations else 0
+                        added_count = 0
+                        if latest_lesson.corrected_annotations:
+                            for ann_type in ['bos', 'poi', 'circles']:
+                                ann_list = latest_lesson.corrected_annotations.get(ann_type, [])
+                                for ann in ann_list:
+                                    if isinstance(ann, dict) and ann.get('added', False) and not ann.get('original'):
+                                        added_count += 1
+
+                        if deleted_count > 0:
+                            context["deletions"] = f"User deleted {deleted_count} AI annotation(s) - they were incorrect/hallucinations"
+                        if added_count > 0:
+                            context["additions"] = f"User added {added_count} annotation(s) AI missed"
+
                     # Include actual annotation data if available
                     if annotation:
                         # Extract price levels from POI/BOS (more useful than coordinates)
@@ -384,7 +541,7 @@ async def analyze_chart(
                             for poi in annotation.poi_locations:
                                 if isinstance(poi, dict) and poi.get("price"):
                                     poi_prices.append(poi["price"])
-                        
+
                         bos_prices = []
                         if annotation.bos_locations:
                             for bos in annotation.bos_locations:
@@ -444,13 +601,32 @@ async def analyze_chart(
                 reference_annotations_text += "4. The goal is to learn to identify positions from the chart, not to copy my coordinates exactly\n"
         
         if similar_trades_context:
-            examples_text = "\n\nHere are examples of how I annotated SIMILAR trades (for reference):\n\n"
+            examples_text = "\n\n🎓 LEARNING FROM SIMILAR TRADES (RAG - Use these to understand my strategy):\n\n"
             for i, example in enumerate(similar_trades_context[:3], 1):  # Show top 3 examples
                 symbol = example.get("symbol", "Unknown")
                 direction = example.get("direction", "")
                 outcome = example.get("outcome", "")
                 examples_text += f"Example {i} - {symbol} {direction} {outcome}:\n"
-                
+
+                # Phase 4D.3: Include corrections and reasoning (NEW - helps AI learn patterns)
+                if example.get("has_corrections"):
+                    examples_text += "✨ I CORRECTED AI on this trade - learn from my corrections:\n"
+
+                    if example.get("user_reasoning"):
+                        examples_text += f"  - My reasoning: \"{example['user_reasoning']}\"\n"
+
+                    if example.get("qa_insights"):
+                        examples_text += "  - My Q&A explanations:\n"
+                        for qa in example["qa_insights"]:
+                            examples_text += f"    • {qa}\n"
+
+                    if example.get("deletions"):
+                        examples_text += f"  - ⚠️ {example['deletions']}\n"
+
+                    if example.get("additions"):
+                        examples_text += f"  - ✅ {example['additions']}\n"
+
+                # Original annotations
                 if example.get("annotations"):
                     ann = example["annotations"]
                     if ann.get("poi_prices"):
@@ -460,10 +636,17 @@ async def analyze_chart(
                         bos_str = ", ".join([str(p) for p in ann["bos_prices"]])
                         examples_text += f"- BOS price levels: {bos_str}\n"
                     if ann.get("notes"):
-                        examples_text += f"- My notes: \"{ann['notes']}\"\n"
+                        examples_text += f"- My original notes: \"{ann['notes']}\"\n"
                 else:
                     examples_text += "- (No annotations for this trade)\n"
                 examples_text += "\n"
+
+            examples_text += "🎯 KEY LEARNING: Use the corrections, Q&A, and reasoning above to understand:\n"
+            examples_text += "1. What patterns I identify (liquidity sweeps, structure breaks, fractals)\n"
+            examples_text += "2. Where I place POI/BOS (not random - specific price levels for specific reasons)\n"
+            examples_text += "3. What I delete (avoid hallucinations - don't mark every level)\n"
+            examples_text += "4. What I add (patterns I consistently identify that AI misses)\n"
+            examples_text += "5. My strategy reasoning (WHY I place annotations, not just WHERE)\n\n"
         
         # Build prompt for GPT-5 (include system instructions in the question)
         # Include image dimensions so AI can give accurate coordinates
@@ -569,15 +752,20 @@ Coordinates should be relative to the chart image dimensions (pixels).
         
         past_lessons_instruction = ""
         if past_lessons_text:
-            past_lessons_instruction = """🚨 CRITICAL - YOU HAVE BEEN CORRECTED ON THIS EXACT SAME CHART BEFORE! 🚨
-The past corrections above show you the EXACT coordinates I corrected your annotations to. You MUST:
-- Place annotations at those SAME positions (within 50-100 pixels)
-- Use those coordinates as your PRIMARY reference
-- DO NOT guess or estimate - use the corrected coordinates I provided
-- If I corrected circles to mark fractals at specific positions, place circles at those EXACT positions
-- If I corrected BOS lines to specific coordinates, place BOS lines at those EXACT coordinates
-- Read my reasoning corrections - they explain WHY I made those corrections
-- This is the SAME chart, so the coordinates should be nearly identical!"""
+            past_lessons_instruction = """🎯 LEARNING OPPORTUNITY - YOU HAVE BEEN CORRECTED ON THIS SAME CHART BEFORE!
+The past corrections above show you WHERE and WHY I corrected your annotations. Focus on LEARNING:
+- The LOGIC and PATTERNS I identified (price levels, time periods, chart structures)
+- The REASONING behind my corrections (read my reasoning corrections carefully!)
+- The APPROXIMATE positions I marked (use coordinates as guidance, but identify visually)
+- The PATTERNS to look for (swing highs, fractals, structure breaks, etc.)
+
+Your goal is to:
+1. Understand WHY I placed annotations at those positions
+2. Identify the SAME LOGICAL PATTERNS visually from the chart
+3. Apply the SAME REASONING I used when making corrections
+4. Learn to recognize similar patterns on future charts
+
+The coordinates are GUIDANCE, but the LOGIC is what matters. Focus on learning the patterns, not memorizing exact pixels!"""
         
         reference_instruction = ""
         if reference_annotations_text:
@@ -668,7 +856,10 @@ CRITICAL COORDINATE ACCURACY:
                     "reasoning": answer
                 }
         except Exception as e:
-            print(f"[AI Routes] Error calling GPT-5: {e}")
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"[AI Routes] ERROR calling GPT-5: {e}")
+            print(f"[AI Routes] Full traceback:\n{error_trace}")
             # Fallback: return empty annotations
             annotation_data = {
                 "poi": [],
@@ -677,7 +868,52 @@ CRITICAL COORDINATE ACCURACY:
                 "notes": f"Error analyzing chart: {str(e)}",
                 "reasoning": None
             }
-        
+
+        # Phase 4D.2: Generate teaching questions based on annotations
+        questions = []
+        try:
+            if annotation_data.get("poi") or annotation_data.get("bos") or annotation_data.get("circles"):
+                # Generate contextual questions about the annotations
+                question_prompt = f"""Based on the annotations I just created, generate 2-3 conversational questions to help me learn your trading strategy.
+
+Annotations created:
+- POI zones: {len(annotation_data.get('poi', []))}
+- BOS lines: {len(annotation_data.get('bos', []))}
+- Circles/Fractals: {len(annotation_data.get('circles', []))}
+
+Generate questions that are:
+1. Conversational and natural (not interrogative)
+2. About your reasoning (e.g., "Why did you place POI at this price level?")
+3. About patterns you identified (e.g., "What makes this BOS significant?")
+4. Optional - you can skip them if you want
+
+Return as JSON array:
+[
+  {{"id": "q1", "text": "Why did you place POI here instead of at the swing low?", "context": "poi"}},
+  {{"id": "q2", "text": "What confirmation did you use for the BOS line?", "context": "bos"}}
+]
+
+IMPORTANT: Only return the JSON array, nothing else."""
+
+                question_response = await client.create_response(
+                    question=question_prompt,
+                    image_base64=None,  # Text-only for question generation
+                    model="gpt-5-chat-latest",
+                    conversation_history=None
+                )
+
+                question_answer = question_response.get("answer", "")
+                import re
+                question_json_match = re.search(r'\[.*\]', question_answer, re.DOTALL)
+                if question_json_match:
+                    questions = json.loads(question_json_match.group())
+                    print(f"[AI Routes] Generated {len(questions)} teaching questions")
+                else:
+                    print(f"[AI Routes] No questions generated (AI response: {question_answer[:200]})")
+        except Exception as e:
+            print(f"[AI Routes] Warning: Failed to generate questions: {e}")
+            # Don't fail the request if question generation fails
+
         # Format response
         return AnalyzeChartResponse(
             success=True,
@@ -688,12 +924,17 @@ CRITICAL COORDINATE ACCURACY:
                 notes=annotation_data.get("notes")
             ),
             similar_trades=similar_trades_context,
-            reasoning=annotation_data.get("reasoning")
+            reasoning=annotation_data.get("reasoning"),
+            questions=questions if questions else None
         )
         
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"[AI Routes] CRITICAL ERROR in analyze_chart: {e}")
+        print(f"[AI Routes] Full traceback:\n{error_trace}")
         raise HTTPException(status_code=500, detail=f"Chart analysis failed: {str(e)}")
     finally:
         db.close()
@@ -713,25 +954,64 @@ async def save_lesson(request: SaveLessonRequest):
     try:
         db = SessionLocal()
         
-        # Create lesson record
+        # Phase 4D.3: Calculate accuracy score before saving
+        accuracy_metrics = calculate_annotation_accuracy(
+            ai_annotations=request.ai_annotations,
+            corrected_annotations=request.corrected_annotations,
+            deleted_annotations=request.deleted_annotations
+        )
+
+        accuracy_score = accuracy_metrics.get("overall_accuracy", 0.0)
+
+        print(f"[AI Routes] Calculated accuracy for trade {request.trade_id}:")
+        print(f"  Overall: {accuracy_score:.2%}")
+        print(f"  POI: {accuracy_metrics.get('poi_accuracy', 0):.2%}")
+        print(f"  BOS: {accuracy_metrics.get('bos_accuracy', 0):.2%}")
+        print(f"  Circles: {accuracy_metrics.get('circles_accuracy', 0):.2%}")
+        print(f"  Detection rate: {accuracy_metrics.get('detection_rate', 0):.2%}")
+        print(f"  Precision: {accuracy_metrics.get('precision', 0):.2%}")
+
+        # Create lesson record (Phase 4D.2: Include questions and answers, Phase 4D.3: Include accuracy)
         lesson = AILesson(
             trade_id=request.trade_id,
             ai_annotations=request.ai_annotations,
             corrected_annotations=request.corrected_annotations,
-            corrected_reasoning=request.corrected_reasoning
+            corrected_reasoning=request.corrected_reasoning,
+            deleted_annotations=request.deleted_annotations,
+            questions=request.questions,
+            answers=request.answers,
+            accuracy_score=accuracy_score  # Phase 4D.3
         )
-        
+
         db.add(lesson)
         db.commit()
         db.refresh(lesson)
 
-        # Update overall AI progress metrics (simple counter for now)
+        # Phase 4D.3: Update overall AI progress metrics with accuracy calculations
         progress = db.query(AIProgress).first()
         if not progress:
-            progress = AIProgress(total_lessons=1)
+            progress = AIProgress(
+                total_lessons=1,
+                poi_accuracy=accuracy_metrics.get("poi_accuracy", 0.0),
+                bos_accuracy=accuracy_metrics.get("bos_accuracy", 0.0),
+                setup_type_accuracy=0.0,  # TODO: Implement setup type accuracy
+                overall_accuracy=accuracy_score
+            )
             db.add(progress)
         else:
-            progress.total_lessons = (progress.total_lessons or 0) + 1
+            # Update running averages
+            total = (progress.total_lessons or 0) + 1
+            progress.total_lessons = total
+
+            # Calculate new running averages
+            old_poi = progress.poi_accuracy or 0.0
+            old_bos = progress.bos_accuracy or 0.0
+            old_overall = progress.overall_accuracy or 0.0
+
+            progress.poi_accuracy = (old_poi * (total - 1) + accuracy_metrics.get("poi_accuracy", 0.0)) / total
+            progress.bos_accuracy = (old_bos * (total - 1) + accuracy_metrics.get("bos_accuracy", 0.0)) / total
+            progress.overall_accuracy = (old_overall * (total - 1) + accuracy_score) / total
+
         db.commit()
         
         # Auto-index corrected annotations in Chroma for RAG (Phase 4D.1)
@@ -825,15 +1105,15 @@ async def delete_lessons(trade_id: Optional[str] = None):
 @router.get("/progress")
 async def get_ai_progress():
     """
-    Get AI learning progress metrics.
-    
+    Phase 4D.3: Get AI learning progress metrics with detailed history.
+
     Returns:
-        Dictionary with progress metrics (total lessons, accuracy scores, etc.)
+        Dictionary with progress metrics, accuracy trends, and recent performance
     """
     try:
         db = SessionLocal()
         from db.models import AIProgress
-        
+
         progress = db.query(AIProgress).first()
         if not progress:
             # Create default progress record
@@ -853,14 +1133,68 @@ async def get_ai_progress():
         if progress.total_lessons != lessons_count:
             progress.total_lessons = lessons_count
             db.commit()
- 
+
+        # Phase 4D.3: Get recent lessons for accuracy trend
+        recent_lessons = db.query(AILesson).order_by(AILesson.created_at.desc()).limit(20).all()
+
+        # Calculate accuracy trend (last 10 vs previous 10)
+        last_10_accuracy = 0.0
+        prev_10_accuracy = 0.0
+
+        if len(recent_lessons) >= 10:
+            last_10 = [l.accuracy_score for l in recent_lessons[:10] if l.accuracy_score is not None]
+            last_10_accuracy = sum(last_10) / len(last_10) if last_10 else 0.0
+
+            if len(recent_lessons) >= 20:
+                prev_10 = [l.accuracy_score for l in recent_lessons[10:20] if l.accuracy_score is not None]
+                prev_10_accuracy = sum(prev_10) / len(prev_10) if prev_10 else 0.0
+
+        improvement_rate = last_10_accuracy - prev_10_accuracy
+
+        # Build accuracy history (for line graph)
+        accuracy_history = []
+        for i, lesson in enumerate(reversed(recent_lessons)):  # Oldest to newest
+            if lesson.accuracy_score is not None:
+                accuracy_history.append({
+                    "lesson_number": lessons_count - len(recent_lessons) + i + 1,
+                    "accuracy": round(lesson.accuracy_score, 4),
+                    "trade_id": lesson.trade_id,
+                    "date": lesson.created_at.isoformat() if lesson.created_at else None
+                })
+
+        # Calculate milestones
+        milestones = {
+            "foundation": lessons_count >= 20,  # 20-30 trades
+            "intermediate": lessons_count >= 50 and progress.overall_accuracy >= 0.80,  # 50+ trades, 80%+ accuracy
+            "advanced": lessons_count >= 100 and progress.overall_accuracy >= 0.85,  # 100+ trades, 85%+ accuracy
+            "expert": lessons_count >= 200 and progress.overall_accuracy >= 0.90  # 200+ trades, 90%+ accuracy
+        }
+
+        # Determine current milestone
+        current_milestone = "getting_started"
+        if milestones["expert"]:
+            current_milestone = "expert"
+        elif milestones["advanced"]:
+            current_milestone = "advanced"
+        elif milestones["intermediate"]:
+            current_milestone = "intermediate"
+        elif milestones["foundation"]:
+            current_milestone = "foundation"
+
         return {
             "total_lessons": progress.total_lessons,
-            "poi_accuracy": progress.poi_accuracy,
-            "bos_accuracy": progress.bos_accuracy,
-            "setup_type_accuracy": progress.setup_type_accuracy,
-            "overall_accuracy": progress.overall_accuracy,
-            "updated_at": progress.updated_at.isoformat() if progress.updated_at else None
+            "poi_accuracy": round(progress.poi_accuracy or 0.0, 4),
+            "bos_accuracy": round(progress.bos_accuracy or 0.0, 4),
+            "setup_type_accuracy": round(progress.setup_type_accuracy or 0.0, 4),
+            "overall_accuracy": round(progress.overall_accuracy or 0.0, 4),
+            "updated_at": progress.updated_at.isoformat() if progress.updated_at else None,
+
+            # Phase 4D.3: New fields
+            "last_10_accuracy": round(last_10_accuracy, 4),
+            "improvement_rate": round(improvement_rate, 4),
+            "accuracy_history": accuracy_history,
+            "milestones": milestones,
+            "current_milestone": current_milestone
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get progress: {str(e)}")

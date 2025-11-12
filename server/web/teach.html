@@ -70,6 +70,17 @@
     .user-annotation {
       stroke-dasharray: none;
     }
+    
+    .tool-btn.active {
+      background: var(--accent) !important;
+      color: #111 !important;
+      font-weight: bold;
+    }
+    
+    .added-annotation {
+      stroke: #4caf50 !important;
+      stroke-width: 2 !important;
+    }
   </style>
 </head>
 <body>
@@ -77,9 +88,13 @@
     <h1>Visual Trade Copilot - Teach AI</h1>
     <nav>
       <a href="/app/">Trades</a>
+      <a href="/app/teach.html" class="active">Teach AI</a>
       <a href="/app/annotate.html">Annotate</a>
+      <a href="/app/progress.html">AI Progress</a>
+      <a href="/app/strategy.html">Strategy</a>
       <a href="/app/setups.html">Setups</a>
       <a href="/app/entry-methods.html">Entry Methods</a>
+      <a href="/app/analytics.html">Analytics</a>
     </nav>
   </header>
 
@@ -133,7 +148,27 @@
             <label for="show-user-annotations" style="color: var(--text); cursor: pointer;">Show My Annotations (Solid)</label>
           </div>
         </div>
+        
+        <!-- Drawing Tools -->
+        <div style="display: flex; gap: 8px; border-left: 1px solid #333; padding-left: 16px; margin-left: 16px;">
+          <button id="tool-poi" class="tool-btn" style="padding: 6px 12px; background: var(--panel); color: var(--text); border: 1px solid #333; border-radius: 4px; cursor: pointer;">
+            📦 POI
+          </button>
+          <button id="tool-bos" class="tool-btn" style="padding: 6px 12px; background: var(--panel); color: var(--text); border: 1px solid #333; border-radius: 4px; cursor: pointer;">
+            📏 BOS
+          </button>
+          <button id="tool-circle" class="tool-btn" style="padding: 6px 12px; background: var(--panel); color: var(--text); border: 1px solid #333; border-radius: 4px; cursor: pointer;">
+            ⭕ Circle
+          </button>
+          <button id="tool-select" class="tool-btn" style="padding: 6px 12px; background: var(--panel); color: var(--text); border: 1px solid #333; border-radius: 4px; cursor: pointer;">
+            👆 Select
+          </button>
+        </div>
+        
         <div style="margin-left: auto; display: flex; gap: 8px;">
+          <button id="delete-selected-btn" style="padding: 8px 16px; background: #ef5350; color: white; border: none; border-radius: 4px; cursor: pointer; display: none;">
+            🗑️ Delete Selected
+          </button>
           <button id="reset-zoom-btn" style="padding: 8px 16px; background: var(--panel); color: var(--text); border: 1px solid #333; border-radius: 4px; cursor: pointer;">
             🔍 Reset Zoom
           </button>
@@ -170,6 +205,13 @@
         <h3 style="color: var(--text); margin-bottom: 8px;">My Original Notes</h3>
         <div style="padding: 12px; background: var(--panel); border-radius: 6px; border: 1px solid #1f1f1f; color: var(--text); font-size: 14px; font-style: italic;" id="user-notes">
         </div>
+      </section>
+
+      <!-- Phase 4D.2: Interactive Teaching Questions -->
+      <section id="teaching-questions-section" style="display: none; margin-top: 16px;">
+        <h3 style="color: var(--text); margin-bottom: 8px;">💬 Teaching Questions (Optional)</h3>
+        <p style="color: var(--text-dim); font-size: 13px; margin-bottom: 12px;">The AI would like to learn more about your strategy. Answer these questions to help it understand your reasoning:</p>
+        <div id="questions-container"></div>
       </section>
     </div>
   </main>

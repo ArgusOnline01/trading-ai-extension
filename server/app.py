@@ -146,6 +146,12 @@ app.include_router(analytics_router)
 
 # Phase 4D: AI Learning System router
 app.include_router(ai_router)
+# Phase 4E: Strategy Documentation router
+from strategy.routes import router as strategy_router
+app.include_router(strategy_router)
+# Phase 4E: Chat routes with state tracking
+from chat.routes import router as chat_router
+app.include_router(chat_router)
 
 # Mount trades merge router (Phase 4D.2)
 app.include_router(trades_merge_router)

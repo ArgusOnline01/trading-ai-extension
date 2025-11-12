@@ -18,11 +18,24 @@
   };
   let similarTrades = [];
   let aiReasoning = '';
+  let aiQuestions = []; // Phase 4D.2: AI-generated questions
+  let userAnswers = {}; // Phase 4D.2: User's answers to questions
   let chartScale = 1; // Store the scale factor for coordinate conversion
   let userAnnotations = null; // Store user's original annotations
   let userAnnotationObjects = []; // Fabric.js objects for user annotations
   let annotationId = null;
   let hudEl = null;
+  
+  // Drawing state
+  let currentTool = null; // 'poi', 'bos', 'circle', or null
+  let isDrawing = false;
+  let startPoint = null;
+  let endPoint = null;
+  let previewRect = null;
+  let previewLine = null;
+  let previewCircle = null;
+  let deletedAIAnnotations = []; // Track which AI annotations were deleted
+  let addedAnnotations = { poi: [], bos: [], circles: [] }; // Track user-added annotations
 
   // Helper: convert viewport coordinates to unzoomed canvas coords, then to original-image units
   function toOriginalUnits(x, y) {
@@ -132,6 +145,13 @@
       $('show-user-annotations').addEventListener('change', toggleUserAnnotations);
       $('save-corrections-btn').addEventListener('click', saveCorrections);
       $('reset-zoom-btn').addEventListener('click', resetZoom);
+      
+      // Tool buttons
+      $('tool-poi').addEventListener('click', () => selectTool('poi'));
+      $('tool-bos').addEventListener('click', () => selectTool('bos'));
+      $('tool-circle').addEventListener('click', () => selectTool('circle'));
+      $('tool-select').addEventListener('click', () => selectTool(null));
+      $('delete-selected-btn').addEventListener('click', deleteSelected);
 
       loading.style.display = 'none';
       content.style.display = 'block';
@@ -234,6 +254,7 @@
       aiAnnotations = result.annotations || { poi: [], bos: [], circles: [] };
       similarTrades = result.similar_trades || [];
       aiReasoning = result.reasoning || '';
+      aiQuestions = result.questions || []; // Phase 4D.2: Store questions
 
       // Display AI annotations on chart
       displayAIAnnotations();
@@ -243,6 +264,9 @@
 
       // Display AI reasoning
       displayReasoning();
+
+      // Phase 4D.2: Display teaching questions
+      displayQuestions();
 
       $('analyze-btn').disabled = false;
       $('analyze-btn').textContent = '🔄 Re-analyze Chart';
@@ -498,7 +522,13 @@
         const x2 = (bos.x2 || 100) * scale;
         const y2 = (bos.y2 || 0) * scale;
         
-        console.log(`[TEACH] BOS ${idx}:`, { original: bos, scaled: { x1, y1, x2, y2 } });
+        console.log(`[TEACH] BOS ${idx} - Creating line:`, { 
+          original: bos, 
+          scale,
+          scaled: { x1, y1, x2, y2 },
+          imgSize: { w: canvas.originalImageWidth, h: canvas.originalImageHeight },
+          canvasSize: { w: canvas.width, h: canvas.height }
+        });
         
         const line = new fabric.Line([
           x1, y1, x2, y2
@@ -513,18 +543,30 @@
           // Keep rotation locked but allow endpoint scaling via controls
           lockRotation: true,
           lockScalingFlip: true,
-          perPixelTargetFind: true,
+          perPixelTargetFind: false, // Make entire bounding box clickable, not just stroke pixels
           strokeUniform: true,
           // Allow line to be rotated by dragging endpoints
           cornerStyle: 'circle',
           cornerSize: 10,
-          transparentCorners: false
+          transparentCorners: false,
+          // Add padding to increase hit area around the line
+          padding: 10
         });
         line.set('aiAnnotation', true);
         line.set('annotationType', 'bos');
         line.set('originalData', bos);
         canvas.add(line);
         aiAnnotationObjects.push(line);
+        
+        // Debug: Log what Fabric.js actually stored after creation
+        console.log(`[TEACH] BOS ${idx} - After creation:`, {
+          stored: { x1: line.x1, y1: line.y1, x2: line.x2, y2: line.y2 },
+          position: { left: line.left, top: line.top },
+          scale: { scaleX: line.scaleX, scaleY: line.scaleY },
+          origin: { originX: line.originX, originY: line.originY },
+          width: line.width,
+          height: line.height
+        });
 
         // No extra handles for now to avoid runtime instability
       });
@@ -561,32 +603,7 @@
       });
     }
 
-    // Draw user's BOS as a faint ghost reference (always visible to compare)
-    if (userAnnotations && userAnnotations.bos_locations && userAnnotations.bos_locations.length > 0) {
-      const srcW = userAnnotations._image_width || (canvas.originalImageWidth || 1);
-      const srcH = userAnnotations._image_height || (canvas.originalImageHeight || 1);
-      const dstW = canvas.originalImageWidth || 1;
-      const dstH = canvas.originalImageHeight || 1;
-      const rx = dstW / srcW;
-      const ry = dstH / srcH;
-      userAnnotations.bos_locations.forEach(bos => {
-        const gx1 = ((bos.x1 || 0) * rx) * scale;
-        const gy1 = ((bos.y1 || 0) * ry) * scale;
-        const gx2 = ((bos.x2 || 0) * rx) * scale;
-        const gy2 = ((bos.y2 || 0) * ry) * scale;
-        const ghost = new fabric.Line([gx1, gy1, gx2, gy2], {
-          stroke: '#9e9e9e',
-          strokeWidth: 1,
-          strokeDashArray: [3, 3],
-          opacity: 0.8,
-          selectable: false,
-          evented: false
-        });
-        canvas.add(ghost);
-        canvas.bringToFront(ghost);
-        aiAnnotationObjects.push(ghost);
-      });
-    }
+    // Ghost BOS line removed - user can see their annotations via "Show My Annotations" checkbox
 
     canvas.renderAll();
   }
@@ -639,6 +656,50 @@
     text.textContent = aiReasoning;
   }
 
+  // Phase 4D.2: Display interactive teaching questions
+  function displayQuestions() {
+    const section = $('teaching-questions-section');
+    const container = $('questions-container');
+
+    if (!aiQuestions || aiQuestions.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+
+    section.style.display = 'block';
+    container.innerHTML = '';
+
+    // Create question cards
+    aiQuestions.forEach((question, index) => {
+      const questionCard = document.createElement('div');
+      questionCard.style.cssText = 'margin-bottom: 16px; padding: 12px; background: var(--panel); border-radius: 6px; border: 1px solid #1f1f1f;';
+
+      const questionText = document.createElement('div');
+      questionText.style.cssText = 'color: var(--text); font-size: 14px; margin-bottom: 8px; font-weight: 500;';
+      questionText.textContent = `Q${index + 1}: ${question.text}`;
+
+      const answerTextarea = document.createElement('textarea');
+      answerTextarea.id = `answer-${question.id}`;
+      answerTextarea.rows = 3;
+      answerTextarea.placeholder = 'Your answer (optional)...';
+      answerTextarea.style.cssText = 'width: 100%; padding: 8px; background: var(--bg); color: var(--text); border: 1px solid #333; border-radius: 4px; font-size: 13px; font-family: inherit;';
+
+      // Restore previous answer if available
+      if (userAnswers[question.id]) {
+        answerTextarea.value = userAnswers[question.id];
+      }
+
+      // Save answer on input
+      answerTextarea.addEventListener('input', () => {
+        userAnswers[question.id] = answerTextarea.value.trim();
+      });
+
+      questionCard.appendChild(questionText);
+      questionCard.appendChild(answerTextarea);
+      container.appendChild(questionCard);
+    });
+  }
+
   async function saveCorrections() {
     try {
       // Get corrected reasoning if provided
@@ -675,22 +736,59 @@
             }
           });
         } else if (type === 'bos') {
-          // Absolute endpoints via transform matrix, then remove viewport transform
-          const p1 = new fabric.Point(obj.x1||0, obj.y1||0);
-          const p2 = new fabric.Point(obj.x2||0, obj.y2||0);
-          const m = obj.calcTransformMatrix();
-          const a1 = fabric.util.transformPoint(p1, m);
-          const a2 = fabric.util.transformPoint(p2, m);
-          const ou1 = toOriginalUnits(a1.x, a1.y);
-          const ou2 = toOriginalUnits(a2.x, a2.y);
-          console.log('[TEACH][SAVE BOS] raw->norm', { raw: { x1: a1.x, y1: a1.y, x2: a2.x, y2: a2.y }, norm: { x1: ou1.x, y1: ou1.y, x2: ou2.x, y2: ou2.y }, scale, img: { w: canvas.originalImageWidth, h: canvas.originalImageHeight } });
+          // Use bounding box approach (like POI) to get absolute canvas coordinates
+          // This avoids issues with calcTransformMatrix double-applying transforms
+          const bounds = obj.getBoundingRect(true);
+          
+          // For a line, the bounding box gives us the rectangular area it occupies
+          // We need to extract the actual line endpoints from this
+          // Assume horizontal or near-horizontal lines (BOS typically are)
+          const isHorizontal = Math.abs(bounds.width) > Math.abs(bounds.height);
+          
+          let canvasX1, canvasY1, canvasX2, canvasY2;
+          if (isHorizontal) {
+            // Horizontal line: endpoints are at left and right edges, vertically centered
+            canvasX1 = bounds.left;
+            canvasY1 = bounds.top + bounds.height / 2;
+            canvasX2 = bounds.left + bounds.width;
+            canvasY2 = bounds.top + bounds.height / 2;
+          } else {
+            // Vertical line: endpoints are at top and bottom edges, horizontally centered
+            canvasX1 = bounds.left + bounds.width / 2;
+            canvasY1 = bounds.top;
+            canvasX2 = bounds.left + bounds.width / 2;
+            canvasY2 = bounds.top + bounds.height;
+          }
+
+          // Convert from canvas coordinates to original image coordinates
+          const ou1 = toOriginalUnits(canvasX1, canvasY1);
+          const ou2 = toOriginalUnits(canvasX2, canvasY2);
+
+          // Clamp coordinates to image bounds
+          const imgW = canvas.originalImageWidth || 1;
+          const imgH = canvas.originalImageHeight || 1;
+          const clampedX1 = Math.max(0, Math.min(imgW, ou1.x));
+          const clampedY1 = Math.max(0, Math.min(imgH, ou1.y));
+          const clampedX2 = Math.max(0, Math.min(imgW, ou2.x));
+          const clampedY2 = Math.max(0, Math.min(imgH, ou2.y));
+
+          console.log('[TEACH][SAVE BOS] Bounding box method:', {
+            bounds: { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height },
+            isHorizontal,
+            canvasCoords: { x1: canvasX1, y1: canvasY1, x2: canvasX2, y2: canvasY2 },
+            originalUnits: { x1: ou1.x, y1: ou1.y, x2: ou2.x, y2: ou2.y },
+            clamped: { x1: clampedX1, y1: clampedY1, x2: clampedX2, y2: clampedY2 },
+            chartScale: canvas.chartScale || 1,
+            img: { w: imgW, h: imgH }
+          });
+
           corrections.bos.push({
             original: original,
             corrected: {
-              x1: ou1.x,
-              y1: ou1.y,
-              x2: ou2.x,
-              y2: ou2.y
+              x1: clampedX1,
+              y1: clampedY1,
+              x2: clampedX2,
+              y2: clampedY2
             }
           });
         } else if (type === 'circle') {
@@ -707,6 +805,82 @@
         }
       });
 
+      // Add user-added annotations to corrections
+      addedAnnotations.poi.forEach(poi => {
+        const bounds = poi.getBoundingRect(true);
+        const p1 = toOriginalUnits(bounds.left, bounds.top);
+        const p2 = toOriginalUnits(bounds.left + bounds.width, bounds.top + bounds.height);
+        const imgW = canvas.originalImageWidth || 1;
+        const imgH = canvas.originalImageHeight || 1;
+        corrections.poi.push({
+          original: null, // No original AI annotation
+          corrected: {
+            left: Math.max(0, Math.min(imgW, p1.x)),
+            top: Math.max(0, Math.min(imgH, p1.y)),
+            width: p2.x - p1.x,
+            height: p2.y - p1.y
+          },
+          added: true
+        });
+      });
+      
+      addedAnnotations.bos.forEach(bos => {
+        const bounds = bos.getBoundingRect(true);
+        const isHorizontal = Math.abs(bounds.width) > Math.abs(bounds.height);
+        let canvasX1, canvasY1, canvasX2, canvasY2;
+        if (isHorizontal) {
+          canvasX1 = bounds.left;
+          canvasY1 = bounds.top + bounds.height / 2;
+          canvasX2 = bounds.left + bounds.width;
+          canvasY2 = bounds.top + bounds.height / 2;
+        } else {
+          canvasX1 = bounds.left + bounds.width / 2;
+          canvasY1 = bounds.top;
+          canvasX2 = bounds.left + bounds.width / 2;
+          canvasY2 = bounds.top + bounds.height;
+        }
+        const ou1 = toOriginalUnits(canvasX1, canvasY1);
+        const ou2 = toOriginalUnits(canvasX2, canvasY2);
+        const imgW = canvas.originalImageWidth || 1;
+        const imgH = canvas.originalImageHeight || 1;
+        corrections.bos.push({
+          original: null,
+          corrected: {
+            x1: Math.max(0, Math.min(imgW, ou1.x)),
+            y1: Math.max(0, Math.min(imgH, ou1.y)),
+            x2: Math.max(0, Math.min(imgW, ou2.x)),
+            y2: Math.max(0, Math.min(imgH, ou2.y))
+          },
+          added: true
+        });
+      });
+      
+      addedAnnotations.circles.forEach(circle => {
+        const center = circle.getCenterPoint();
+        const ou = toOriginalUnits(center.x, center.y);
+        const rCanvas = (circle.radius * (circle.scaleX || 1));
+        const r = rCanvas / scale;
+        const imgW = canvas.originalImageWidth || 1;
+        const imgH = canvas.originalImageHeight || 1;
+        corrections.circles.push({
+          original: null,
+          corrected: {
+            x: Math.max(0, Math.min(imgW, ou.x)),
+            y: Math.max(0, Math.min(imgH, ou.y)),
+            radius: r
+          },
+          added: true
+        });
+      });
+
+      // Phase 4D.2: Collect answers to teaching questions
+      const answersArray = aiQuestions.map(q => ({
+        question_id: q.id,
+        question_text: q.text,
+        answer: userAnswers[q.id] || '',
+        context: q.context || ''
+      })).filter(a => a.answer.trim() !== ''); // Only include answered questions
+
       // Save corrections to backend
         const response = await fetch('/ai/lessons', {
         method: 'POST',
@@ -717,7 +891,10 @@
           trade_id: tradeId,
           ai_annotations: aiAnnotations,
           corrected_annotations: corrections,
-          corrected_reasoning: correctedReasoning || null
+          corrected_reasoning: correctedReasoning || null,
+          deleted_annotations: deletedAIAnnotations,
+          questions: aiQuestions.length > 0 ? aiQuestions : null, // Phase 4D.2
+          answers: answersArray.length > 0 ? answersArray : null // Phase 4D.2
         })
       });
 
@@ -732,62 +909,340 @@
     }
   }
 
+  // ===== DRAWING & DELETION FUNCTIONS =====
+  
+  function selectTool(tool) {
+    currentTool = tool;
+    
+    // Update button styles
+    document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+    if (tool === 'poi') $('tool-poi').classList.add('active');
+    else if (tool === 'bos') $('tool-bos').classList.add('active');
+    else if (tool === 'circle') $('tool-circle').classList.add('active');
+    else $('tool-select').classList.add('active');
+    
+    // Update canvas selection mode
+    if (canvas) {
+      canvas.selection = (tool === null);
+      canvas.isDrawingMode = false;
+      
+      // Set all objects to be selectable/evented based on tool
+      canvas.forEachObject(obj => {
+        if (tool === null) {
+          // Select mode: make everything selectable
+          obj.selectable = true;
+          obj.evented = true;
+        } else {
+          // Drawing mode: make things non-selectable
+          obj.selectable = false;
+          obj.evented = false;
+        }
+      });
+      
+      canvas.discardActiveObject();
+      canvas.requestRenderAll();
+    }
+  }
+  
+  function deleteSelected() {
+    if (!canvas) return;
+    const active = canvas.getActiveObject();
+    if (!active) {
+      alert('No annotation selected. Click on an annotation first, then click Delete.');
+      return;
+    }
+    
+    const annotationType = active.get('annotationType');
+    const isAIAnnotation = active.get('isAIAnnotation');
+    
+    if (isAIAnnotation) {
+      // Track deleted AI annotation for learning
+      const originalData = active.get('originalData');
+      if (originalData) {
+        deletedAIAnnotations.push({
+          type: annotationType,
+          data: originalData
+        });
+      }
+      
+      // Remove from AI annotations tracking
+      aiAnnotationObjects = aiAnnotationObjects.filter(obj => obj !== active);
+    } else {
+      // If it's a user-added annotation, remove from addedAnnotations
+      const idx = addedAnnotations[annotationType]?.indexOf(active);
+      if (idx !== undefined && idx >= 0) {
+        addedAnnotations[annotationType].splice(idx, 1);
+      }
+    }
+    
+    canvas.remove(active);
+    canvas.discardActiveObject();
+    canvas.requestRenderAll();
+    updateDeleteButtonVisibility();
+  }
+  
+  function updateDeleteButtonVisibility() {
+    const active = canvas?.getActiveObject();
+    const deleteBtn = $('delete-selected-btn');
+    if (deleteBtn) {
+      deleteBtn.style.display = active ? 'block' : 'none';
+    }
+  }
+  
+  function getPointer(opt) {
+    return canvas.getPointer(opt.e);
+  }
+  
+  function handleMouseDown(opt) {
+    if (!currentTool || !canvas) return;
+    isDrawing = true;
+    const pointer = getPointer(opt);
+    startPoint = { x: pointer.x, y: pointer.y };
+    
+    // Create preview shape
+    if (currentTool === 'poi') {
+      previewRect = new fabric.Rect({
+        left: startPoint.x,
+        top: startPoint.y,
+        width: 0,
+        height: 0,
+        fill: 'rgba(76, 175, 80, 0.1)',
+        stroke: '#4caf50',
+        strokeWidth: 2,
+        selectable: false,
+        evented: false
+      });
+      canvas.add(previewRect);
+    } else if (currentTool === 'bos') {
+      previewLine = new fabric.Line([startPoint.x, startPoint.y, startPoint.x, startPoint.y], {
+        stroke: '#4caf50',
+        strokeWidth: 2,
+        selectable: false,
+        evented: false
+      });
+      canvas.add(previewLine);
+    } else if (currentTool === 'circle') {
+      previewCircle = new fabric.Circle({
+        left: startPoint.x,
+        top: startPoint.y,
+        radius: 0,
+        fill: 'rgba(76, 175, 80, 0.1)',
+        stroke: '#4caf50',
+        strokeWidth: 2,
+        originX: 'center',
+        originY: 'center',
+        selectable: false,
+        evented: false
+      });
+      canvas.add(previewCircle);
+    }
+  }
+  
+  function handleMouseMove(opt) {
+    if (!isDrawing || !canvas || !currentTool) return;
+    const pointer = getPointer(opt);
+    endPoint = { x: pointer.x, y: pointer.y };
+    
+    if (currentTool === 'poi' && previewRect) {
+      const left = Math.min(startPoint.x, endPoint.x);
+      const top = Math.min(startPoint.y, endPoint.y);
+      const width = Math.abs(endPoint.x - startPoint.x);
+      const height = Math.abs(endPoint.y - startPoint.y);
+      previewRect.set({ left, top, width, height });
+      canvas.renderAll();
+    } else if (currentTool === 'bos' && previewLine) {
+      previewLine.set({ x2: endPoint.x, y2: endPoint.y });
+      canvas.renderAll();
+    } else if (currentTool === 'circle' && previewCircle) {
+      const dx = endPoint.x - startPoint.x;
+      const dy = endPoint.y - startPoint.y;
+      const r = Math.sqrt(dx * dx + dy * dy);
+      previewCircle.set({ radius: r });
+      canvas.renderAll();
+    }
+  }
+  
+  function handleMouseUp(opt) {
+    if (!isDrawing || !canvas || !currentTool) return;
+    isDrawing = false;
+    
+    // Finalize creation
+    if (currentTool === 'poi' && previewRect) {
+      const rect = previewRect;
+      previewRect = null;
+      if (rect.width > 10 && rect.height > 10) {
+        createAddedPOI(rect.left, rect.top, rect.width, rect.height);
+      }
+      canvas.remove(rect);
+    } else if (currentTool === 'bos' && previewLine) {
+      const line = previewLine;
+      previewLine = null;
+      const length = Math.sqrt(Math.pow(line.x2 - line.x1, 2) + Math.pow(line.y2 - line.y1, 2));
+      if (length > 20) {
+        createAddedBOS(line.x1, line.y1, line.x2, line.y2);
+      }
+      canvas.remove(line);
+    } else if (currentTool === 'circle' && previewCircle) {
+      const circ = previewCircle;
+      previewCircle = null;
+      if (circ.radius > 5) {
+        createAddedCircle(circ.left, circ.top, circ.radius);
+      }
+      canvas.remove(circ);
+    }
+    
+    canvas.renderAll();
+  }
+  
+  function createAddedPOI(left, top, width, height) {
+    const poi = new fabric.Rect({
+      left,
+      top,
+      width,
+      height,
+      fill: 'rgba(76, 175, 80, 0.1)',
+      stroke: '#4caf50',
+      strokeWidth: 2,
+      selectable: true,
+      hasControls: true,
+      annotationType: 'poi',
+      isAIAnnotation: false,
+      isAddedAnnotation: true
+    });
+    
+    canvas.add(poi);
+    addedAnnotations.poi.push(poi);
+    selectTool(null); // Switch back to select mode
+  }
+  
+  function createAddedBOS(x1, y1, x2, y2) {
+    const bos = new fabric.Line([x1, y1, x2, y2], {
+      stroke: '#4caf50',
+      strokeWidth: 2,
+      selectable: true,
+      hasControls: true,
+      lockScalingY: true,
+      lockRotation: true,
+      annotationType: 'bos',
+      isAIAnnotation: false,
+      isAddedAnnotation: true
+    });
+    
+    canvas.add(bos);
+    addedAnnotations.bos.push(bos);
+    selectTool(null); // Switch back to select mode
+  }
+  
+  function createAddedCircle(centerX, centerY, radius) {
+    const circle = new fabric.Circle({
+      left: centerX,
+      top: centerY,
+      radius,
+      fill: 'rgba(76, 175, 80, 0.1)',
+      stroke: '#4caf50',
+      strokeWidth: 2,
+      originX: 'center',
+      originY: 'center',
+      selectable: true,
+      hasControls: true,
+      annotationType: 'circle',
+      isAIAnnotation: false,
+      isAddedAnnotation: true
+    });
+    
+    canvas.add(circle);
+    addedAnnotations.circles.push(circle);
+    selectTool(null); // Switch back to select mode
+  }
+
   function setupCanvasHandlers() {
     if (!canvas) return;
     canvas.on('object:moving', updateHUD);
     canvas.on('object:scaling', updateHUD);
     canvas.on('object:modified', updateHUD);
-    canvas.on('selection:created', updateHUD);
-    canvas.on('selection:updated', updateHUD);
-    canvas.on('selection:cleared', () => { if (hudEl) hudEl.innerHTML = '<strong>Coordinates</strong><br/>coords: -'; });
+    canvas.on('selection:created', () => {
+      updateHUD();
+      updateDeleteButtonVisibility();
+    });
+    canvas.on('selection:updated', () => {
+      updateHUD();
+      updateDeleteButtonVisibility();
+    });
+    canvas.on('selection:cleared', () => {
+      if (hudEl) hudEl.innerHTML = '<strong>Coordinates</strong><br/>coords: -';
+      updateDeleteButtonVisibility();
+    });
+    
+    // Drawing handlers
+    canvas.on('mouse:down', handleMouseDown);
+    canvas.on('mouse:move', handleMouseMove);
+    canvas.on('mouse:up', handleMouseUp);
+    
+    // Keyboard handler for delete key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        const active = canvas.getActiveObject();
+        if (active && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') {
+          e.preventDefault();
+          deleteSelected();
+        }
+      }
+    });
   }
 
   function updateHUD() {
     if (!hudEl) return;
     const objs = canvas.getActiveObjects();
-    const scale = canvas.chartScale || 1;
     if (!objs || objs.length === 0) { hudEl.innerHTML = '<strong>Coordinates</strong><br/>coords: -'; return; }
     const obj = objs[0];
-    let text = `scale=${scale.toFixed(6)} | img=${(canvas.originalImageWidth||0)}x${(canvas.originalImageHeight||0)}`;
     const type = obj.get('annotationType') || obj.type;
-    text += ` | type=${type}`;
+    let text = `type=${type}`;
     if (type === 'circle') {
       const center = obj.getCenterPoint();
       const ou = toOriginalUnits(center.x, center.y);
-      const rCanvas = (obj.radius * (obj.scaleX || 1));
-      const r = rCanvas / scale;
-      text += ` | x=${ou.x.toFixed(1)} y=${ou.y.toFixed(1)} r=${r.toFixed(1)}`;
+      const current = {
+        x: ou.x.toFixed(1),
+        y: ou.y.toFixed(1),
+        r: ((obj.radius * (obj.scaleX || 1)) / (canvas.chartScale || 1)).toFixed(1)
+      };
+      text += ` | current x=${current.x} y=${current.y} r=${current.r}`;
     } else if (type === 'poi' || obj.type === 'rect') {
-      // Use bounding rect and remove viewport transform
       const br = obj.getBoundingRect(true);
       const p1 = toOriginalUnits(br.left, br.top);
       const p2 = toOriginalUnits(br.left + br.width, br.top + br.height);
-      const w = (p2.x - p1.x);
-      const h = (p2.y - p1.y);
-      text += ` | left=${p1.x.toFixed(1)} top=${p1.y.toFixed(1)} w=${w.toFixed(1)} h=${h.toFixed(1)}`;
+      const current = {
+        left: p1.x.toFixed(1),
+        top: p1.y.toFixed(1),
+        w: (p2.x - p1.x).toFixed(1),
+        h: (p2.y - p1.y).toFixed(1)
+      };
+      text += ` | current left=${current.left} top=${current.top} w=${current.w} h=${current.h}`;
     } else if (type === 'bos' || obj.type === 'line') {
-      // Compute endpoints and remove viewport transform (zoom/pan)
-      const p1 = new fabric.Point(obj.x1||0, obj.y1||0);
-      const p2 = new fabric.Point(obj.x2||0, obj.y2||0);
-      const m = obj.calcTransformMatrix();
-      const a1 = fabric.util.transformPoint(p1, m);
-      const a2 = fabric.util.transformPoint(p2, m);
-      const ou1 = toOriginalUnits(a1.x, a1.y);
-      const ou2 = toOriginalUnits(a2.x, a2.y);
-      text += ` | x1=${ou1.x.toFixed(1)} y1=${ou1.y.toFixed(1)} x2=${ou2.x.toFixed(1)} y2=${ou2.y.toFixed(1)}`;
-      // Percent readout relative to image dims
-      const px1 = (ou1.x / (canvas.originalImageWidth||1));
-      const px2 = (ou2.x / (canvas.originalImageWidth||1));
-      text += ` | x%=(${px1.toFixed(4)},${px2.toFixed(4)})`;
-      text += ` | raw=(${a1.x.toFixed(1)},${a1.y.toFixed(1)})→(${a2.x.toFixed(1)},${a2.y.toFixed(1)})`;
-      // If user's BOS exists, show its percent for comparison
-      if (userAnnotations && userAnnotations.bos_locations && userAnnotations.bos_locations.length > 0) {
-        const ub = userAnnotations.bos_locations[0];
-        const srcW = userAnnotations._image_width || (canvas.originalImageWidth || 1);
-        const up1 = (ub.x1 || 0) / srcW;
-        const up2 = (ub.x2 || 0) / srcW;
-        text += ` | user x%=(${up1.toFixed(4)},${up2.toFixed(4)})`;
-      }
+      const centerX = obj.left || 0;
+      const centerY = obj.top || 0;
+      const scaleX = obj.scaleX || 1;
+      const scaleY = obj.scaleY || 1;
+
+      // Compute absolute canvas coordinates by adding center position to scaled relative endpoints
+      const absX1 = centerX + (obj.x1 || 0) * scaleX;
+      const absY1 = centerY + (obj.y1 || 0) * scaleY;
+      const absX2 = centerX + (obj.x2 || 0) * scaleX;
+      const absY2 = centerY + (obj.y2 || 0) * scaleY;
+
+      // Convert from canvas coordinates to original image coordinates
+      const ou1 = toOriginalUnits(absX1, absY1);
+      const ou2 = toOriginalUnits(absX2, absY2);
+
+      // Clamp to image bounds for display (same as what will be saved)
+      const imgW = canvas.originalImageWidth || 1;
+      const imgH = canvas.originalImageHeight || 1;
+      const current = {
+        x1: Math.max(0, Math.min(imgW, ou1.x)).toFixed(1),
+        y1: Math.max(0, Math.min(imgH, ou1.y)).toFixed(1),
+        x2: Math.max(0, Math.min(imgW, ou2.x)).toFixed(1),
+        y2: Math.max(0, Math.min(imgH, ou2.y)).toFixed(1)
+      };
+      text += ` | current x1=${current.x1} y1=${current.y1} x2=${current.x2} y2=${current.y2}`;
     }
     // If AI original is attached
     const original = obj.get('originalData');

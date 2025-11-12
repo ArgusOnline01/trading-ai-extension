@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Visual Trade Copilot - Strategy Documentation</title>
+  <link rel="stylesheet" href="/app/styles.css" />
+  <style>
+    .strategy-form {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    
+    .form-section {
+      background: var(--panel);
+      border: 1px solid #1f1f1f;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    
+    .form-section h2 {
+      margin-top: 0;
+      margin-bottom: 16px;
+      color: var(--accent);
+      font-size: 20px;
+    }
+    
+    .form-group {
+      margin-bottom: 16px;
+    }
+    
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--text);
+      font-weight: 500;
+    }
+    
+    .form-group input,
+    .form-group textarea {
+      width: 100%;
+      padding: 10px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+    }
+    
+    .form-group textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+    
+    .form-group small {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    
+    .json-editor {
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      min-height: 150px;
+    }
+    
+    .btn {
+      padding: 12px 24px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    
+    .btn:hover {
+      background: #4a9eff;
+    }
+    
+    .btn-secondary {
+      background: #444;
+    }
+    
+    .btn-secondary:hover {
+      background: #555;
+    }
+    
+    .button-group {
+      display: flex;
+      gap: 12px;
+      margin-top: 24px;
+    }
+    
+    .existing-strategy {
+      background: var(--panel);
+      border: 1px solid #1f1f1f;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    
+    .existing-strategy h3 {
+      margin-top: 0;
+      color: var(--accent);
+    }
+    
+    .strategy-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Visual Trade Copilot</h1>
+    <nav>
+      <a href="/app/">Trades</a>
+      <a href="/app/teach.html">Teach AI</a>
+      <a href="/app/annotate.html">Annotate</a>
+      <a href="/app/progress.html">AI Progress</a>
+      <a href="/app/setups.html">Setups</a>
+      <a href="/app/entry-methods.html">Entry Methods</a>
+      <a href="/app/analytics.html">Analytics</a>
+      <a href="/app/strategy.html" class="active">Strategy</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="strategy-form">
+      <h1 style="margin-bottom: 24px;">Strategy Documentation</h1>
+      <p style="color: var(--muted); margin-bottom: 24px;">
+        Document your trading strategy so the AI can understand what to look for when suggesting entries.
+        This information will be used to provide better entry suggestions.
+      </p>
+
+      <!-- Existing Strategies -->
+      <div id="existing-strategies"></div>
+
+      <!-- Strategy Form -->
+      <div class="form-section">
+        <h2>Create/Update Strategy</h2>
+        <form id="strategy-form">
+          <div class="form-group">
+            <label for="strategy-name">Strategy Name *</label>
+            <input type="text" id="strategy-name" required placeholder="e.g., Smart Money Concepts - Bullish Setup" />
+          </div>
+
+          <div class="form-group">
+            <label for="strategy-description">Description</label>
+            <textarea id="strategy-description" placeholder="Brief description of your trading strategy"></textarea>
+          </div>
+
+          <div class="form-section" style="margin-top: 20px;">
+            <h2>Setup Definitions</h2>
+            <div class="form-group">
+              <label for="setup-definitions">POI, BOS, Fractals Definitions (JSON)</label>
+              <textarea id="setup-definitions" class="json-editor" placeholder='{"POI": "Point of Interest - key price levels", "BOS": "Break of Structure - horizontal line marking structure break", "Fractals": "Swing highs/lows marked with circles"}'></textarea>
+              <small>Define what POI, BOS, and fractals mean in your strategy</small>
+            </div>
+          </div>
+
+          <div class="form-section" style="margin-top: 20px;">
+            <h2>Entry Methods</h2>
+            <div class="form-group">
+              <label for="entry-methods">Entry Methods You Use (JSON)</label>
+              <textarea id="entry-methods" class="json-editor" placeholder='{"50%_of_zone": "Enter at 50% retracement of POI zone", "IFVG": "Enter when inverse fair value gap is filled", "POI_retest": "Enter on retest of POI level"}'></textarea>
+              <small>List the entry methods you commonly use</small>
+            </div>
+          </div>
+
+          <div class="form-section" style="margin-top: 20px;">
+            <h2>Stop Loss Rules</h2>
+            <div class="form-group">
+              <label for="stop-loss-rules">Stop Loss Rules (JSON)</label>
+              <textarea id="stop-loss-rules" class="json-editor" placeholder='{"below_POI": "Place stop loss below POI level", "below_BOS": "Place stop loss below BOS level", "fixed_pips": "Use fixed pip stop loss (e.g., 50 pips)"}'></textarea>
+              <small>Define your stop loss placement rules</small>
+            </div>
+          </div>
+
+          <div class="form-section" style="margin-top: 20px;">
+            <h2>Good Entry Criteria</h2>
+            <div class="form-group">
+              <label for="good-entry-criteria">What Makes a Good Entry (JSON)</label>
+              <textarea id="good-entry-criteria" class="json-editor" placeholder='{"liquidity_sweep": "Price sweeps liquidity before entry", "IFVG_present": "Inverse fair value gap is present", "structure_confirmed": "Structure break is confirmed"}'></textarea>
+              <small>List conditions that make an entry good</small>
+            </div>
+          </div>
+
+          <div class="form-section" style="margin-top: 20px;">
+            <h2>Bad Entry Criteria</h2>
+            <div class="form-group">
+              <label for="bad-entry-criteria">What Makes a Bad Entry (JSON)</label>
+              <textarea id="bad-entry-criteria" class="json-editor" placeholder='{"no_liquidity_sweep": "No liquidity sweep occurred", "against_trend": "Entry is against the overall trend", "weak_structure": "Structure break is not confirmed"}'></textarea>
+              <small>List conditions that make an entry bad</small>
+            </div>
+          </div>
+
+          <div class="button-group">
+            <button type="submit" class="btn">Save Strategy</button>
+            <button type="button" class="btn btn-secondary" id="clear-form">Clear Form</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const API_BASE = 'http://127.0.0.1:8765';
+
+    // Load existing strategies
+    async function loadStrategies() {
+      try {
+        const res = await fetch(`${API_BASE}/strategy`);
+        const strategies = await res.json();
+        
+        const container = document.getElementById('existing-strategies');
+        if (strategies.length === 0) {
+          container.innerHTML = '';
+          return;
+        }
+        
+        container.innerHTML = '<h2 style="margin-bottom: 16px;">Existing Strategies</h2>';
+        strategies.forEach(strategy => {
+          const div = document.createElement('div');
+          div.className = 'existing-strategy';
+          div.innerHTML = `
+            <h3>${strategy.name}</h3>
+            ${strategy.description ? `<p style="color: var(--muted);">${strategy.description}</p>` : ''}
+            <div class="strategy-actions">
+              <button class="btn btn-secondary" onclick="loadStrategy(${strategy.id})">Edit</button>
+              <button class="btn btn-secondary" onclick="deleteStrategy(${strategy.id})">Delete</button>
+            </div>
+          `;
+          container.appendChild(div);
+        });
+      } catch (error) {
+        console.error('Failed to load strategies:', error);
+      }
+    }
+
+    // Load a strategy for editing
+    let editingId = null;
+    async function loadStrategy(id) {
+      try {
+        const res = await fetch(`${API_BASE}/strategy/${id}`);
+        const strategy = await res.json();
+        
+        editingId = id;
+        document.getElementById('strategy-name').value = strategy.name || '';
+        document.getElementById('strategy-description').value = strategy.description || '';
+        document.getElementById('setup-definitions').value = JSON.stringify(strategy.setup_definitions || {}, null, 2);
+        document.getElementById('entry-methods').value = JSON.stringify(strategy.entry_methods || {}, null, 2);
+        document.getElementById('stop-loss-rules').value = JSON.stringify(strategy.stop_loss_rules || {}, null, 2);
+        document.getElementById('good-entry-criteria').value = JSON.stringify(strategy.good_entry_criteria || {}, null, 2);
+        document.getElementById('bad-entry-criteria').value = JSON.stringify(strategy.bad_entry_criteria || {}, null, 2);
+        
+        document.querySelector('button[type="submit"]').textContent = 'Update Strategy';
+      } catch (error) {
+        console.error('Failed to load strategy:', error);
+        alert('Failed to load strategy');
+      }
+    }
+
+    // Delete a strategy
+    async function deleteStrategy(id) {
+      if (!confirm('Are you sure you want to delete this strategy?')) return;
+      
+      try {
+        const res = await fetch(`${API_BASE}/strategy/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+          loadStrategies();
+          alert('Strategy deleted');
+        } else {
+          throw new Error('Delete failed');
+        }
+      } catch (error) {
+        console.error('Failed to delete strategy:', error);
+        alert('Failed to delete strategy');
+      }
+    }
+
+    // Parse JSON safely
+    function parseJSON(value) {
+      if (!value || !value.trim()) return null;
+      try {
+        return JSON.parse(value);
+      } catch (e) {
+        return null;
+      }
+    }
+
+    // Handle form submission
+    document.getElementById('strategy-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const data = {
+        name: document.getElementById('strategy-name').value,
+        description: document.getElementById('strategy-description').value || null,
+        setup_definitions: parseJSON(document.getElementById('setup-definitions').value),
+        entry_methods: parseJSON(document.getElementById('entry-methods').value),
+        stop_loss_rules: parseJSON(document.getElementById('stop-loss-rules').value),
+        good_entry_criteria: parseJSON(document.getElementById('good-entry-criteria').value),
+        bad_entry_criteria: parseJSON(document.getElementById('bad-entry-criteria').value)
+      };
+      
+      try {
+        let res;
+        if (editingId) {
+          // Update
+          res = await fetch(`${API_BASE}/strategy/${editingId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+          });
+        } else {
+          // Create
+          res = await fetch(`${API_BASE}/strategy`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+          });
+        }
+        
+        if (res.ok) {
+          alert(editingId ? 'Strategy updated!' : 'Strategy created!');
+          loadStrategies();
+          document.getElementById('strategy-form').reset();
+          editingId = null;
+          document.querySelector('button[type="submit"]').textContent = 'Save Strategy';
+        } else {
+          throw new Error('Save failed');
+        }
+      } catch (error) {
+        console.error('Failed to save strategy:', error);
+        alert('Failed to save strategy');
+      }
+    });
+
+    // Clear form
+    document.getElementById('clear-form').addEventListener('click', () => {
+      document.getElementById('strategy-form').reset();
+      editingId = null;
+      document.querySelector('button[type="submit"]').textContent = 'Save Strategy';
+    });
+
+    // Load strategies on page load
+    loadStrategies();
+  </script>
+</body>
+</html>
+

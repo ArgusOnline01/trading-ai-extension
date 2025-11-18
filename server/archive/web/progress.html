@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Visual Trade Copilot - AI Learning Progress</title>
+  <link rel="stylesheet" href="/app/styles.css" />
+  <style>
+    .lesson-card {
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+      border: 1px solid #333;
+    }
+    .lesson-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .lesson-meta {
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .annotations-preview {
+      margin-top: 12px;
+      padding: 12px;
+      background: var(--bg);
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .annotation-type {
+      margin-top: 8px;
+    }
+    .annotation-type strong {
+      color: var(--accent);
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--panel);
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid #333;
+    }
+    .stat-value {
+      font-size: 24px;
+      font-weight: bold;
+      color: var(--accent);
+    }
+    .stat-label {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Visual Trade Copilot</h1>
+    <nav>
+      <a href="/app/">Trades</a>
+      <a href="/app/teach.html">Teach AI</a>
+      <a href="/app/annotate.html">Annotate</a>
+      <a href="/app/progress.html" class="active">AI Progress</a>
+      <a href="/app/strategy.html">Strategy</a>
+      <a href="/app/setups.html">Setups</a>
+      <a href="/app/entry-methods.html">Entry Methods</a>
+      <a href="/app/analytics.html">Analytics</a>
+    </nav>
+  </header>
+
+  <main>
+    <h2>AI Learning Progress</h2>
+    <div style="margin: 12px 0; display:flex; gap:8px;">
+      <input id="delete-trade-id" placeholder="Trade ID (optional)" style="padding:6px; background: var(--bg); color: var(--text); border:1px solid #333; border-radius:4px;" />
+      <button id="btn-delete-trade" style="padding:6px 10px;">Delete Lessons for Trade</button>
+      <button id="btn-delete-all" style="padding:6px 10px; background:#c23; color:white;">Delete ALL Lessons</button>
+      <span id="delete-status" style="margin-left:8px; color:var(--muted);"></span>
+    </div>
+    
+    <section class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value" id="total-lessons">-</div>
+        <div class="stat-label">Total Lessons</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="overall-accuracy">-</div>
+        <div class="stat-label">Overall Accuracy</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="poi-accuracy">-</div>
+        <div class="stat-label">POI Accuracy</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="bos-accuracy">-</div>
+        <div class="stat-label">BOS Accuracy</div>
+      </div>
+    </section>
+
+    <section>
+      <h3>All Lessons</h3>
+      <div id="lessons-container">
+        <p style="color: var(--muted);">Loading lessons...</p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (async function() {
+      const $ = (id) => document.getElementById(id);
+      
+      async function loadProgress() {
+        try {
+          const res = await fetch('/ai/progress');
+          const data = await res.json();
+          
+          $('total-lessons').textContent = data.total_lessons || 0;
+          $('overall-accuracy').textContent = data.overall_accuracy ? `${(data.overall_accuracy * 100).toFixed(1)}%` : 'N/A';
+          $('poi-accuracy').textContent = data.poi_accuracy ? `${(data.poi_accuracy * 100).toFixed(1)}%` : 'N/A';
+          $('bos-accuracy').textContent = data.bos_accuracy ? `${(data.bos_accuracy * 100).toFixed(1)}%` : 'N/A';
+        } catch (err) {
+          console.error('[PROGRESS] Failed to load progress:', err);
+        }
+      }
+      
+      async function loadLessons() {
+        try {
+          const res = await fetch('/ai/lessons');
+          const data = await res.json();
+          
+          const container = $('lessons-container');
+          
+          if (data.lessons.length === 0) {
+            container.innerHTML = '<p style="color: var(--muted);">No lessons yet. Start teaching the AI on the "Teach AI" page!</p>';
+            return;
+          }
+          
+          container.innerHTML = data.lessons.map(lesson => {
+            const date = new Date(lesson.created_at).toLocaleString();
+            const aiCount = {
+              poi: lesson.ai_annotations?.poi?.length || 0,
+              bos: lesson.ai_annotations?.bos?.length || 0,
+              circles: lesson.ai_annotations?.circles?.length || 0
+            };
+            const correctedCount = {
+              poi: lesson.corrected_annotations?.poi?.length || 0,
+              bos: lesson.corrected_annotations?.bos?.length || 0,
+              circles: lesson.corrected_annotations?.circles?.length || 0
+            };
+            
+            return `
+              <div class="lesson-card">
+                <div class="lesson-header">
+                  <div>
+                    <strong>${lesson.symbol} - ${lesson.direction}</strong>
+                    <div class="lesson-meta">Trade ID: ${lesson.trade_id} | ${date}</div>
+                  </div>
+                  ${lesson.accuracy_score ? `<div style="color: var(--accent);">Accuracy: ${(lesson.accuracy_score * 100).toFixed(1)}%</div>` : ''}
+                </div>
+                
+                <div class="annotations-preview">
+                  <div><strong>AI's Annotations:</strong></div>
+                  <div class="annotation-type">POI: ${aiCount.poi}, BOS: ${aiCount.bos}, Circles: ${aiCount.circles}</div>
+                  ${lesson.ai_annotations ? `
+                    <details style="margin-top: 8px; font-size: 12px;">
+                      <summary style="cursor: pointer; color: var(--muted);">View AI coordinates</summary>
+                      <div style="margin-top: 8px; padding: 8px; background: rgba(41, 98, 255, 0.1); border-radius: 4px; font-family: monospace; font-size: 11px;">
+                        ${lesson.ai_annotations.poi && lesson.ai_annotations.poi.length > 0 ? `
+                          <div><strong>POI:</strong> ${lesson.ai_annotations.poi.map((p, i) => `#${i+1}: left=${(p.left||0).toFixed(1)}, top=${(p.top||0).toFixed(1)}, w=${(p.width||0).toFixed(1)}, h=${(p.height||0).toFixed(1)}`).join('; ')}</div>
+                        ` : ''}
+                        ${lesson.ai_annotations.bos && lesson.ai_annotations.bos.length > 0 ? `
+                          <div style="margin-top: 4px;"><strong>BOS:</strong> ${lesson.ai_annotations.bos.map((b, i) => `#${i+1}: x1=${(b.x1||0).toFixed(1)}, y1=${(b.y1||0).toFixed(1)}, x2=${(b.x2||0).toFixed(1)}, y2=${(b.y2||0).toFixed(1)}`).join('; ')}</div>
+                        ` : ''}
+                        ${lesson.ai_annotations.circles && lesson.ai_annotations.circles.length > 0 ? `
+                          <div style="margin-top: 4px;"><strong>Circles:</strong> ${lesson.ai_annotations.circles.map((c, i) => `#${i+1}: x=${(c.x||0).toFixed(1)}, y=${(c.y||0).toFixed(1)}, r=${(c.radius||0).toFixed(1)}`).join('; ')}</div>
+                        ` : ''}
+                      </div>
+                    </details>
+                  ` : ''}
+                  
+                  <div style="margin-top: 12px;"><strong>Your Corrections:</strong></div>
+                  <div class="annotation-type">POI: ${correctedCount.poi}, BOS: ${correctedCount.bos}, Circles: ${correctedCount.circles}</div>
+                  ${lesson.corrected_annotations ? `
+                    <details style="margin-top: 8px; font-size: 12px;">
+                      <summary style="cursor: pointer; color: var(--muted);">View corrected coordinates</summary>
+                      <div style="margin-top: 8px; padding: 8px; background: rgba(76, 175, 80, 0.1); border-radius: 4px; font-family: monospace; font-size: 11px;">
+                        ${lesson.corrected_annotations.poi && lesson.corrected_annotations.poi.length > 0 ? `
+                          <div><strong>POI:</strong> ${lesson.corrected_annotations.poi.map((p, i) => {
+                            const corr = p.corrected || {};
+                            return `#${i+1}: left=${(corr.left||0).toFixed(1)}, top=${(corr.top||0).toFixed(1)}, w=${(corr.width||0).toFixed(1)}, h=${(corr.height||0).toFixed(1)}`;
+                          }).join('; ')}</div>
+                        ` : ''}
+                        ${lesson.corrected_annotations.bos && lesson.corrected_annotations.bos.length > 0 ? `
+                          <div style="margin-top: 4px;"><strong>BOS:</strong> ${lesson.corrected_annotations.bos.map((b, i) => {
+                            const corr = b.corrected || {};
+                            return `#${i+1}: x1=${(corr.x1||0).toFixed(1)}, y1=${(corr.y1||0).toFixed(1)}, x2=${(corr.x2||0).toFixed(1)}, y2=${(corr.y2||0).toFixed(1)}`;
+                          }).join('; ')}</div>
+                        ` : ''}
+                        ${lesson.corrected_annotations.circles && lesson.corrected_annotations.circles.length > 0 ? `
+                          <div style="margin-top: 4px;"><strong>Circles:</strong> ${lesson.corrected_annotations.circles.map((c, i) => {
+                            const corr = c.corrected || {};
+                            return `#${i+1}: x=${(corr.x||0).toFixed(1)}, y=${(corr.y||0).toFixed(1)}, r=${(corr.radius||0).toFixed(1)}`;
+                          }).join('; ')}</div>
+                        ` : ''}
+                      </div>
+                    </details>
+                  ` : ''}
+                  
+                  ${lesson.corrected_reasoning ? `
+                    <div style="margin-top: 12px;"><strong>Your Reasoning Correction:</strong></div>
+                    <div style="color: var(--text); font-style: italic; margin-top: 4px;">"${lesson.corrected_reasoning.substring(0, 200)}${lesson.corrected_reasoning.length > 200 ? '...' : ''}"</div>
+                  ` : ''}
+                </div>
+              </div>
+            `;
+          }).join('');
+        } catch (err) {
+          console.error('[PROGRESS] Failed to load lessons:', err);
+          $('lessons-container').innerHTML = '<p style="color: #ef5350;">Error loading lessons. Check console for details.</p>';
+        }
+      }
+
+      async function deleteLessons(tradeId) {
+        const qs = tradeId ? `?trade_id=${encodeURIComponent(tradeId)}` : '';
+        const res = await fetch(`/ai/lessons${qs}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Failed');
+        const data = await res.json();
+        return data;
+      }
+
+      document.getElementById('btn-delete-trade').addEventListener('click', async () => {
+        const tradeId = document.getElementById('delete-trade-id').value.trim();
+        if (!tradeId) { document.getElementById('delete-status').textContent = 'Enter a trade_id.'; return; }
+        document.getElementById('delete-status').textContent = 'Deleting...';
+        try {
+          const out = await deleteLessons(tradeId);
+          document.getElementById('delete-status').textContent = `Deleted ${out.deleted} lessons for ${tradeId}`;
+          await loadProgress();
+          await loadLessons();
+        } catch (e) {
+          document.getElementById('delete-status').textContent = 'Delete failed';
+        }
+      });
+
+      document.getElementById('btn-delete-all').addEventListener('click', async () => {
+        if (!confirm('Delete ALL lessons? This cannot be undone.')) return;
+        document.getElementById('delete-status').textContent = 'Deleting...';
+        try {
+          const out = await deleteLessons('');
+          document.getElementById('delete-status').textContent = `Deleted ${out.deleted} lessons`;
+          await loadProgress();
+          await loadLessons();
+        } catch (e) {
+          document.getElementById('delete-status').textContent = 'Delete failed';
+        }
+      });
+      
+      await loadProgress();
+      await loadLessons();
+    })();
+  </script>
+</body>
+</html>
+

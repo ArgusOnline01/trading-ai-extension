@@ -1,0 +1,312 @@
+[
+  {
+    "trade_id": "1540212786",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": true,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1540306142",
+    "baseline": true,
+    "exclude_clean": false,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": true,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1499163878",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": true,
+    "R2_sweep_before_entry": true,
+    "R3_session_london_asia": false,
+    "R4_counterfactual_poi50": true,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1460693882",
+    "baseline": true,
+    "exclude_clean": false,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": false,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1458717017",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": true,
+    "R3_session_london_asia": true,
+    "R4_counterfactual_poi50": true,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1511856866",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": true,
+    "R2_sweep_before_entry": true,
+    "R3_session_london_asia": true,
+    "R4_counterfactual_poi50": true,
+    "R5_ifvg_fractal": true
+  },
+  {
+    "trade_id": "1445109835",
+    "baseline": true,
+    "exclude_clean": false,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": false,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1484380180",
+    "baseline": true,
+    "exclude_clean": false,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": false,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1464026900",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": true,
+    "R2_sweep_before_entry": true,
+    "R3_session_london_asia": true,
+    "R4_counterfactual_poi50": true,
+    "R5_ifvg_fractal": true
+  },
+  {
+    "trade_id": "1464422308",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": true,
+    "R2_sweep_before_entry": true,
+    "R3_session_london_asia": true,
+    "R4_counterfactual_poi50": true,
+    "R5_ifvg_fractal": true
+  },
+  {
+    "trade_id": "1464422597",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": true,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1439439432",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": true,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1440244144",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": true,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1440254576",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": true,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1440742861",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": true,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1440791798",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": false,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1486240064",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": true,
+    "R2_sweep_before_entry": true,
+    "R3_session_london_asia": false,
+    "R4_counterfactual_poi50": true,
+    "R5_ifvg_fractal": true
+  },
+  {
+    "trade_id": "1486294127",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": false,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1486323391",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": true,
+    "R2_sweep_before_entry": true,
+    "R3_session_london_asia": false,
+    "R4_counterfactual_poi50": true,
+    "R5_ifvg_fractal": true
+  },
+  {
+    "trade_id": "1477085979",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": true,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1448456981",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": true,
+    "R2_sweep_before_entry": true,
+    "R3_session_london_asia": false,
+    "R4_counterfactual_poi50": true,
+    "R5_ifvg_fractal": true
+  },
+  {
+    "trade_id": "1448915156",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": false,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1449624109",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": false,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1449972007",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": false,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1451213719",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": true,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1451419394",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": true,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1453918443",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": false,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1486940457",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": false,
+    "R3_session_london_asia": false,
+    "R4_counterfactual_poi50": false,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1454625013",
+    "baseline": true,
+    "exclude_clean": false,
+    "R1_ifvg_mitigated": false,
+    "R2_sweep_before_entry": true,
+    "R3_session_london_asia": false,
+    "R4_counterfactual_poi50": true,
+    "R5_ifvg_fractal": false
+  },
+  {
+    "trade_id": "1455264980",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": true,
+    "R2_sweep_before_entry": true,
+    "R3_session_london_asia": false,
+    "R4_counterfactual_poi50": true,
+    "R5_ifvg_fractal": true
+  },
+  {
+    "trade_id": "1518733810",
+    "baseline": true,
+    "exclude_clean": true,
+    "R1_ifvg_mitigated": true,
+    "R2_sweep_before_entry": true,
+    "R3_session_london_asia": true,
+    "R4_counterfactual_poi50": true,
+    "R5_ifvg_fractal": true
+  }
+]

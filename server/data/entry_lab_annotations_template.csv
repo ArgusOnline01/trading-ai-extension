@@ -1,0 +1,16 @@
+trade_id,symbol,direction,entry_time,session,entry_method,poi_low,poi_high,bos_level,fractal_range_low,fractal_range_high,fractal_target,ifvg_low,ifvg_high,micro_shift,micro_entry_price,micro_sl,micro_tp,outcome,exit_price,contracts,size_hint,note
+01,MNQ,short,13/nov/2025-23:45,asia,50%POI,25081.25,25155.75,25000.50,25000.50,25165.75,24975.25,,,false,,,,win,24975.25,4,auto,none
+02,MNQ,long,13/nov/2025-3:20,london,50%POI,25547.75,25599.50,25655.75,25655.25,25500.75,25655.75,25723.00,,false,false,,,,loss,4,4,auto
+03,MNQ,long,12/nov/2025-17:00,asia,50%POI,25521.25,25576.25,25608.00,25487.50,25608.00,25652.25,,,false,,,,loss,25521.75,4,auto,none
+04,MNQ,long,12/nov/2025-18:50,asia,micro_structure,25521.25,25576.25,25608.00,25487.50,25608.00,25652.25,,,true,25552.50,25503.25,25652.25,win,25652.25,3,auto,none
+05,MNQ,long,12/nov/2025-9:35,NY,50%POI,25480.50,25643.50,25767.75,25480.50,25767.75,25829.25,,,true,,,,loss,25480.25,1,auto,none
+06,MNQ,long,12/nov/2025-17:00,asia,micro_structure,25480.50,25643.50,25767.75,25480.50,25767.75,25829.25,,,true,25569.25,25489.75,25831,loss,25489.75,1,auto,none
+07,MNQ,short,06/nov/2025-23:05,asia,50%POI,25225.75,25347.50,25198.25,25198.25,25438.00,25161.25,,,true,,,,loss,25349.00,3,auto,
+08,MNQ,short,06/nov/2025-3:10,london,micro_structure,25225.75,25347.50,25198.25,25198.25,25438.00,25161.25,,,true,25325.00,25355.00,25161.25,win,25161.25,3,auto,
+09,MNQ,short,05/nov/2025-12:50,NY,50%POI,25829.50,25897.75,25646.50,25646.50,25897.75,25282.00,,,true,,,,win,25282.00,3,auto,none
+10,MNQ,long,31/oct/2025-21:10,NY,50%POI,25855.50,25962.25,26180.00,25855.50,26180.00,26270.00,,,true,,,,win,26266.00,3,auto,none
+11,MNQ,long,2/nov/2025-17:00,asia,micro_structure,25855.50,25962.25,26180.00,25855.50,26180.00,26270.00,,,true,26032.00,25968.25,26270.00,win,26266.00,3,auto,none
+12,MNQ,long,29/oct/2025-23:10,asia,50%POI,26168.50,26240.75,26379.75,26043.50,26379.75,26400.50,,,false,,,,loss,26166.50,3,auto,none
+13,MNQ,long,29/oct/2025-15:05,asia,50%POI,26048.50,26289.00,26326.75,26048.50,26326.75,26377.75,,,true,,,,win,26377.75,1,auto,none
+14,MNQ,short,29/oct/2025-13:00,NY,50%POI,26243.25,26325.75,26226.00,26226.00,26325.75,26204.50,,,true,,,,win,26204.50,4,auto,none
+15,MNQ,short,29/oct/2025-13:32,NY,micro_structure,26243.25,26325.75,26226.00,26226.00,26325.75,26204.50,,,true,26259.00,26204.50,,win,26204.50,5,auto,none

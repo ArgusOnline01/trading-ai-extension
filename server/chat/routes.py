@@ -4,25 +4,22 @@ Phase 4E: Enhanced Chat Routes with State Tracking and Entry Suggestions
 from __future__ import annotations
 
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-import base64
-import io
+import json
 
 from db.session import get_db
-from db.models import ChatSession, EntrySuggestion
+from db.models import ChatSession
 from chat.state_manager import (
     get_or_create_session,
     get_session_state,
     update_session_state,
     reset_session_state,
-    get_state_summary
+    get_state_summary,
 )
-from chat.entry_suggester import analyze_chart_for_entry
-from chat.outcome_tracker import save_outcome, get_outcome_stats
-from ai.rag.entry_learning import index_entry_suggestion_with_outcome
-from chat.visual_markers import get_overlay_coordinates
+from analytics.advisor import evaluate_setup  # Phase 3 advisor hook
+from openai_client import get_client, resolve_model
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -31,42 +28,6 @@ class ChatStateResponse(BaseModel):
     session_id: str
     state: dict
     state_summary: str
-
-
-class EntrySuggestionResponse(BaseModel):
-    suggestion_id: int
-    entry_price: Optional[float]
-    stop_loss: Optional[float]
-    stop_loss_type: Optional[str]
-    stop_loss_reasoning: Optional[str]
-    reasoning: Optional[str]
-    confluences_met: Optional[list]
-    ready_to_enter: bool
-    overlay_coordinates: Optional[dict] = None  # For visual markers
-
-
-class OutcomeCreate(BaseModel):
-    suggestion_id: int
-    outcome: str  # 'win' | 'loss' | 'skipped'
-    actual_entry_price: Optional[float] = None
-    actual_exit_price: Optional[float] = None
-    r_multiple: Optional[float] = None
-    notes: Optional[str] = None
-    chart_sequence: Optional[list] = None
-
-
-class OutcomeResponse(BaseModel):
-    id: int
-    suggestion_id: int
-    outcome: str
-    actual_entry_price: Optional[float]
-    actual_exit_price: Optional[float]
-    r_multiple: Optional[float]
-    notes: Optional[str]
-    created_at: str
-
-    class Config:
-        from_attributes = True
 
 
 @router.get("/session/{session_id}/state", response_model=ChatStateResponse)
@@ -106,141 +67,90 @@ def reset_chat_state(session_id: str, db: Session = Depends(get_db)):
     return {"message": f"Session {session_id} state reset"}
 
 
-@router.post("/session/{session_id}/analyze", response_model=EntrySuggestionResponse)
-async def analyze_chart_with_state(
-    session_id: str,
-    image: UploadFile = File(...),
-    strategy_id: Optional[int] = Form(None),
-    model: str = Form("gpt-4o"),
-    db: Session = Depends(get_db)
+def _format_advisor_template(result: dict) -> str:
+    """Deterministic fallback message for the advisor result."""
+    grade = result.get("grade") or "N/A"
+    score = result.get("score")
+    rule = result.get("rule") or "N/A"
+    decision = result.get("decision") or "wait"
+    risk = result.get("risk") or {}
+    risk_usd = risk.get("risk_usd")
+    r_mult = risk.get("r_multiple")
+    reasons = result.get("reason") or []
+    parts = [
+        f"Decision: {decision}",
+        f"Grade: {grade}{f' ({score})' if score is not None else ''}",
+        f"Rule: {rule}",
+    ]
+    if risk_usd is not None:
+        parts.append(f"Risk: ${risk_usd:,.2f}")
+    if r_mult is not None:
+        parts.append(f"R multiple: {r_mult:.2f}")
+    if reasons:
+        parts.append("Reasons: " + "; ".join(reasons))
+    return " | ".join(parts)
+
+
+def _verbalize_advisor_result(advisor_result: dict, user_payload: dict) -> str:
+    """
+    Turn the structured advisor result into a short, conversational reply using the LLM.
+    Falls back to template on errors.
+    """
+    client = get_client()
+    model = resolve_model(None)
+    system_prompt = (
+        "You are the Visual Trade Copilot. Given an advisor evaluation, produce a concise, "
+        "professional recommendation with a clear structure:\n"
+        "1) Lead with the decision (enter/skip/wait), grade, rule, and risk (USD and R).\n"
+        "2) Provide 2-4 bullets on confluence/reasons driving the decision.\n"
+        "3) If grade < A+, add a short bullet on what would elevate it to A+.\n"
+        "4) Keep it crisp (<= 5 lines), no JSON, no markdown headers."
+    )
+    user_content = (
+        "Trader input:\n"
+        f"{json.dumps(user_payload, default=str)}\n\n"
+        "Advisor output:\n"
+        f"{json.dumps(advisor_result, default=str)}"
+    )
+    completion = client.client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        max_tokens=320,
+        temperature=0.2,
+    )
+    return (completion.choices[0].message.content or "").strip()
+
+@router.post("/advisor/evaluate")
+def chat_advisor_evaluate(
+    payload: dict,
+    remaining_drawdown: float = 500.0,
+    risk_cap_pct: float = 0.10,
+    require_grade: str = "A+",
+    require_micro: bool = False,
 ):
     """
-    Analyze chart image with current session state and suggest entry
-    
-    This endpoint:
-    1. Gets current session state
-    2. Analyzes the chart image
-    3. Updates state based on analysis
-    4. Suggests entry if ready
+    Lightweight chat hook to run the Phase 3 advisor without needing DB state.
+    Accepts the same fields as /analytics/advisor/evaluate (see ANNOTATION_CSV_GUIDE).
     """
-    # Get current state
-    state = get_session_state(db, session_id)
-    if state is None:
-        state = {}
-    
-    # Read and encode image
-    image_data = await image.read()
-    image_base64 = base64.b64encode(image_data).decode('utf-8')
-    
-    # Get image dimensions for overlay coordinates
-    from PIL import Image as PILImage
-    img = PILImage.open(io.BytesIO(image_data))
-    image_width, image_height = img.size
-    
-    # Analyze chart for entry
-    analysis = await analyze_chart_for_entry(
-        image_base64=image_base64,
-        session_state=state,
-        strategy_id=strategy_id,
-        model=model
+    result = evaluate_setup(
+        payload,
+        remaining_drawdown=remaining_drawdown,
+        risk_cap_pct=risk_cap_pct,
+        require_grade=require_grade,
+        require_micro=require_micro,
     )
-    
-    # Generate overlay coordinates if entry is ready
-    overlay_coords = None
-    if analysis.get("ready_to_enter") and analysis.get("entry_price"):
-        # Use price range extracted by AI from chart analysis
-        chart_min_price = analysis.get("chart_min_price")
-        chart_max_price = analysis.get("chart_max_price")
-        
-        overlay_coords = get_overlay_coordinates(
-            entry_price=analysis.get("entry_price"),
-            stop_loss_price=analysis.get("stop_loss"),
-            chart_min_price=chart_min_price,
-            chart_max_price=chart_max_price,
-            image_width=image_width,
-            image_height=image_height
-        )
-    
-    # Update session state
-    state_updates = {
-        "setup_detected": analysis.get("ready_to_enter", False) or state.get("setup_detected", False),
-        "confluences_met": analysis.get("confluences_met", []),
-        "waiting_for": analysis.get("waiting_for", []),
-        "last_analysis": analysis
-    }
-    updated_state = update_session_state(db, session_id, state_updates)
-    
-    # Save entry suggestion if ready
-    suggestion_id = None
-    if analysis.get("ready_to_enter") and analysis.get("entry_price"):
-        session = get_or_create_session(db, session_id)
-        suggestion = EntrySuggestion(
-            session_id=session_id,
-            entry_price=analysis.get("entry_price"),
-            stop_loss=analysis.get("stop_loss"),
-            stop_loss_type=analysis.get("stop_loss_type"),
-            stop_loss_reasoning=analysis.get("stop_loss_reasoning"),
-            reasoning=analysis.get("reasoning"),
-            confluences_met=analysis.get("confluences_met", [])
-        )
-        db.add(suggestion)
-        db.commit()
-        db.refresh(suggestion)
-        suggestion_id = suggestion.id
-    
-    return EntrySuggestionResponse(
-        suggestion_id=suggestion_id or 0,
-        entry_price=analysis.get("entry_price"),
-        stop_loss=analysis.get("stop_loss"),
-        stop_loss_type=analysis.get("stop_loss_type"),
-        stop_loss_reasoning=analysis.get("stop_loss_reasoning"),
-        reasoning=analysis.get("reasoning"),
-        confluences_met=analysis.get("confluences_met", []),
-        ready_to_enter=analysis.get("ready_to_enter", False),
-        overlay_coordinates=overlay_coords
-    )
-
-
-@router.post("/outcome", response_model=OutcomeResponse)
-def create_outcome(outcome: OutcomeCreate, db: Session = Depends(get_db)):
-    """Save outcome for an entry suggestion"""
+    # Try to produce a conversational message; fall back to the deterministic template.
     try:
-        entry_outcome = save_outcome(
-            db=db,
-            suggestion_id=outcome.suggestion_id,
-            outcome=outcome.outcome,
-            actual_entry_price=outcome.actual_entry_price,
-            actual_exit_price=outcome.actual_exit_price,
-            r_multiple=outcome.r_multiple,
-            notes=outcome.notes,
-            chart_sequence=outcome.chart_sequence
-        )
-        
-        # Index for RAG learning
-        try:
-            index_entry_suggestion_with_outcome(db, outcome.suggestion_id)
-        except Exception as e:
-            print(f"[CHAT] Warning: Failed to index outcome for learning: {e}")
-        
-        return OutcomeResponse(
-            id=entry_outcome.id,
-            suggestion_id=entry_outcome.suggestion_id,
-            outcome=entry_outcome.outcome,
-            actual_entry_price=entry_outcome.actual_entry_price,
-            actual_exit_price=entry_outcome.actual_exit_price,
-            r_multiple=entry_outcome.r_multiple,
-            notes=entry_outcome.notes,
-            created_at=entry_outcome.created_at.isoformat()
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        message = _verbalize_advisor_result(result, payload)
+        result["message"] = message
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save outcome: {str(e)}")
-
-
-@router.get("/outcome/stats")
-def get_outcome_statistics(session_id: Optional[str] = None, db: Session = Depends(get_db)):
-    """Get statistics about entry suggestion outcomes"""
-    stats = get_outcome_stats(db, session_id)
-    return stats
+        fallback = _format_advisor_template(result)
+        result["message"] = fallback
+        result["verbalize_error"] = str(e)
+    # Always include a deterministic formatted string clients can show or log.
+    result["formatted"] = _format_advisor_template(result)
+    return result
 

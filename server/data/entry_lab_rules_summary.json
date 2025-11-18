@@ -1,0 +1,22 @@
+{
+  "R4_counterfactual_poi50": {
+    "total": 10,
+    "wins": 5,
+    "losses": 4,
+    "breakeven": 0,
+    "win_rate": 55.56,
+    "avg_rr": 3.021,
+    "total_pnl": 6854.0,
+    "avg_pnl": 761.56
+  },
+  "R6_micro_shift": {
+    "total": 5,
+    "wins": 4,
+    "losses": 1,
+    "breakeven": 0,
+    "win_rate": 80.0,
+    "avg_rr": 2.231,
+    "total_pnl": 3371.0,
+    "avg_pnl": 674.2
+  }
+}

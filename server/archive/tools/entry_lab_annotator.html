@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Entry Lab Annotator (offline)</title>
+  <style>
+    body { font-family: sans-serif; margin: 0; padding: 0; display: flex; height: 100vh; }
+    #controls { width: 260px; padding: 12px; box-sizing: border-box; border-right: 1px solid #ccc; background: #f8f8f8; }
+    #canvas-wrap { flex: 1; display: flex; justify-content: center; align-items: center; background: #222; }
+    #canvas { border: 1px solid #444; background: #111; }
+    textarea { width: 100%; height: 160px; font-family: monospace; }
+    label { display: block; margin-top: 8px; }
+    button { margin-right: 6px; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <h3>Annotator</h3>
+    <label>Load image (PNG/JPG):
+      <input type="file" id="imageInput" accept="image/*">
+    </label>
+    <label>Type:
+      <select id="shapeType">
+        <option value="poi">POI</option>
+        <option value="bos">BOS</option>
+        <option value="sweep">Sweep</option>
+        <option value="note">Note</option>
+      </select>
+    </label>
+    <label>Label (optional):
+      <input type="text" id="labelText" placeholder="e.g., POI 50%">
+    </label>
+    <label>Trade ID:
+      <input type="text" id="tradeId" placeholder="e.g., 1540212786">
+    </label>
+    <label>Notes (prices, etc.):
+      <textarea id="notes" style="height:80px;"></textarea>
+    </label>
+    <div>
+      <button id="clearBtn">Clear</button>
+      <button id="exportBtn">Export JSON</button>
+      <button id="exportPngBtn">Export PNG</button>
+    </div>
+    <label>Export:</label>
+    <textarea id="output" readonly></textarea>
+    <p style="font-size: 12px;">How: load image → pick type → click-drag to draw box → export JSON. Boxes are relative to image pixels.</p>
+  </div>
+  <div id="canvas-wrap">
+    <canvas id="canvas"></canvas>
+  </div>
+  <script>
+    const imageInput = document.getElementById('imageInput');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const shapeType = document.getElementById('shapeType');
+    const labelText = document.getElementById('labelText');
+    const output = document.getElementById('output');
+    const clearBtn = document.getElementById('clearBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const exportPngBtn = document.getElementById('exportPngBtn');
+    const tradeIdInput = document.getElementById('tradeId');
+    const notesInput = document.getElementById('notes');
+
+    let img = new Image();
+    let shapes = [];
+    let drawing = false;
+    let startX = 0, startY = 0;
+    let currentRect = null;
+    let currentFilename = 'annotated';
+
+    function resizeCanvasToImage() {
+      canvas.width = img.width;
+      canvas.height = img.height;
+    }
+
+    function redraw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (img.complete && img.width) ctx.drawImage(img, 0, 0);
+      shapes.forEach(s => drawRect(s));
+      if (currentRect) drawRect(currentRect, '#ff9800');
+    }
+
+    const colors = { poi: '#4caf50', bos: '#e91e63', sweep: '#2196f3', note: '#ffc107' };
+
+    function drawRect(rect, colorOverride) {
+      const color = colorOverride || colors[rect.type] || '#4caf50';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+      if (rect.label) {
+        ctx.fillStyle = color;
+        ctx.font = '14px sans-serif';
+        ctx.fillText(rect.label, rect.x + 4, rect.y + 16);
+      }
+    }
+
+    imageInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      currentFilename = file.name ? file.name.replace(/\.[^.]+$/, '') : 'annotated';
+      const reader = new FileReader();
+      reader.onload = ev => {
+        img.onload = () => {
+          resizeCanvasToImage();
+          redraw();
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    canvas.addEventListener('mousedown', (e) => {
+      if (!img.width) return;
+      const rect = canvas.getBoundingClientRect();
+      startX = e.clientX - rect.left;
+      startY = e.clientY - rect.top;
+      drawing = true;
+      currentRect = { x: startX, y: startY, w: 0, h: 0, type: shapeType.value, label: labelText.value.trim() };
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      if (!drawing) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      currentRect.w = x - startX;
+      currentRect.h = y - startY;
+      redraw();
+    });
+
+    canvas.addEventListener('mouseup', () => {
+      if (!drawing) return;
+      drawing = false;
+      // Normalize width/height to positive numbers
+      const r = currentRect;
+      if (r.w < 0) { r.x += r.w; r.w = Math.abs(r.w); }
+      if (r.h < 0) { r.y += r.h; r.h = Math.abs(r.h); }
+      shapes.push(r);
+      currentRect = null;
+      redraw();
+    });
+
+    clearBtn.addEventListener('click', () => {
+      shapes = [];
+      redraw();
+      output.value = '';
+    });
+
+    exportBtn.addEventListener('click', () => {
+      const payload = {
+        trade_id: tradeIdInput.value.trim() || null,
+        notes: notesInput.value.trim() || null,
+        shapes: shapes.map(s => ({
+          type: s.type,
+          label: s.label,
+          x: Number(s.x.toFixed(2)),
+          y: Number(s.y.toFixed(2)),
+          width: Number(s.w.toFixed(2)),
+          height: Number(s.h.toFixed(2)),
+          image_width: img.width,
+          image_height: img.height
+        }))
+      };
+      output.value = JSON.stringify(payload, null, 2);
+    });
+
+    exportPngBtn.addEventListener('click', () => {
+      const link = document.createElement('a');
+      link.download = `${currentFilename}-annotated.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    });
+  </script>
+</body>
+</html>

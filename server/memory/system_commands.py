@@ -8,10 +8,22 @@ from typing import Dict, Any, Optional, Tuple
 from urllib.parse import quote
 from pathlib import Path
 from .utils import get_memory_status, load_json, save_json
-from performance.learning import _load_json, LOG_PATH, PROFILE_PATH, generate_learning_profile
 from utils.chart_service import get_chart_url, load_chart_base64
 import os
 import logging
+
+# Performance module is archived; provide local fallbacks to avoid hard dependency.
+try:
+    from performance.learning import _load_json, LOG_PATH, PROFILE_PATH, generate_learning_profile
+except ImportError:
+    LOG_PATH = str(Path(__file__).parent / "memory_logs.json")
+    PROFILE_PATH = str(Path(__file__).parent / "memory_profile.json")
+
+    def _load_json(path):
+        return load_json(path, {})
+
+    def generate_learning_profile():
+        return None
 
 logger = logging.getLogger(__name__)
 
@@ -2800,4 +2812,3 @@ def execute_close_chart_command() -> Dict[str, Any]:
         "message": "📊 Closing chart popup...",
         "frontend_action": "close_chart"
     }
-

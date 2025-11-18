@@ -22,6 +22,33 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("Message received:", message);
   
+  // Handle screenshot capture request
+  if (message.action === "captureScreenshot") {
+    (async () => {
+      try {
+        // Use null to capture the current window's visible tab
+        // activeTab permission should cover this when user interacts with extension
+        const dataUrl = await new Promise((resolve, reject) => {
+          chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+            } else if (!dataUrl) {
+              reject(new Error("Screenshot capture returned empty data"));
+            } else {
+              resolve(dataUrl);
+            }
+          });
+        });
+        
+        sendResponse({ success: true, dataUrl: dataUrl });
+      } catch (error) {
+        console.error("Screenshot capture error:", error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true; // Keep channel open for async response
+  }
+  
   // Handle chat: pure AI (no command execution, no trade management)
   if (message.action === "captureAndAnalyze") {
     (async () => {
@@ -29,6 +56,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const tabId = sender.tab.id;
         const question = message.question;
         const model = message.model || "balanced";
+        const includeImage = message.includeImage || false;
+        const uploadedImage = message.uploadedImage || null;
         
         // Get chat history (kept for context)
         let chatHistory = [];
@@ -47,6 +76,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const formData = new FormData();
         formData.append("question", question);
         formData.append("model", model);
+        
+        // Handle image: either uploaded or capture screenshot
+        if (uploadedImage) {
+          // Use uploaded image (base64 string)
+          const base64Data = uploadedImage.includes(',') ? uploadedImage.split(',')[1] : uploadedImage;
+          const byteCharacters = atob(base64Data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: 'image/png' });
+          formData.append("image", blob, 'chart.png');
+          console.log("📤 Using uploaded image");
+        } else if (includeImage) {
+          // Capture screenshot
+          try {
+            const dataUrl = await new Promise((resolve, reject) => {
+              chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
+                if (chrome.runtime.lastError) {
+                  reject(new Error(chrome.runtime.lastError.message));
+                } else if (!dataUrl) {
+                  reject(new Error("Screenshot capture returned empty data"));
+                } else {
+                  resolve(dataUrl);
+                }
+              });
+            });
+            
+            // Convert data URL to blob
+            const response = await fetch(dataUrl);
+            const blob = await response.blob();
+            formData.append("image", blob, 'chart.png');
+            console.log("📷 Captured screenshot");
+          } catch (captureError) {
+            console.error("Screenshot capture failed:", captureError);
+            throw new Error(`Failed to capture screenshot: ${captureError.message}`);
+          }
+        }
         
         // Add recent messages for context (Phase 3B: up to 50 messages)
         if (chatHistory.length > 0) {

@@ -1,0 +1,76 @@
+{
+  "total_trades": 31,
+  "wins": 6,
+  "losses": 23,
+  "breakeven": 2,
+  "win_rate": 19.35483870967742,
+  "avg_pnl": -44.225806451612904,
+  "avg_win": 210.5,
+  "avg_loss": -114.52173913043478,
+  "total_pnl": -1371.0,
+  "avg_duration_minutes": 34.18709677419355,
+  "per_symbol": {
+    "6EZ5": {
+      "trades": 8,
+      "wins": 1,
+      "pnl": 87.5,
+      "win_rate": 12.5
+    },
+    "MCLZ5": {
+      "trades": 1,
+      "wins": 1,
+      "pnl": 440.0,
+      "win_rate": 100.0
+    },
+    "MNQZ5": {
+      "trades": 9,
+      "wins": 3,
+      "pnl": -324.5,
+      "win_rate": 33.33333333333333
+    },
+    "MGCZ5": {
+      "trades": 4,
+      "wins": 0,
+      "pnl": -604.0,
+      "win_rate": 0.0
+    },
+    "SILZ5": {
+      "trades": 8,
+      "wins": 1,
+      "pnl": -770.0,
+      "win_rate": 12.5
+    },
+    "CLZ5": {
+      "trades": 1,
+      "wins": 0,
+      "pnl": -200.0,
+      "win_rate": 0.0
+    }
+  },
+  "per_session": {
+    "London": {
+      "trades": 10,
+      "wins": 3,
+      "pnl": 66.5,
+      "win_rate": 30.0
+    },
+    "New York": {
+      "trades": 13,
+      "wins": 2,
+      "pnl": -721.5,
+      "win_rate": 15.384615384615385
+    },
+    "Asia": {
+      "trades": 7,
+      "wins": 1,
+      "pnl": -636.0,
+      "win_rate": 14.285714285714285
+    },
+    "Afternoon": {
+      "trades": 1,
+      "wins": 0,
+      "pnl": -80.0,
+      "win_rate": 0.0
+    }
+  }
+}

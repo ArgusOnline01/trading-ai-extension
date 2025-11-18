@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Visual Trade Copilot - Trades</title>
+  <link rel="stylesheet" href="/app/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Visual Trade Copilot</h1>
+    <nav>
+      <a href="/app/" class="active">Trades</a>
+      <a href="/app/teach.html">Teach AI</a>
+      <a href="/app/annotate.html">Annotate</a>
+      <a href="/app/progress.html">AI Progress</a>
+      <a href="/app/strategy.html">Strategy</a>
+      <a href="/app/setups.html">Setups</a>
+      <a href="/app/entry-methods.html">Entry Methods</a>
+      <a href="/app/analytics.html">Analytics</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="stats-bar" style="padding: 16px; background: var(--panel); border-radius: 8px; margin-bottom: 16px;">
+      <div style="display: flex; gap: 24px; align-items: center;">
+        <div>
+          <span style="color: var(--muted); font-size: 14px;">Total Trades:</span>
+          <span id="total-trades" style="color: var(--text); font-size: 18px; font-weight: bold; margin-left: 8px;">-</span>
+        </div>
+        <div>
+          <span style="color: var(--muted); font-size: 14px;">Showing:</span>
+          <span id="showing-trades" style="color: var(--text); font-size: 18px; font-weight: bold; margin-left: 8px;">-</span>
+        </div>
+      </div>
+    </section>
+    <section class="filters">
+      <input id="symbol" placeholder="Symbol (e.g. 6EZ5)" />
+      <select id="outcome">
+        <option value="">Any outcome</option>
+        <option>win</option>
+        <option>loss</option>
+        <option>breakeven</option>
+      </select>
+      <select id="direction">
+        <option value="">Any direction</option>
+        <option>long</option>
+        <option>short</option>
+      </select>
+      <select id="session">
+        <option value="">Any session</option>
+        <option value="london">London</option>
+        <option value="ny">NY</option>
+        <option value="asian">Asian</option>
+      </select>
+      <select id="entry_method">
+        <option value="">Any entry method</option>
+      </select>
+      <select id="has_entry_method">
+        <option value="">All trades</option>
+        <option value="true">With entry method</option>
+        <option value="false">Without entry method</option>
+      </select>
+      <input id="start_time" type="date" />
+      <input id="end_time" type="date" />
+      <select id="sort_by">
+        <option>entry_time</option>
+        <option>pnl</option>
+        <option>r_multiple</option>
+        <option>id</option>
+      </select>
+      <select id="sort_dir">
+        <option>asc</option>
+        <option selected>desc</option>
+      </select>
+      <button id="apply">Apply</button>
+      <button id="export-csv" style="background: #26a69a;">Export CSV</button>
+    </section>
+
+    <section>
+      <table id="trades">
+        <thead>
+          <tr>
+            <th>Trade ID</th>
+            <th>Symbol</th>
+            <th>Entry Time</th>
+            <th>Exit Time</th>
+            <th>Direction</th>
+            <th>Outcome</th>
+            <th>PnL</th>
+            <th>R</th>
+            <th>Entry Method</th>
+            <th>Chart</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="pagination" style="padding: 16px; background: var(--panel); border-radius: 8px; margin-top: 16px; display: flex; justify-content: center; align-items: center; gap: 8px;">
+      <button id="prev-page" style="padding: 8px 16px; background: var(--accent); color: var(--text); border: none; border-radius: 4px; cursor: pointer;">&lt; Prev</button>
+      <span id="page-info" style="color: var(--text); padding: 0 16px;">Page <span id="current-page">1</span> of <span id="total-pages">1</span></span>
+      <button id="next-page" style="padding: 8px 16px; background: var(--accent); color: var(--text); border: none; border-radius: 4px; cursor: pointer;">Next &gt;</button>
+    </section>
+  </main>
+
+  <script src="/app/app.js"></script>
+</body>
+<!-- Minimal Phase 4A web UI -->
+</html>
+
+

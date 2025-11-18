@@ -58,7 +58,8 @@ def fetch_price_data(symbol, entry_time, window_hours=36, retries=3, delay=5):
                 interval=interval,
                 start=start_utc,
                 end=end_utc,
-                progress=False
+                progress=False,
+                auto_adjust=False  # lock to raw prices to keep SL/TP simulations consistent
             )
             if not df.empty:
                 if isinstance(df.columns, pd.MultiIndex):

@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Entry Lab Annotator (Fabric.js)</title>
+  <script src="https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js"></script>
+  <style>
+    body { margin: 0; padding: 0; display: flex; height: 100vh; background: #111; color: #eee; font-family: sans-serif; }
+    #sidebar { width: 260px; padding: 12px; box-sizing: border-box; background: #191919; border-right: 1px solid #333; }
+    #canvas-wrap { flex: 1; display: flex; justify-content: center; align-items: center; background: #111; }
+    #c { border: 1px solid #333; background: #000; }
+    button { width: 100%; margin: 4px 0; padding: 8px; background: #333; color: #eee; border: 1px solid #444; cursor: pointer; }
+    button.active { background: #555; }
+    label { display: block; margin-top: 8px; font-size: 13px; }
+    input, textarea, select { width: 100%; box-sizing: border-box; margin-top: 4px; padding: 6px; background: #222; color: #eee; border: 1px solid #444; }
+    .row { display: flex; gap: 6px; }
+    .row > * { flex: 1; }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <h3>Annotator</h3>
+    <label>Trade ID
+      <input type="text" id="tradeId" placeholder="e.g., 1540212786" />
+    </label>
+    <label>Load chart (PNG/JPG)
+      <input type="file" id="imageInput" accept="image/*" />
+    </label>
+    <div class="row">
+      <button data-tool="poi" class="tool-btn">POI (box)</button>
+      <button data-tool="bos" class="tool-btn">BOS (line)</button>
+    </div>
+    <div class="row">
+      <button data-tool="sweep" class="tool-btn">Sweep (circle)</button>
+      <button data-tool="ifvg" class="tool-btn">IFVG (box)</button>
+    </div>
+    <div class="row">
+      <button data-tool="note" class="tool-btn">Note</button>
+      <button data-tool="select" class="tool-btn">Select/Move</button>
+    </div>
+    <div class="row">
+      <label>Color
+        <input type="color" id="colorPicker" value="#4caf50" />
+      </label>
+      <label>Stroke
+        <input type="number" id="strokeWidth" min="1" max="6" value="2" />
+      </label>
+    </div>
+    <button id="deleteBtn">Delete Selected</button>
+    <div class="row">
+      <button id="exportPng">Export PNG</button>
+      <button id="exportJson">Export JSON</button>
+    </div>
+    <label>Notes
+      <textarea id="notes" rows="4" placeholder="POI/BOS prices, session, etc."></textarea>
+    </label>
+    <label>Exported JSON</label>
+    <textarea id="jsonOutput" rows="10" readonly></textarea>
+    <p style="font-size:12px;color:#aaa;">Tip: Load chart → choose tool → draw. Use Select to move/resize. Export PNG to save annotated image; JSON to capture shapes.</p>
+  </div>
+  <div id="canvas-wrap">
+    <canvas id="c"></canvas>
+  </div>
+
+  <script>
+    const canvas = new fabric.Canvas('c', { backgroundColor: '#000', selection: true, preserveObjectStacking: true });
+    const imageInput = document.getElementById('imageInput');
+    const toolButtons = document.querySelectorAll('.tool-btn');
+    const colorPicker = document.getElementById('colorPicker');
+    const strokeWidthInput = document.getElementById('strokeWidth');
+    const exportPngBtn = document.getElementById('exportPng');
+    const exportJsonBtn = document.getElementById('exportJson');
+    const deleteBtn = document.getElementById('deleteBtn');
+    const jsonOutput = document.getElementById('jsonOutput');
+    const tradeIdInput = document.getElementById('tradeId');
+    const notesInput = document.getElementById('notes');
+
+    let currentTool = 'select';
+    let bgImage = null;
+    let currentFilename = 'annotated';
+
+    function setTool(tool) {
+      currentTool = tool;
+      toolButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.tool === tool));
+      canvas.isDrawingMode = false;
+    }
+    setTool('select');
+
+    toolButtons.forEach(btn => {
+      btn.addEventListener('click', () => setTool(btn.dataset.tool));
+    });
+
+    imageInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      currentFilename = file.name ? file.name.replace(/\.[^.]+$/, '') : 'annotated';
+      const reader = new FileReader();
+      reader.onload = ev => {
+        fabric.Image.fromURL(ev.target.result, (img) => {
+          bgImage = img;
+          const w = img.width;
+          const h = img.height;
+          canvas.setWidth(w);
+          canvas.setHeight(h);
+          img.selectable = false;
+          img.evented = false;
+          canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
+        }, { crossOrigin: 'anonymous' });
+      };
+      reader.readAsDataURL(file);
+    });
+
+    canvas.on('mouse:down', (opt) => {
+      if (currentTool === 'select') return;
+      const pointer = canvas.getPointer(opt.e);
+      const color = colorPicker.value;
+      const stroke = parseInt(strokeWidthInput.value, 10) || 2;
+
+      if (currentTool === 'poi' || currentTool === 'ifvg') {
+        const rect = new fabric.Rect({
+          left: pointer.x,
+          top: pointer.y,
+          width: 0,
+          height: 0,
+          fill: 'rgba(0,0,0,0)',
+          stroke: color,
+          strokeWidth: stroke,
+          selectable: true,
+          typeLabel: currentTool
+        });
+        canvas.add(rect);
+        canvas.setActiveObject(rect);
+      } else if (currentTool === 'bos') {
+        const line = new fabric.Line([pointer.x, pointer.y, pointer.x + 1, pointer.y + 1], {
+          stroke: color,
+          strokeWidth: stroke,
+          selectable: true,
+          typeLabel: 'bos'
+        });
+        canvas.add(line);
+        canvas.setActiveObject(line);
+      } else if (currentTool === 'sweep') {
+        const circle = new fabric.Circle({
+          left: pointer.x,
+          top: pointer.y,
+          radius: 1,
+          stroke: color,
+          strokeWidth: stroke,
+          fill: 'rgba(0,0,0,0)',
+          selectable: true,
+          typeLabel: 'sweep',
+          originX: 'center',
+          originY: 'center'
+        });
+        canvas.add(circle);
+        canvas.setActiveObject(circle);
+      } else if (currentTool === 'note') {
+        const text = new fabric.Textbox('Note', {
+          left: pointer.x,
+          top: pointer.y,
+          fontSize: 16,
+          fill: color,
+          selectable: true,
+          typeLabel: 'note',
+          width: 120
+        });
+        canvas.add(text);
+        canvas.setActiveObject(text);
+      }
+    });
+
+    canvas.on('mouse:move', (opt) => {
+      const obj = canvas.getActiveObject();
+      if (!obj || currentTool === 'select' || currentTool === 'note') return;
+      const pointer = canvas.getPointer(opt.e);
+      if (obj.type === 'rect') {
+        obj.set({ width: pointer.x - obj.left, height: pointer.y - obj.top });
+      } else if (obj.type === 'line') {
+        obj.set({ x2: pointer.x, y2: pointer.y });
+      } else if (obj.type === 'circle') {
+        const dx = pointer.x - obj.left;
+        const dy = pointer.y - obj.top;
+        obj.set({ radius: Math.sqrt(dx * dx + dy * dy) });
+      }
+      obj.setCoords();
+      canvas.renderAll();
+    });
+
+    deleteBtn.addEventListener('click', () => {
+      const obj = canvas.getActiveObject();
+      if (obj) {
+        canvas.remove(obj);
+        canvas.renderAll();
+      }
+    });
+
+    exportPngBtn.addEventListener('click', () => {
+      const dataURL = canvas.toDataURL({ format: 'png', multiplier: 1 });
+      const link = document.createElement('a');
+      link.download = `${currentFilename}-annotated.png`;
+      link.href = dataURL;
+      link.click();
+    });
+
+    exportJsonBtn.addEventListener('click', () => {
+      const shapes = canvas.getObjects().filter(o => o !== bgImage);
+      const payload = {
+        trade_id: tradeIdInput.value.trim() || null,
+        notes: notesInput.value.trim() || null,
+        shapes: shapes.map(o => {
+          const base = {
+            type: o.typeLabel || o.type || 'shape',
+            left: Number((o.left || 0).toFixed(2)),
+            top: Number((o.top || 0).toFixed(2)),
+            stroke: o.stroke || null,
+            strokeWidth: o.strokeWidth || null,
+            width: null,
+            height: null,
+            radius: null,
+            x2: null,
+            y2: null,
+            text: o.text || null,
+            image_width: canvas.width,
+            image_height: canvas.height
+          };
+          if (o.type === 'rect') {
+            base.width = Number((o.width * (o.scaleX || 1)).toFixed(2));
+            base.height = Number((o.height * (o.scaleY || 1)).toFixed(2));
+          } else if (o.type === 'line') {
+            base.x2 = Number(o.x2.toFixed(2));
+            base.y2 = Number(o.y2.toFixed(2));
+          } else if (o.type === 'circle') {
+            base.radius = Number((o.radius * (o.scaleX || 1)).toFixed(2));
+          }
+          return base;
+        })
+      };
+      jsonOutput.value = JSON.stringify(payload, null, 2);
+    });
+  </script>
+</body>
+</html>

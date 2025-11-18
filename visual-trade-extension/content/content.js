@@ -1079,6 +1079,332 @@ function ensureChatUI() {
 
     // Open Trades Web App
     safeBind("vtc-open-webapp", () => window.open("http://127.0.0.1:8765/app/", "_blank"));
+
+    // ---- Advisor button + modal (non-destructive, added post-render to avoid template issues)
+    try {
+      // Ensure document.body exists before proceeding
+      if (!document.body) {
+        console.warn('[Advisor UI] document.body not ready, deferring initialization');
+        setTimeout(() => {
+          try {
+            initAdvisorUI();
+          } catch (e) {
+            console.error('[Advisor UI] deferred init failed', e);
+          }
+        }, 100);
+        return;
+      }
+
+      function initAdvisorUI() {
+        // Add button into existing controls bar
+        const controls = chatContainer ? chatContainer.querySelector('.vtc-controls') : document.querySelector('.vtc-controls');
+        let btn = document.getElementById('advisorEvaluate');
+        if (!btn && controls) {
+          btn = document.createElement('button');
+          btn.id = 'advisorEvaluate';
+          btn.title = 'Evaluate with Advisor';
+          btn.className = 'vtc-control-btn';
+          btn.textContent = '🧠';
+          controls.appendChild(btn);
+        }
+
+        // Create modal lazily if missing
+        let advisorModal = document.getElementById('vtc-advisor-modal');
+        if (!advisorModal && document.body) {
+          advisorModal = document.createElement('div');
+          advisorModal.id = 'vtc-advisor-modal';
+          advisorModal.className = 'vtc-modal';
+          // Overlay lets clicks pass through; only the box is interactive.
+          advisorModal.style.cssText = `
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 999999;
+            pointer-events: none;
+            background: transparent; /* fully transparent to avoid blur/dimming */
+            backdrop-filter: none; /* ensure no blur is applied */
+          `;
+          advisorModal.innerHTML = `
+            <div id="vtc-advisor-box" style="
+              position: fixed;
+              top: 15%;
+              left: 50%;
+              transform: translate(-50%, 0);
+              background: rgba(12,12,12,0.92);
+              backdrop-filter: none;
+              padding: 12px 14px 14px;
+              border-radius: 10px;
+              width: 360px;
+              max-width: 92vw;
+              color: #f5f5f5;
+              border: 2px solid #f7d046;
+              box-shadow: 0 10px 32px rgba(0,0,0,0.55);
+              font-family: 'Inter','Segoe UI',sans-serif;
+              pointer-events: auto;
+              z-index: 1000000;
+            ">
+              <div id="vtc-advisor-header" style="
+                display:flex;
+                align-items:center;
+                justify-content:space-between;
+                cursor: move;
+                user-select: none;
+                margin-bottom: 8px;
+                padding: 4px 2px 0 2px;
+              ">
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <span style="width:10px; height:10px; border-radius:50%; background:#f7d046; display:inline-block;"></span>
+                  <span style="font-weight:700; letter-spacing:0.3px; color:#f7d046;">Visual Trade Copilot • Advisor</span>
+                </div>
+                <span id="vtc-advisor-close" class="vtc-modal-close" style="cursor:pointer; padding:2px 6px; border-radius:4px; background:#1c1c1c;">✕</span>
+              </div>
+              <div class="vtc-advisor-form" style="display:flex; flex-direction:column; gap:8px;">
+                <label>Symbol <input id="advisor-symbol" type="text" placeholder="MNQ" /></label>
+                <label>Direction
+                  <select id="advisor-direction">
+                    <option value="long">long</option>
+                    <option value="short">short</option>
+                  </select>
+                </label>
+                <label>POI Low <input id="advisor-poi-low" type="number" step="0.01" /></label>
+                <label>POI High <input id="advisor-poi-high" type="number" step="0.01" /></label>
+                <label>Fractal Target (TP) <input id="advisor-fractal-target" type="number" step="0.01" /></label>
+                <label>Micro shift?
+                  <select id="advisor-micro">
+                    <option value="true">true</option>
+                    <option value="false">false</option>
+                  </select>
+                </label>
+                <label>IFVG present?
+                  <select id="advisor-ifvg">
+                    <option value="false">false</option>
+                    <option value="true">true</option>
+                  </select>
+                </label>
+                <label>Entry method <input id="advisor-entry-method" type="text" value="poi50" /></label>
+                <label>Min Grade (require)
+                  <select id="advisor-grade">
+                    <option value="A+">A+</option>
+                    <option value="A">A</option>
+                    <option value="B">B</option>
+                    <option value="C">C</option>
+                  </select>
+                </label>
+                <label>Risk cap (% drawdown) <input id="advisor-risk-cap" type="number" step="0.01" value="0.10" /></label>
+                <label>Entry Price (optional) <input id="advisor-entry" type="number" step="0.01" /></label>
+                <label>Stop Loss (optional) <input id="advisor-sl" type="number" step="0.01" /></label>
+                <label>Take Profit (optional) <input id="advisor-tp" type="number" step="0.01" /></label>
+                <label>Contracts <input id="advisor-contracts" type="number" step="0.1" value="1" /></label>
+                <button id="advisor-submit" class="vtc-control-btn" style="width:100%;margin-top:8px;">Run Advisor</button>
+              </div>
+            </div>`;
+          document.body.appendChild(advisorModal);
+        }
+        
+        // Re-get modal after potential creation
+        advisorModal = document.getElementById('vtc-advisor-modal');
+        
+        // Re-get button after potential creation
+        btn = document.getElementById('advisorEvaluate');
+        const modal = advisorModal;
+        const closeBtn = document.getElementById('vtc-advisor-close');
+        const fields = {
+          symbol: document.getElementById('advisor-symbol'),
+          direction: document.getElementById('advisor-direction'),
+          poi_low: document.getElementById('advisor-poi-low'),
+          poi_high: document.getElementById('advisor-poi-high'),
+          fractal_target: document.getElementById('advisor-fractal-target'),
+          micro: document.getElementById('advisor-micro'),
+          ifvg: document.getElementById('advisor-ifvg'),
+          entry_method: document.getElementById('advisor-entry-method'),
+          entry_price: document.getElementById('advisor-entry'),
+          sl: document.getElementById('advisor-sl'),
+          tp: document.getElementById('advisor-tp'),
+          contracts: document.getElementById('advisor-contracts'),
+        };
+
+        function openAdvisorModal(e) {
+          e?.preventDefault?.();
+          e?.stopPropagation?.();
+          if (fields.symbol && currentSession?.symbol) fields.symbol.value = currentSession.symbol;
+          if (modal) {
+            modal.style.setProperty('display', 'block', 'important');
+            modal.style.setProperty('opacity', '1', 'important');
+            modal.style.setProperty('visibility', 'visible', 'important');
+            modal.style.setProperty('pointer-events', 'none', 'important');
+          } else {
+            showNotification('Advisor modal not found. Please refresh the page.', 'error');
+          }
+        }
+        function closeAdvisorModal() {
+          if (modal) modal.style.display = 'none';
+        }
+        async function runAdvisorFromForm() {
+          const payload = {
+            trade_id: currentSession?.sessionId || `chat-${Date.now()}`,
+            symbol: fields.symbol?.value || '',
+            direction: fields.direction?.value || 'long',
+          poi_low: fields.poi_low?.value ? parseFloat(fields.poi_low.value) : null,
+          poi_high: fields.poi_high?.value ? parseFloat(fields.poi_high.value) : null,
+          fractal_target: fields.fractal_target?.value ? parseFloat(fields.fractal_target.value) : null,
+          micro_shift: (fields.micro?.value || 'true') === 'true',
+          ifvg_present: (fields.ifvg?.value || 'false') === 'true',
+          entry_method: fields.entry_method?.value || 'poi50',
+          entry_price: fields.entry_price?.value ? parseFloat(fields.entry_price.value) : null,
+          sl: fields.sl?.value ? parseFloat(fields.sl.value) : null,
+          tp: fields.tp?.value ? parseFloat(fields.tp.value) : null,
+          contracts: fields.contracts?.value ? parseFloat(fields.contracts.value) : 1,
+          session: 'London',
+        };
+          const params = new URLSearchParams();
+          const gradeReq = fields.grade?.value || "A+";
+          const riskCap = fields.risk_cap?.value ? parseFloat(fields.risk_cap.value) : 0.10;
+          params.set("require_grade", gradeReq);
+          params.set("risk_cap_pct", isNaN(riskCap) ? 0.10 : riskCap);
+          const url = `http://127.0.0.1:8765/chat/advisor/evaluate?${params.toString()}`;
+          const resp = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!resp.ok) {
+            const text = await resp.text();
+            throw new Error(text || resp.statusText);
+          }
+          return resp.json();
+        }
+
+        function buildFriendlyAdvisorMessage(result) {
+          if (result?.message) return result.message;
+          const grade = result?.grade ? `${result.grade}${result.score ? ` (${result.score})` : ""}` : "N/A";
+          const decision = result?.decision || "wait";
+          const rule = result?.rule || "N/A";
+          const reasons = (result?.reason || []).join("; ");
+          const risk = result?.risk || {};
+          const riskLine = risk.risk_usd != null ? `Risk ~$${risk.risk_usd.toFixed(2)}${risk.r_multiple != null ? `, R ${risk.r_multiple.toFixed(2)}` : ""}` : "";
+          const base = `Decision: ${decision}. Grade: ${grade}. Rule: ${rule}.`;
+          const extras = [riskLine, reasons ? `Reasons: ${reasons}.` : ""].filter(Boolean).join(" ");
+          return [base, extras].filter(Boolean).join(" ");
+        }
+
+        function buildAdvisorDetails(result) {
+          const ruleStats = result?.rule_stats;
+          const ruleStatsStr = ruleStats ? `Rule stats: win_rate=${ruleStats.win_rate ?? "n/a"}, rr=${ruleStats.avg_rr ?? "n/a"}` : "";
+          return [
+            `Decision=${result?.decision || "wait"}`,
+            `Grade=${result?.grade || "N/A"} (${result?.score ?? "?"})`,
+            `Rule=${result?.rule || "N/A"}`,
+            result?.risk?.risk_usd != null ? `Risk=$${result.risk.risk_usd.toFixed(2)}` : "",
+            result?.risk?.r_multiple != null ? `R=${result.risk.r_multiple.toFixed(2)}` : "",
+            (result?.reason || []).length ? `Reasons: ${(result.reason || []).join("; ")}` : "",
+            ruleStatsStr,
+          ].filter(Boolean).join(" | ");
+        }
+
+        // Attach event handlers
+        if (btn) {
+          // Remove any existing onclick handler
+          btn.onclick = null;
+          
+          // Use both onclick and addEventListener for maximum compatibility
+          btn.onclick = (e) => {
+            console.log('[Advisor UI] Button clicked (onclick)');
+            openAdvisorModal(e);
+          };
+          
+          // Also add event listener as backup
+          btn.addEventListener('click', (e) => {
+            console.log('[Advisor UI] Button clicked (addEventListener)');
+            openAdvisorModal(e);
+          }, { capture: false });
+          
+          console.log('[Advisor UI] Button click handlers attached', { 
+            buttonId: btn.id, 
+            buttonExists: !!btn,
+            modalExists: !!modal,
+            buttonInDOM: document.body.contains(btn)
+          });
+          
+          // Test button visibility
+          const styles = window.getComputedStyle(btn);
+          console.log('[Advisor UI] Button styles:', {
+            display: styles.display,
+            visibility: styles.visibility,
+            pointerEvents: styles.pointerEvents,
+            opacity: styles.opacity
+          });
+        } else {
+          console.warn('[Advisor UI] Button not found, cannot attach handler');
+        }
+        if (closeBtn) closeBtn.onclick = closeAdvisorModal;
+        if (modal) {
+          modal.addEventListener('click', (e) => { if (e.target === modal) closeAdvisorModal(); });
+        }
+        const submitBtn = document.getElementById('advisor-submit');
+        // Make the advisor box draggable
+        const dragHandle = document.getElementById('vtc-advisor-header');
+        const dragTarget = document.getElementById('vtc-advisor-box');
+        if (dragHandle && dragTarget) {
+          let isDragging = false;
+          let offsetX = 0;
+          let offsetY = 0;
+          dragHandle.onmousedown = (ev) => {
+            isDragging = true;
+            const rect = dragTarget.getBoundingClientRect();
+            offsetX = ev.clientX - rect.left;
+            offsetY = ev.clientY - rect.top;
+            document.body.style.userSelect = 'none';
+          };
+          window.addEventListener('mousemove', (ev) => {
+            if (!isDragging) return;
+            dragTarget.style.left = `${ev.clientX - offsetX}px`;
+            dragTarget.style.top = `${ev.clientY - offsetY}px`;
+            dragTarget.style.transform = 'translate(0, 0)';
+          });
+          window.addEventListener('mouseup', () => {
+            isDragging = false;
+            document.body.style.userSelect = '';
+          });
+        }
+        if (submitBtn) {
+          submitBtn.onclick = async () => {
+            try {
+              const result = await runAdvisorFromForm();
+              const friendly = buildFriendlyAdvisorMessage(result);
+              const details = buildAdvisorDetails(result);
+              const detailId = `advisor-details-${Date.now()}`;
+              const entryMessage = [
+                friendly,
+                details ? `\n[Details hidden — click “Details” to toggle]` : ""
+              ].filter(Boolean).join("\n");
+
+              const userMessage = { role: 'user', content: '[Advisor request]', timestamp: Date.now() };
+              const assistantMessage = { role: 'assistant', content: entryMessage, timestamp: Date.now(), metadata: { advisor_result: result, advisor_details: details, advisor_details_id: detailId } };
+              if (currentSession?.sessionId && window.IDB?.saveMessage) {
+                await window.IDB.saveMessage(currentSession.sessionId, "user", userMessage.content);
+                await window.IDB.saveMessage(currentSession.sessionId, "assistant", assistantMessage.content);
+              }
+              chatHistory.push(userMessage, assistantMessage);
+              if (typeof appendMessage === "function") {
+                appendMessage(userMessage);
+                appendMessage(assistantMessage);
+              } else if (typeof renderMessages === "function") {
+                renderMessages();
+              }
+              closeAdvisorModal();
+            } catch (err) {
+              console.error('Advisor modal error:', err);
+              showNotification('Advisor failed: ' + err.message, 'error');
+            }
+          };
+        }
+      }
+      
+      // Call the initialization function
+      initAdvisorUI();
+    } catch (e) {
+      console.error('[Advisor UI] init failed', e);
+    }
     
     // Restore overlay size/position if previously saved
     try {
@@ -1869,12 +2195,21 @@ function renderMessages() {
     const isUser = msg.role === "user";
     const time = formatTimestamp(msg.timestamp);
     const avatar = isUser ? "👤" : "🤖";
-    
+    const details = msg.metadata?.advisor_details;
+    const detailsId = msg.metadata?.advisor_details_id || `details-${msg.timestamp}`;
+    const detailsBlock = details ? `
+      <div class="vtc-details-toggle" data-details-id="${detailsId}" style="margin-top:6px;">
+        <a href="#" class="vtc-details-link" data-details-id="${detailsId}" style="color:#f7d046;text-decoration:none;">Details</a>
+        <div id="${detailsId}" class="vtc-details-body" style="display:none; margin-top:4px; font-size: 12px; color:#ddd;">${formatMessage(details)}</div>
+      </div>
+    ` : "";
+
     return `
       <div class="vtc-message ${msg.role}">
         <div class="vtc-message-avatar">${avatar}</div>
         <div class="vtc-message-content">
           <div class="vtc-message-text">${formatMessage(msg.content)}</div>
+          ${detailsBlock}
           <div class="vtc-message-time">${time}</div>
         </div>
       </div>
@@ -1889,6 +2224,18 @@ function renderMessages() {
   
   // Update footer
   updateFooter(chatHistory.length);
+
+  // Bind advisor details toggles
+  document.querySelectorAll('.vtc-details-link').forEach(link => {
+    link.onclick = (e) => {
+      e.preventDefault();
+      const id = link.getAttribute('data-details-id');
+      const body = id ? document.getElementById(id) : null;
+      if (body) {
+        body.style.display = body.style.display === 'none' ? 'block' : 'none';
+      }
+    };
+  });
 }
 
 /**
@@ -4009,7 +4356,7 @@ async function handleSystemCommand(userInput) {
       return message;
     } catch (error) {
       console.error('List sessions error:', error);
-      return `⚠️ Error listing sessions: ${error.message}`;
+      return "⚠️ Error listing sessions: " + error.message;
     }
   }
   
@@ -4087,7 +4434,7 @@ async function handleSystemCommand(userInput) {
                 selectEl.value = tradeIndex.toString();
                 // Trigger the change event to load the chart
                 selectEl.dispatchEvent(new Event('change'));
-                console.log(`[TEACH] Auto-selected trade ${res.trade_id} at index ${tradeIndex}`);
+                console.log("[TEACH] Auto-selected trade " + res.trade_id + " at index " + tradeIndex);
               }
             }
           }, 500); // Give modal time to render
@@ -4119,7 +4466,7 @@ async function handleSystemCommand(userInput) {
         
         const fullUrl = chartUrl.startsWith('http') 
           ? chartUrl 
-          : `http://127.0.0.1:8765${chartUrl}`;
+          : "http://127.0.0.1:8765" + chartUrl;
         
         console.log("[SHOW_CHART] Opening chart popup:", fullUrl);
         console.log("[SHOW_CHART] Debug info:", res.debug || res.data?.debug || "none");
@@ -4127,10 +4474,10 @@ async function handleSystemCommand(userInput) {
         try {
           window.openChartPopup(fullUrl);
           console.log("[SHOW_CHART] ✅ Popup opened successfully");
-          showNotification(`📊 Opening chart for ${res.symbol || res.data?.symbol || 'trade'} ${res.trade_id || res.data?.trade_id || ''}...`, "success");
+          showNotification("📊 Opening chart for " + (res.symbol || res.data?.symbol || 'trade') + " " + (res.trade_id || res.data?.trade_id || '') + "...", "success");
         } catch (error) {
           console.error("[SHOW_CHART] ❌ Error opening popup:", error);
-          showNotification(`❌ Failed to open chart: ${error.message}`, "error");
+          showNotification("❌ Failed to open chart: " + error.message, "error");
         }
       } else if (res.frontend_action === "close_chat") {
         const closeBtn = document.getElementById("closeChat");
@@ -4179,19 +4526,19 @@ async function handleSystemCommand(userInput) {
         const sessionName = res.data?.session_name || res.data?.symbol;
         const additionalIds = res.data?.additional_session_ids || []; // For multiple deletions
         
-        console.log(`[DELETE_SESSION] Received:`, { sessionId, sessionName, additionalIds, resData: res.data });
+        console.log("[DELETE_SESSION] Received:", { sessionId, sessionName, additionalIds, resData: res.data });
         
         // Delete multiple sessions if provided
         const sessionsToDelete = [sessionId, ...additionalIds].filter(Boolean);
         
         if (sessionsToDelete.length > 0) {
           // Delete all specified sessions without confirmation (AI-initiated)
-          console.log(`[DELETE_SESSION] Deleting ${sessionsToDelete.length} session(s) by ID`);
+          console.log("[DELETE_SESSION] Deleting " + sessionsToDelete.length + " session(s) by ID");
           (async () => {
             try {
               for (const sid of sessionsToDelete) {
-                await window.IDB.deleteSession(sid);
-                console.log(`[DELETE_SESSION] ✅ Deleted session: ${sid}`);
+               await window.IDB.deleteSession(sid);
+                console.log("[DELETE_SESSION] ✅ Deleted session: " + sid);
               }
               
               // If deleting current session, switch to another or create new
@@ -4206,7 +4553,7 @@ async function handleSystemCommand(userInput) {
                 }
               }
               
-              showNotification(`✅ Deleted ${sessionsToDelete.length} session(s)`, "success");
+              showNotification("✅ Deleted " + sessionsToDelete.length + " session(s)", "success");
               
               // Refresh session manager if open
               if (sessionManagerModal) {
@@ -4235,12 +4582,12 @@ async function handleSystemCommand(userInput) {
               });
               
               if (matchingSessions.length > 0) {
-                console.log(`[SESSION_DELETE] Found ${matchingSessions.length} matching session(s) for "${sessionName}"`);
+                console.log("[SESSION_DELETE] Found " + matchingSessions.length + " matching session(s) for \"" + sessionName + "\"");
                 
                 // Delete all matching sessions
                 for (const session of matchingSessions) {
                   await window.IDB.deleteSession(session.sessionId);
-                  console.log(`[SESSION_DELETE] ✅ Deleted session: ${session.sessionId} (${session.symbol})`);
+                  console.log("[SESSION_DELETE] ✅ Deleted session: " + session.sessionId + " (" + session.symbol + ")");
                 }
                 
                 // If deleting current session, switch to another or create new
@@ -4259,7 +4606,7 @@ async function handleSystemCommand(userInput) {
                   }
                 }
                 
-                showNotification(`✅ Deleted ${matchingSessions.length} session(s)`, "success");
+                showNotification("✅ Deleted " + matchingSessions.length + " session(s)", "success");
                 
                 // Refresh session manager if open
                 if (sessionManagerModal) {
@@ -4268,7 +4615,7 @@ async function handleSystemCommand(userInput) {
               } else {
                 // Fallback: open session manager
                 showSessionManager();
-                showNotification(`Could not find session "${sessionName}". Please select it from the list.`, "warning");
+                showNotification("Could not find session \"" + sessionName + "\". Please select it from the list.", "warning");
               }
             } catch (error) {
               console.error("Delete session error:", error);
@@ -4668,7 +5015,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const frontendAction = message.frontend_action;
     const actionData = message.data || {};
     
-    console.log(`[FRONTEND_ACTION] Received from background: ${frontendAction}`, actionData);
+    console.log("[FRONTEND_ACTION] Received from background: " + frontendAction, actionData);
     
     // Execute the frontend action using the same logic as handleSystemCommand
     // Wrap async operations in IIFE
@@ -4722,18 +5069,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const sessionName = actionData?.session_name || actionData?.symbol;
         const additionalIds = actionData?.additional_session_ids || []; // For multiple deletions
         
-        console.log(`[FRONTEND_ACTION] delete_session received:`, { sessionId, sessionName, additionalIds, actionData });
+        console.log("[FRONTEND_ACTION] delete_session received:", { sessionId, sessionName, additionalIds, actionData });
         
         // Delete multiple sessions if provided
         const sessionsToDelete = [sessionId, ...additionalIds].filter(Boolean);
         
         if (sessionsToDelete.length > 0) {
           // Delete all specified sessions
-          console.log(`[FRONTEND_ACTION] Deleting ${sessionsToDelete.length} session(s) by ID`);
+          console.log("[FRONTEND_ACTION] Deleting " + sessionsToDelete.length + " session(s) by ID");
           try {
             for (const sid of sessionsToDelete) {
               await window.IDB.deleteSession(sid);
-              console.log(`[FRONTEND_ACTION] ✅ Deleted session: ${sid}`);
+              console.log("[FRONTEND_ACTION] ✅ Deleted session: " + sid);
             }
             
             // If deleting current session, switch to another or create new
@@ -4748,7 +5095,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               }
             }
             
-            showNotification(`✅ ${sessionsToDelete.length} session(s) deleted`, "success");
+            showNotification("✅ " + sessionsToDelete.length + " session(s) deleted", "success");
             
             // Refresh session manager if open
             if (sessionManagerModal) {
@@ -4775,13 +5122,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
             
             if (matchingSessions.length > 0) {
-              console.log(`[FRONTEND_ACTION] Found ${matchingSessions.length} matching session(s) for "${sessionName}"`);
+            console.log("[FRONTEND_ACTION] Found " + matchingSessions.length + " matching session(s) for \"" + sessionName + "\"");
               
               // Delete all matching sessions
               for (const session of matchingSessions) {
                 // Skip confirmation for AI-initiated deletions
                 await window.IDB.deleteSession(session.sessionId);
-                console.log(`[FRONTEND_ACTION] ✅ Deleted session: ${session.sessionId} (${session.symbol})`);
+                console.log("[FRONTEND_ACTION] ✅ Deleted session: " + session.sessionId + " (" + session.symbol + ")");
               }
               
               // If deleting current session, switch to another or create new
@@ -4800,7 +5147,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
               }
               
-              showNotification(`✅ Deleted ${matchingSessions.length} session(s)`, "success");
+              showNotification("✅ Deleted " + matchingSessions.length + " session(s)", "success");
               
               // Refresh session manager if open
               if (sessionManagerModal) {
@@ -4809,7 +5156,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             } else {
               // Fallback: open session manager
               showSessionManager();
-              showNotification(`Could not find session "${sessionName}". Please select it from the list.`, "warning");
+              showNotification("Could not find session \"" + sessionName + "\". Please select it from the list.", "warning");
             }
           } catch (error) {
             console.error("Delete session error:", error);
@@ -4823,7 +5170,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const newName = actionData?.new_name;
         const targetSessionId = actionData?.current_session_id || currentSession?.sessionId;
         
-        console.log(`[FRONTEND_ACTION] rename_session received:`, { newName, targetSessionId, actionData });
+        console.log("[FRONTEND_ACTION] rename_session received:", { newName, targetSessionId, actionData });
         
         if (newName && targetSessionId) {
           try {
@@ -4835,11 +5182,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               currentSession.title = newName.trim();
               const statusEl = document.getElementById("vtc-session-status");
               if (statusEl) {
-                statusEl.textContent = `🧠 ${newName.trim()}`;
+              statusEl.textContent = "🧠 " + newName.trim();
               }
             }
             
-            showNotification(`✅ Session renamed to "${newName}"`, "success");
+            showNotification("✅ Session renamed to \"" + newName + "\"", "success");
             
             // Refresh session manager if open
             if (sessionManagerModal) {
@@ -4859,7 +5206,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         console.log("[FRONTEND_ACTION] show_chart_popup received:", { chartUrl, actionData });
         
         if (chartUrl && window.openChartPopup) {
-          const fullUrl = chartUrl.startsWith('http') ? chartUrl : `http://127.0.0.1:8765${chartUrl}`;
+          const fullUrl = chartUrl.startsWith('http') ? chartUrl : "http://127.0.0.1:8765" + chartUrl;
           console.log("[FRONTEND_ACTION] Opening chart popup:", fullUrl);
           window.openChartPopup(fullUrl);
           showNotification("📊 Chart popup opened", "success");

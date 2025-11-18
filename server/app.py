@@ -14,32 +14,16 @@ from db.maintenance import backfill_trades
 from db.migrate_from_json import migrate_performance_logs
 from db.enrich_from_logs import enrich_trades_from_logs
 from db.import_from_csv import import_from_csv
-from decision import analyze_chart_with_gpt4v, get_base_prompt
+# decision.py no longer provides vision analysis; removed legacy import
 from openai_client import get_client, get_budget_status, resolve_model, list_available_models, sync_model_aliases
-from performance.routes import router as performance_router
-from performance.dashboard import router as dashboard_router
-from performance.learning import learning_router
 from memory.routes import memory_router
 from memory.utils import initialize_default_files, get_memory_status
-from trades_import.routes import router as trades_import_router
-from trades.routes import router as trades_router
-from navigation.routes import router as navigation_router
-from admin.routes import router as admin_router
 from chart_reconstruction.routes import router as chart_reconstruction_router
-from charts.routes import router as charts_router
-# Phase 4B: Strategy Documentation
-from setups.routes import router as setups_router
-from annotations.routes import router as annotations_router
-from entry_methods.routes import router as entry_methods_router
-# Phase 4C: Trade Analysis
 from analytics.routes import router as analytics_router
-from trades_merge.routes import router as trades_merge_router
-from amn_teaching.routes import router as amn_teaching_router
-from copilot_bridge.routes import router as copilot_router
-from routers.teach_router import router as teach_router
-from performance.learning import generate_learning_profile
-# Phase 4D: AI Learning System
-from ai.routes import router as ai_router
+from chat.routes import router as chat_router
+from vision.routes import router as vision_router
+# Minimal set of active routers; archived modules removed from imports
+# Keep extension/analytics/chat functionality focused.
 # LATv2 removed - logging system no longer needed
 import asyncio
 import time
@@ -81,22 +65,6 @@ def generate_fallback_message(question: str, confidence: float = 0.0) -> str:
 
 # write_chat_log function removed - LATv2 logging no longer needed
 
-# Try to import PIL, but make it optional for now
-try:
-    from PIL import Image
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
-    print("Warning: PIL/Pillow not available. Using pypng for basic image processing.")
-
-# Try to import pypng as fallback
-try:
-    import png
-    PYPNG_AVAILABLE = True
-except ImportError:
-    PYPNG_AVAILABLE = False
-    print("Warning: pypng not available. Image processing will be very limited.")
-
 # Load environment variables
 load_dotenv()
 
@@ -115,151 +83,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount performance tracking router (Phase 4A)
-app.include_router(performance_router)
-app.include_router(dashboard_router)
-
-# Mount learning router (Phase 4C)
-app.include_router(learning_router)
-
-# Mount memory router (Phase 4C.1)
 app.include_router(memory_router)
-
-# Mount trades import router (Phase 4D.0)
-app.include_router(trades_import_router)
-
-# New DB-backed trade management API
-app.include_router(trades_router)
-
-# Mount chart reconstruction router (Phase 4D.1)
 app.include_router(chart_reconstruction_router)
-
-# Charts endpoints (DB-friendly)
-app.include_router(charts_router)
-
-# Phase 4B: Strategy Documentation routers
-app.include_router(setups_router)
-app.include_router(annotations_router)
-app.include_router(entry_methods_router)
-# Phase 4C: Trade Analysis router
 app.include_router(analytics_router)
-
-# Phase 4D: AI Learning System router
-app.include_router(ai_router)
-# Phase 4E: Strategy Documentation router
-from strategy.routes import router as strategy_router
-app.include_router(strategy_router)
-# Phase 4E: Chat routes with state tracking
-from chat.routes import router as chat_router
 app.include_router(chat_router)
-
-# Mount trades merge router (Phase 4D.2)
-app.include_router(trades_merge_router)
-
-# Mount AMN teaching router (Phase 4D.2)
-app.include_router(amn_teaching_router)
-
-# Mount static files for dashboard (Phase 4B.1)
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# Serve minimal web app for trade management UI (Phase 4A foundation)
-try:
-    # Mount web app with no-cache headers to ensure updates are visible
-    class NoCacheStaticFiles(StaticFiles):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-        
-        async def __call__(self, scope, receive, send):
-            async def send_wrapper(message):
-                if message["type"] == "http.response.start":
-                    message.setdefault("headers", [])
-                    # Add no-cache headers
-                    message["headers"].append([b"cache-control", b"no-cache, no-store, must-revalidate"])
-                    message["headers"].append([b"pragma", b"no-cache"])
-                    message["headers"].append([b"expires", b"0"])
-                await send(message)
-            await super().__call__(scope, receive, send_wrapper)
-    
-    app.mount("/app", NoCacheStaticFiles(directory="web", html=True), name="web_app")
-except Exception as _e:
-    print(f"[WEB] Skipping /app mount (web assets missing): {_e}")
-
-# === 5F.2 FIX ===
-# Mount chart images (Phase 5A: Teach Copilot)
-from pathlib import Path
-charts_dir = Path(__file__).parent / "data" / "charts"
-if charts_dir.exists():
-    # [5F.2 FIX F1] Add Cache-Control headers for StaticFiles
-    class CachedStaticFiles(StaticFiles):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-        
-        async def __call__(self, scope, receive, send):
-            async def send_wrapper(message):
-                if message["type"] == "http.response.start":
-                    # Add Cache-Control header
-                    headers = dict(message.get("headers", []))
-                    headers[b"cache-control"] = b"public, max-age=604800"  # 7 days
-                    message["headers"] = list(headers.items())
-                await send(message)
-            await super().__call__(scope, receive, send_wrapper)
-    
-    # Phase 5F Fix: Add explicit route handler BEFORE mount for better error diagnostics
-    @app.get("/charts/{filename}")
-    async def get_chart_file(filename: str, request: Request):
-        """
-        Serve chart files with better error handling.
-        Phase 5F Fix: Returns 404 with diagnostic info if file not found.
-        Supports both HTTP and HTTPS protocols.
-        """
-        chart_file = charts_dir / filename
-        if not chart_file.exists():
-            # Log diagnostic info
-            print(f"[CHARTS] 404 - Chart file not found: {filename}")
-            print(f"[CHARTS] Chart directory: {charts_dir}")
-            print(f"[CHARTS] Directory exists: {charts_dir.exists()}")
-            if charts_dir.exists():
-                available_files = list(charts_dir.glob("*.png"))[:10]
-                print(f"[CHARTS] Available files (sample): {[f.name for f in available_files]}")
-            
-            raise HTTPException(
-                status_code=404,
-                detail={
-                    "error": "Chart file not found",
-                    "filename": filename,
-                    "chart_directory": str(charts_dir),
-                    "directory_exists": charts_dir.exists(),
-                    "available_files_sample": [f.name for f in (charts_dir.glob("*.png")[:10] if charts_dir.exists() else [])]
-                }
-            )
-        
-        # Use FileResponse to serve the file with proper headers
-        from fastapi.responses import FileResponse
-        return FileResponse(chart_file, media_type="image/png")
-    
-    # Phase 5F Fix: Use explicit route handler (no mount needed - route takes precedence)
-    # Mount removed to avoid conflicts - explicit route handler provides better error diagnostics
-    # app.mount("/charts", CachedStaticFiles(directory=str(charts_dir)), name="charts")  # Removed - use route handler instead
-    
-    # Add static mount for /static/charts (for backward compatibility - deprecated, use /charts/)
-    app.mount("/static/charts", StaticFiles(directory=str(charts_dir)), name="static_charts")
-
-# Phase 5C: Mount overlay images (serve from overlays directory)
-overlays_dir = Path(__file__).parent / "data" / "amn_training_examples" / "overlays"
-overlays_dir.mkdir(parents=True, exist_ok=True)  # Create if doesn't exist
-app.mount("/overlays", StaticFiles(directory=str(overlays_dir)), name="overlays")
-
-# Mount copilot bridge router (Phase 4D.2.1)
-app.include_router(copilot_router)
-
-# Mount teach router (Phase 5B: Conversational Teaching Engine)
-app.include_router(teach_router)
-
-# Navigation endpoints (DB-backed current/next/previous)
-app.include_router(navigation_router)
-
-# Admin endpoints
-app.include_router(admin_router)
+app.include_router(vision_router)
 
 # Phase 4C.1: Startup initialization with persistent memory
 @app.on_event("startup")
@@ -326,13 +154,6 @@ async def startup_event():
     except Exception as e:
         print(f"[SYSTEM] Warning: Could not sync model aliases: {e}")
         print("[SYSTEM] Continuing with default aliases...")
-    
-    # Phase 4D.3: Regenerate learning profile from unified logs on startup
-    try:
-        print("[LEARNING] Regenerating performance profile...")
-        generate_learning_profile()
-    except Exception as e:
-        print(f"[LEARNING] Warning: Could not regenerate profile: {e}")
     
     # Initialize awareness layer
     try:
@@ -472,7 +293,7 @@ async def analyze_chart(
         selected_model = resolve_model(model)
         
         # Analyze the chart using GPT-4 Vision with selected model
-        analysis_result = await analyze_chart_with_gpt4v(image_base64, api_key, model=selected_model)
+        analysis_result = None  # Vision analysis disabled in Chat Refresh
         
         # Prepare response
         response = {
@@ -520,12 +341,14 @@ async def ask_about_chart(
     model: str = Form(None),
     messages: str = Form(None),
     context: str = Form(None),
+    image: UploadFile = File(None),
 ):
     """
     Pure AI chat (natural language only).
     - No command detection or execution
     - No auto-chart loading
     - Optional conversation history and lightweight context only
+    - Optional image support for chart analysis
     """
     try:
         selected_model = resolve_model(model)
@@ -543,10 +366,31 @@ async def ask_about_chart(
             except json.JSONDecodeError:
                 pass
 
+        # Handle image if provided
+        image_base64 = None
+        if image:
+            try:
+                image_data = await image.read()
+                if PIL_AVAILABLE:
+                    img = Image.open(io.BytesIO(image_data))
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    max_size = 2048
+                    if img.width > max_size or img.height > max_size:
+                        img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+                    buffer = io.BytesIO()
+                    img.save(buffer, format='JPEG', quality=85)
+                    image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+                else:
+                    image_base64 = base64.b64encode(image_data).decode('utf-8')
+            except Exception as e:
+                print(f"[ASK] Failed to process image: {e}")
+                # Continue without image if processing fails
+
         client = get_client()
         response = await client.create_response(
             question=question,
-            image_base64=None,
+            image_base64=image_base64,
             model=selected_model,
             conversation_history=conversation_history,
             session_context=session_context,

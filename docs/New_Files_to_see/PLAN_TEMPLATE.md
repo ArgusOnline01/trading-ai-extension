@@ -1,163 +1,112 @@
-# Feature Plan: [Feature Name]
+# Plan: [Name]
 
 **Date:** YYYY-MM-DD  
-**Phase:** Phase X (if applicable)  
+**Initiative:** [Entry Lab / Phase X / etc.]  
 **Status:** Planning / In Progress / Completed
 
 ---
 
-## Feature Overview
-
-### What It Does
-[Clear description of the feature and its purpose]
-
-### Why It's Needed
-[Business justification or user need]
-
-### User Story
-[As a... I want... So that...]
+## 1. Context Snapshot
+- **Goal:** [What outcome we want now]
+- **Scope:** [Boundaries for this effort]
+- **Prior Work:** [Links/notes to earlier docs, commits, experiments]
+- **Assumptions/Risks:** [Key unknowns or constraints]
 
 ---
 
-## Technical Requirements
+## 2. Discussion & Decisions
+| Topic | Decision | Rationale | Owner |
+|-------|----------|-----------|-------|
+| e.g., Data source | Use funded-account CSV (31 trades) | Most reliable data | You |
 
-### Backend Changes
-- [ ] API endpoints to create
-- [ ] Database schema changes
-- [ ] Business logic to implement
-- [ ] External API integrations
-- [ ] Dependencies needed
-
-### Frontend Changes
-- [ ] UI components to create/modify
-- [ ] Pages/routes to add
-- [ ] User interactions to implement
-- [ ] State management needed
-- [ ] API calls to make
-
-### Database Changes
-- [ ] New tables
-- [ ] Table modifications
-- [ ] Indexes to add
-- [ ] Migrations needed
-
-### API Endpoints
-| Method | Endpoint | Description | Status |
-|--------|----------|-------------|--------|
-| GET/POST/etc | `/endpoint` | Description | Planned |
+Use this table to capture the conversation outcomes so anyone can see *why* we chose an approach.
 
 ---
 
-## Implementation Details
+## 3. Feature Overview
+### What We’re Building
+[Plain-language description of the feature/workstream]
 
-### Architecture Approach
-[How will this be built? High-level design]
+### Why It Matters
+[Business/user impact, success definition]
 
-### File Structure
+### User Story / Scenario
+[As a…, I want…, So that…]
+
+---
+
+## 4. Implementation Blueprint
+
+### Architecture / Approach
+[High-level design, flow, algorithms, heuristics]
+
+### Work Breakdown
+| Area | Tasks | Notes |
+|------|-------|-------|
+| Backend | - [ ] Task 1<br>- [ ] Task 2 | deps, files |
+| Frontend | - [ ] … | |
+| Data/Infra | - [ ] … | |
+
+### Files / Modules
 ```
-[Files to create/modify]
-- path/to/file1.py
-- path/to/file2.tsx
+[List files to create/modify]
+- path/to/file.py
+- web/feature.tsx
 ```
 
-### Component Breakdown
-[Key components/modules and their responsibilities]
-
-### Data Flow
-[How data flows through the system]
-
----
-
-## Testing Requirements
-
-### Test Scenarios
-
-#### Happy Path
-1. **Scenario:** [Description]
-   - **Steps:** [User actions]
-   - **Expected Frontend:** [What user sees]
-   - **Expected Backend:** [API response, database state]
-   - **Success Criteria:** [How to verify it works]
-
-#### Edge Cases
-1. **Scenario:** [Description]
-   - **Steps:** [User actions]
-   - **Expected:** [What should happen]
-
-#### Error Handling
-1. **Scenario:** [Error case]
-   - **Steps:** [How to trigger error]
-   - **Expected:** [Error message/behavior]
-
-### Integration Testing
-- [ ] Component interactions work
-- [ ] API calls succeed
-- [ ] Database operations work
-- [ ] External services integrate
-
-### Regression Testing
-- [ ] Existing features still work
-- [ ] No breaking changes
+### Data Inputs
+- Source: [CSV path, API, etc.]
+- Fields needed: [list]
+- Transformations: [e.g., normalize timestamps]
 
 ---
 
-## Deliverables
+## 5. Testing & Validation
 
-### Final Output
-[What will be delivered when complete]
+### Scenarios
+1. **Happy Path:** [Steps, expected UI/Backend, pass criteria]
+2. **Edge Case:** [...]
+3. **Error Handling:** [...]
 
-### Acceptance Criteria
-- [ ] Criteria 1
-- [ ] Criteria 2
-- [ ] Criteria 3
+### Automation / Tooling
+- [ ] Unit tests (list modules)
+- [ ] Integration/API checks
+- [ ] Visual / MCP tests (if UI)
+- [ ] Data validation scripts
 
-### What "Done" Looks Like
-[Clear description of completed feature]
-
----
-
-## Dependencies
-
-### Prerequisites
-- [ ] Dependency 1
-- [ ] Dependency 2
-
-### Blockers
-- [ ] Blocker 1 (if any)
+### “Done” Checklist
+- [ ] Acceptance criteria met
+- [ ] Docs updated (plan/implementation/test)
+- [ ] Demo / screenshots / metrics captured
 
 ---
 
-## Notes
+## 6. Deliverables
+- [ ] Artifact 1 (e.g., `/api/entry-evaluator` endpoint)
+- [ ] Artifact 2
 
-[Any additional notes, considerations, or decisions]
+## 7. Open Questions
+- [ ] Question 1 (who / when to answer)
+- [ ] Question 2
 
 ---
 
-## Implementation Status
+## 8. Status Tracker
 
-### Completed
+### Implementation Tasks
 - [ ] Task 1
 - [ ] Task 2
 
-### In Progress
-- [ ] Task 3
+### Testing Tasks
+- [ ] Scenario 1
+- [ ] Scenario 2
 
-### Pending
-- [ ] Task 4
+### Follow-ups
+- [ ] e.g., Schedule review with <name>
 
 ---
 
-## Testing Status
-
-### Passed
-- [ ] Test 1
-- [ ] Test 2
-
-### Failed
-- [ ] Test 3 (with notes)
-
-### Pending
-- [ ] Test 4
+_Add extra sections as needed (metrics, analytics plan, rollout)._ 
 
 ---
 

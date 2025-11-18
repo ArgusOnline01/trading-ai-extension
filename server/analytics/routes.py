@@ -3,13 +3,15 @@ Phase 4C: Analytics Module
 Provides statistics and analysis endpoints for entry methods, time patterns, and direction patterns.
 """
 
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Body
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case, and_, or_
 from typing import Optional, List, Dict, Any
 from datetime import datetime, time, timezone
 from db.session import get_db
 from db.models import Trade, EntryMethod, Setup
+# Local import keeps this module working whether loaded as "analytics" or "server.analytics"
+from .advisor import evaluate_setup  # type: ignore
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -218,6 +220,27 @@ def get_time_patterns(
         })
     
     return {"time_patterns": result}
+
+
+@router.post("/advisor/evaluate")
+def evaluate_advisor_setup(
+    payload: dict = Body(..., description="Setup fields (see ANNOTATION_CSV_GUIDE for field names)"),
+    remaining_drawdown: float = Query(500.0, description="Remaining drawdown buffer for risk cap calc"),
+    risk_cap_pct: float = Query(0.10, description="Risk cap as fraction of remaining drawdown"),
+    require_grade: str = Query("A+", description="Minimum grade to allow enter (A+/A/B/C)"),
+    require_micro: bool = Query(False, description="Require micro_shift == true to allow enter"),
+):
+    """
+    Evaluate a setup with the Phase 3 advisor. No DB required.
+    """
+    resp = evaluate_setup(
+        payload,
+        remaining_drawdown=remaining_drawdown,
+        risk_cap_pct=risk_cap_pct,
+        require_grade=require_grade,
+        require_micro=require_micro,
+    )
+    return resp
 
 
 @router.get("/direction-patterns")

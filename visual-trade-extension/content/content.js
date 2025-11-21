@@ -775,6 +775,9 @@ function safeBind(elementId, handler) {
 
 function showOverlayHome() {
   try {
+    // Ensure base styles are loaded before creating overlay
+    try { ensureBaseStyles(); } catch (_) {}
+    
     // If already visible, bring to front
     if (overlayHome && document.body.contains(overlayHome)) {
       overlayHome.style.display = 'block';
@@ -784,39 +787,44 @@ function showOverlayHome() {
     overlayHome.id = 'vtc-overlay-home';
     overlayHome.style.cssText = `
       position: fixed; top: 0; right: 0; width: 620px; height: 100vh; z-index: 2147483000;
-      background: rgba(9,9,9,0.96); border-left: 1px solid #2a2a2a;
-      box-shadow: -8px 0 24px rgba(0,0,0,0.45); color: #f5f5f5; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #0f0f1a 100%);
+      border-left: 3px solid;
+      border-image: linear-gradient(180deg, #ffd400, #ff6b6b, #4ecdc4, #45b7d1) 1;
+      box-shadow: -12px 0 40px rgba(255, 212, 0, 0.15), -8px 0 24px rgba(0,0,0,0.6);
+      color: #f5f5f5; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
       display: flex; flex-direction: column; overflow: hidden;
-      opacity: 0; transform: translateX(12px) scale(0.98); transition: opacity .25s ease, transform .25s ease;
-      backdrop-filter: blur(2px);
+      opacity: 0; transform: translateX(12px) scale(0.98); transition: opacity .3s ease, transform .3s ease;
+      backdrop-filter: blur(8px) saturate(180%);
     `;
     overlayHome.innerHTML = `
-      <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background:#111; border-bottom:1px solid #232323;">
-        <div style="display:flex; align-items:center; gap:10px;">
-          <span style="font-size:20px">🤖</span>
-          <div style="font-weight:700">Visual Trade Copilot</div>
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:16px 20px; background: linear-gradient(135deg, rgba(26, 26, 46, 0.95) 0%, rgba(15, 15, 26, 0.95) 100%); border-bottom: 2px solid rgba(255, 212, 0, 0.2); backdrop-filter: blur(10px); position: relative; z-index: 1; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <span style="font-size:24px; filter: drop-shadow(0 0 8px rgba(255, 212, 0, 0.4)); animation: float 3s ease-in-out infinite;">🤖</span>
+          <div style="font-weight:700; font-size:18px; background: linear-gradient(135deg, #ffd400 0%, #ffed4e 50%, #fff 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; text-shadow: 0 0 20px rgba(255, 212, 0, 0.3);">Visual Trade Copilot</div>
         </div>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <button id="vtc-home-open-app" title="Open Trades Web App" style="background:#ffd400; color:#000; border:none; padding:8px 10px; border-radius:8px; cursor:pointer; font-weight:600;">Open App</button>
-          <button id="vtc-home-close" title="Close" style="background:transparent; color:#aaa; border:1px solid #2a2a2a; padding:8px 10px; border-radius:8px; cursor:pointer;">✖</button>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <button id="vtc-home-open-app" title="Open Trades Web App" style="background: linear-gradient(135deg, #ffd400 0%, #ffed4e 100%); color:#000; border:none; padding:10px 16px; border-radius:10px; cursor:pointer; font-weight:700; box-shadow: 0 4px 15px rgba(255, 212, 0, 0.4), 0 0 20px rgba(255, 212, 0, 0.2); transition: all 0.3s ease; position: relative; overflow: hidden;">Open App</button>
+          <button id="vtc-home-close" title="Close" style="background:rgba(255,255,255,0.05); color:#ddd; border:1px solid rgba(255,255,255,0.1); padding:8px 12px; border-radius:8px; cursor:pointer; transition: all 0.2s ease; backdrop-filter: blur(5px);">✖</button>
         </div>
       </div>
-      <div style="display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:14px; padding:16px; overflow:auto;">
+      <div style="display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:16px; padding:20px; overflow:auto; position: relative; z-index: 1;">
         ${[
-          {id:'new', title:'New Conversation', desc:'Start fresh analysis', icon:'💬'},
-          {id:'continue', title:'Continue Chat', desc:'Resume current session', icon:'➡️'},
-          {id:'sessions', title:'Past Sessions', desc:'View conversation history', icon:'🗂️'},
-          {id:'performance', title:'My Performance', desc:'View trading stats', icon:'📊'},
-          {id:'analytics', title:'Analytics Dashboard', desc:'Visual performance charts', icon:'📈'},
-          {id:'teach', title:'Teach Copilot', desc:'Train AI with your setups', icon:'🧠'}
+          {id:'new', title:'New Conversation', desc:'Start fresh analysis', icon:'💬', gradient:'linear-gradient(135deg, rgba(78, 205, 196, 0.15) 0%, rgba(69, 183, 209, 0.1) 100%)', glow:'rgba(78, 205, 196, 0.3)'},
+          {id:'continue', title:'Continue Chat', desc:'Resume current session', icon:'➡️', gradient:'linear-gradient(135deg, rgba(255, 212, 0, 0.15) 0%, rgba(255, 237, 78, 0.1) 100%)', glow:'rgba(255, 212, 0, 0.3)'},
+          {id:'sessions', title:'Past Sessions', desc:'View conversation history', icon:'🗂️', gradient:'linear-gradient(135deg, rgba(255, 107, 107, 0.15) 0%, rgba(255, 159, 64, 0.1) 100%)', glow:'rgba(255, 107, 107, 0.3)'},
+          {id:'performance', title:'My Performance', desc:'View trading stats', icon:'📊', gradient:'linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(168, 85, 247, 0.1) 100%)', glow:'rgba(139, 92, 246, 0.3)'},
+          {id:'analytics', title:'Analytics Dashboard', desc:'Visual performance charts', icon:'📈', gradient:'linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(37, 99, 235, 0.1) 100%)', glow:'rgba(59, 130, 246, 0.3)'},
+          {id:'teach', title:'Teach Copilot', desc:'Train AI with your setups', icon:'🧠', gradient:'linear-gradient(135deg, rgba(236, 72, 153, 0.15) 0%, rgba(219, 39, 119, 0.1) 100%)', glow:'rgba(236, 72, 153, 0.3)'}
         ].map(card => `
-          <div class="vtc-card" data-card="${card.id}" style="background:#0f0f0f; border:1px solid #232323; border-radius:12px; padding:14px; cursor:pointer; transition: transform .2s ease, box-shadow .2s ease;">
-            <div style="font-size:22px">${card.icon}</div>
-            <div style="margin-top:6px; font-weight:700;">${card.title}</div>
-            <div style="margin-top:4px; color:#bdbdbd; font-size:13px;">${card.desc}</div>
+          <div class="vtc-card" data-card="${card.id}" data-glow="${card.glow}" style="background: ${card.gradient}, radial-gradient(circle at top right, rgba(255,255,255,0.03) 0%, transparent 60%), #0f0f0f; border: 1px solid rgba(255,255,255,0.1); border-radius:16px; padding:18px; cursor:pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); position: relative; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.2);">
+            <div class="vtc-card-glow" style="position: absolute; top: -50%; right: -50%; width: 200%; height: 200%; background: radial-gradient(circle, ${card.glow} 0%, transparent 70%); opacity: 0; transition: opacity 0.3s ease; pointer-events: none;"></div>
+            <div class="vtc-card-icon" style="font-size:28px; filter: drop-shadow(0 0 8px ${card.glow}); position: relative; z-index: 1; transition: transform 0.3s ease, filter 0.3s ease;">${card.icon}</div>
+            <div class="vtc-card-title" style="margin-top:10px; font-weight:700; font-size:15px; color: #fff; position: relative; z-index: 1; transition: color 0.3s ease, text-shadow 0.3s ease;">${card.title}</div>
+            <div class="vtc-card-desc" style="margin-top:6px; color:#bdbdbd; font-size:13px; position: relative; z-index: 1; transition: color 0.3s ease;">${card.desc}</div>
           </div>
         `).join('')}
       </div>
+      <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: radial-gradient(circle at 20% 50%, rgba(255, 212, 0, 0.08) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(78, 205, 196, 0.06) 0%, transparent 50%); pointer-events: none; z-index: 0;"></div>
     `;
     document.body.appendChild(overlayHome);
     requestAnimationFrame(() => {
@@ -2523,7 +2531,8 @@ function ensureBaseStyles() {
     /* Motion */
     @keyframes vtc-fade-slide-in { from { opacity:0; transform: translateY(8px);} to { opacity:1; transform:none;} }
     @keyframes vtc-scale-in { from { opacity:.6; transform: scale(.98);} to { opacity:1; transform: scale(1);} }
-    .vtc-chat-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 620px; display: flex; flex-direction: column; background: var(--vtc-bg); color: var(--vtc-text); border-left: 2px solid var(--vtc-brand); box-shadow: -8px 0 24px rgba(0,0,0,.35); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial; box-sizing: border-box; }
+    .vtc-chat-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 620px; display: flex; flex-direction: column; background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #0f0f1a 100%); color: var(--vtc-text); border-left: 3px solid; border-image: linear-gradient(180deg, #ffd400, #ff6b6b, #4ecdc4, #45b7d1) 1; box-shadow: -12px 0 40px rgba(255, 212, 0, 0.15), -8px 0 24px rgba(0,0,0,.6); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial; box-sizing: border-box; position: relative; }
+    .vtc-chat-panel::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: radial-gradient(circle at 20% 50%, rgba(255, 212, 0, 0.05) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(78, 205, 196, 0.04) 0%, transparent 50%); pointer-events: none; z-index: 0; }
     .vtc-chat-panel, .vtc-header, .vtc-input-area, .vtc-footer, .vtc-messages { margin: 0 !important; }
     .vtc-footer { margin-top: 0 !important; }
     /* Ensure resize handles do not affect layout flow */
@@ -2536,29 +2545,93 @@ function ensureBaseStyles() {
     .vtc-resize-topright { top: 0; right: 0; width: 10px; height: 10px; cursor: nesw-resize; }
     .vtc-resize-bottomleft { bottom: 0; left: 0; width: 10px; height: 10px; cursor: nesw-resize; }
     .vtc-resize-bottomright { bottom: 0; right: 0; width: 10px; height: 10px; cursor: nwse-resize; }
-    .vtc-header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--vtc-border); background: var(--vtc-bg-elev); backdrop-filter: saturate(120%) blur(6px); }
-    .vtc-title { display:flex; align-items:center; gap:10px; }
-    .vtc-title h3 { margin: 0; font-weight: 700; letter-spacing: .2px; }
+    .vtc-header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 2px solid rgba(255, 212, 0, 0.2); background: linear-gradient(135deg, rgba(26, 26, 46, 0.95) 0%, rgba(15, 15, 26, 0.95) 100%); backdrop-filter: blur(10px) saturate(180%); position: relative; z-index: 1; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+    .vtc-title { display:flex; align-items:center; gap:12px; }
+    .vtc-title h3 { margin: 0; font-weight: 700; font-size: 18px; background: linear-gradient(135deg, #ffd400 0%, #ffed4e 50%, #fff 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; text-shadow: 0 0 20px rgba(255, 212, 0, 0.3); }
+    .vtc-title .vtc-icon { filter: drop-shadow(0 0 8px rgba(255, 212, 0, 0.4)); animation: float 3s ease-in-out infinite; }
     .vtc-session-badge { margin-left: 8px; padding: 2px 8px; border: 1px solid var(--vtc-border); border-radius: 999px; font-size: 12px; color: var(--vtc-brand); background: rgba(255,212,0,0.06); }
     .vtc-model-selector { background:var(--vtc-surface); color:#ddd; border:1px solid var(--vtc-border); border-radius:10px; padding:8px 10px; }
     .vtc-controls { display:flex; gap:6px; }
-    .vtc-control-btn { background:var(--vtc-surface); border:1px solid var(--vtc-border); color:#ddd; border-radius:10px; padding:8px 10px; cursor:pointer; transition: transform .12s ease, border-color .2s ease; }
-    .vtc-control-btn:hover { border-color:#3a3a3a; color:#fff; transform: translateY(-1px); }
-    .vtc-messages { flex: 1 1 auto; overflow-y: auto; padding: 14px 18px; animation: vtc-fade-slide-in .22s ease both; }
-    .vtc-message { display:flex; gap:10px; margin: 10px 0; }
-    .vtc-message-avatar { width:28px; height:28px; border-radius:999px; display:flex; align-items:center; justify-content:center; background:#1a1a1a; border:1px solid #2a2a2a; }
-    .vtc-message-content { max-width: calc(100% - 38px); }
-    .vtc-message-text { line-height: 1.45; }
-    .vtc-message-time { color:#888; font-size: 12px; margin-top: 6px; }
-    .vtc-input-area { flex: 0 0 auto; padding: 12px 14px; border-top: 1px solid var(--vtc-border); background:var(--vtc-bg-elev); }
-    .vtc-input { width:100%; background:var(--vtc-surface); color:#fff; border:1px solid var(--vtc-border); border-radius:12px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.02); }
-    .vtc-send-controls { display:flex; gap:8px; margin-top:8px; }
-    .vtc-btn-text, .vtc-btn-image { flex:1; background:linear-gradient(180deg, #161616 0%, #121212 100%); color:#ddd; border:1px solid var(--vtc-border); border-radius:12px; padding:10px 12px; cursor:pointer; transition: transform .12s ease, border-color .2s ease; }
-    .vtc-btn-text:hover, .vtc-btn-image:hover { border-color:#3a3a3a; color:#fff; transform: translateY(-1px); }
-    .vtc-footer { flex: 0 0 auto; display:flex; align-items:center; justify-content: space-between; gap:12px; padding: 10px 14px; border-top: 1px solid var(--vtc-border); background:var(--vtc-bg-elev); font-size:12px; color:#aaa; }
+    .vtc-control-btn { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#ddd; border-radius:10px; padding:8px 10px; cursor:pointer; transition: all 0.3s ease; backdrop-filter: blur(5px); }
+    .vtc-control-btn:hover { background:rgba(255, 212, 0, 0.1); border-color:rgba(255, 212, 0, 0.4); color:#ffd400; transform: translateY(-2px) scale(1.05); box-shadow: 0 4px 12px rgba(255, 212, 0, 0.2); }
+    .vtc-messages { flex: 1 1 auto; overflow-y: auto; padding: 20px; animation: vtc-fade-slide-in .22s ease both; position: relative; z-index: 1; }
+    .vtc-message { display:flex; gap:12px; margin: 16px 0; animation: messageSlideIn 0.3s ease; }
+    .vtc-message.user { flex-direction: row-reverse; }
+    .vtc-message-avatar { width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink: 0; transition: all 0.3s ease; }
+    .vtc-message.user .vtc-message-avatar { background: linear-gradient(135deg, rgba(100, 149, 237, 0.3) 0%, rgba(100, 149, 237, 0.15) 100%); border: 2px solid rgba(100, 149, 237, 0.6); box-shadow: 0 4px 15px rgba(100, 149, 237, 0.4), 0 0 20px rgba(100, 149, 237, 0.2); }
+    .vtc-message.assistant .vtc-message-avatar { background: linear-gradient(135deg, rgba(255, 212, 0, 0.3) 0%, rgba(255, 212, 0, 0.15) 100%); border: 2px solid rgba(255, 212, 0, 0.6); box-shadow: 0 4px 15px rgba(255, 212, 0, 0.4), 0 0 20px rgba(255, 212, 0, 0.2); }
+    .vtc-message-content { max-width: calc(100% - 60px); display: flex; flex-direction: column; gap: 6px; }
+    .vtc-message-text { line-height: 1.6; padding: 14px 16px; border-radius: 16px; word-wrap: break-word; position: relative; }
+    .vtc-message.user .vtc-message-text { background: linear-gradient(135deg, rgba(100, 149, 237, 0.2) 0%, rgba(100, 149, 237, 0.1) 100%); border: 1px solid rgba(100, 149, 237, 0.3); color: #fff; border-top-right-radius: 4px; margin-left: auto; box-shadow: 0 4px 12px rgba(100, 149, 237, 0.2); }
+    .vtc-message.assistant .vtc-message-text { background: linear-gradient(135deg, rgba(26, 26, 46, 0.6) 0%, rgba(15, 15, 26, 0.6) 100%); border: 1px solid rgba(255, 212, 0, 0.2); color: #e0e0e0; border-top-left-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+    .vtc-message-time { color:#888; font-size: 11px; padding: 0 4px; }
+    .vtc-message.user .vtc-message-time { text-align: right; }
+    @keyframes messageSlideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .vtc-input-area { flex: 0 0 auto; padding: 16px 20px; border-top: 2px solid rgba(255, 212, 0, 0.2); background: linear-gradient(135deg, rgba(26, 26, 46, 0.95) 0%, rgba(15, 15, 26, 0.95) 100%); backdrop-filter: blur(10px); position: relative; z-index: 1; box-shadow: 0 -4px 20px rgba(0,0,0,0.3); }
+    .vtc-input { width:100%; background:rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:12px 16px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.2), 0 0 0 1px rgba(255, 212, 0, 0.1); transition: all 0.3s ease; font-size: 14px; }
+    .vtc-input:focus { outline: none; border-color: rgba(255, 212, 0, 0.4); box-shadow: inset 0 2px 4px rgba(0,0,0,0.2), 0 0 0 2px rgba(255, 212, 0, 0.2), 0 0 20px rgba(255, 212, 0, 0.1); }
+    .vtc-send-controls { display:flex; gap:10px; margin-top:12px; }
+    .vtc-btn-text, .vtc-btn-image { flex:1; background:linear-gradient(135deg, rgba(255, 212, 0, 0.15) 0%, rgba(255, 237, 78, 0.1) 100%); color:#ffd400; border:1px solid rgba(255, 212, 0, 0.3); border-radius:12px; padding:12px 16px; cursor:pointer; transition: all 0.3s ease; font-weight: 600; box-shadow: 0 4px 12px rgba(255, 212, 0, 0.1); }
+    .vtc-btn-text:hover, .vtc-btn-image:hover { background:linear-gradient(135deg, rgba(255, 212, 0, 0.25) 0%, rgba(255, 237, 78, 0.15) 100%); border-color:rgba(255, 212, 0, 0.5); color:#fff; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(255, 212, 0, 0.3), 0 0 30px rgba(255, 212, 0, 0.15); }
+    .vtc-footer { flex: 0 0 auto; display:flex; align-items:center; justify-content: space-between; gap:12px; padding: 12px 20px; border-top: 1px solid rgba(255, 212, 0, 0.1); background: linear-gradient(135deg, rgba(26, 26, 46, 0.8) 0%, rgba(15, 15, 26, 0.8) 100%); backdrop-filter: blur(10px); font-size:12px; color:#aaa; position: relative; z-index: 1; }
+    .vtc-footer button { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#ddd; border-radius:8px; padding:6px 12px; cursor:pointer; transition: all 0.2s ease; }
+    .vtc-footer button:hover { background:rgba(255, 212, 0, 0.1); border-color:rgba(255, 212, 0, 0.3); color:#ffd400; transform: translateY(-1px); }
     /* Overlay Home cards */
-    #vtc-overlay-home .vtc-card { background: radial-gradient(1200px 180px at -20% -10%, rgba(255,212,0,0.06), transparent 60%), #0f0f0f; border:1px solid #232323; border-radius:14px; padding:16px; transition: transform .16s ease, box-shadow .16s ease, border-color .2s ease; }
-    #vtc-overlay-home .vtc-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.35); border-color:#2e2e2e; }
+    @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+    @keyframes pulse-glow { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; } }
+    #vtc-overlay-home .vtc-card { 
+      background: radial-gradient(1200px 180px at -20% -10%, rgba(255,212,0,0.06), transparent 60%), #0f0f0f; 
+      border: 1px solid rgba(255,255,255,0.1); 
+      border-radius: 16px; 
+      padding: 18px; 
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+      position: relative;
+      overflow: hidden;
+    }
+    #vtc-overlay-home .vtc-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, transparent 100%);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+    }
+    #vtc-overlay-home .vtc-card:hover { 
+      transform: translateY(-6px) scale(1.03) !important; 
+      box-shadow: 0 16px 48px rgba(0,0,0,.6), 0 0 40px rgba(255,212,0,0.25) !important; 
+      border-color: rgba(255,212,0,0.5) !important;
+    }
+    #vtc-overlay-home .vtc-card:hover::before {
+      opacity: 1;
+    }
+    #vtc-overlay-home .vtc-card:hover .vtc-card-glow {
+      opacity: 0.6 !important;
+    }
+    #vtc-overlay-home .vtc-card:hover .vtc-card-icon {
+      transform: scale(1.2) rotate(5deg) !important;
+      filter: drop-shadow(0 0 16px currentColor) !important;
+    }
+    #vtc-overlay-home .vtc-card:hover .vtc-card-title {
+      color: #fff !important;
+      text-shadow: 0 0 10px rgba(255,255,255,0.4) !important;
+    }
+    #vtc-overlay-home .vtc-card:hover .vtc-card-desc {
+      color: #e0e0e0 !important;
+    }
+    #vtc-home-open-app:hover {
+      transform: translateY(-2px) scale(1.05);
+      box-shadow: 0 6px 25px rgba(255, 212, 0, 0.5), 0 0 30px rgba(255, 212, 0, 0.3);
+    }
+    #vtc-home-close:hover {
+      background: rgba(255,255,255,0.1);
+      border-color: rgba(255,255,255,0.2);
+      color: #fff;
+      transform: scale(1.1);
+    }
   `;
   document.head.appendChild(style);
   window.__vtc_base_styles = true;
